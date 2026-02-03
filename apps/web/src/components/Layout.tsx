@@ -35,7 +35,7 @@ export function Layout() {
               <div className="w-8 h-8 bg-forest-600 rounded-lg flex items-center justify-center">
                 <span className="text-white font-bold text-lg">H</span>
               </div>
-              <span className="font-bold text-xl text-gray-900">HuntSource</span>
+              <span className="font-bold text-xl text-gray-900">HuntStack</span>
             </Link>
 
             {/* Desktop Navigation */}
@@ -156,7 +156,7 @@ export function Layout() {
             </div>
           </div>
           <div className="mt-8 pt-8 border-t border-gray-800 text-sm text-center">
-            <p>&copy; {new Date().getFullYear()} HuntSource. All rights reserved.</p>
+            <p>&copy; {new Date().getFullYear()} HuntStack. All rights reserved.</p>
             <p className="mt-2 text-xs">
               Data sourced from USFWS, state wildlife agencies, and other public sources. 
               Always verify regulations with official sources before hunting.

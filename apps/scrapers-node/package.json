@@ -1,5 +1,5 @@
 {
-  "name": "@huntsource/scrapers-node",
+  "name": "@huntstack/scrapers-node",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -10,7 +10,7 @@
     "scrape:mt": "tsx src/scrapers/montana.ts"
   },
   "dependencies": {
-    "@huntsource/db": "workspace:*",
+    "@huntstack/db": "workspace:*",
     "bullmq": "^5.8.0",
     "cheerio": "^1.0.0-rc.12",
     "dotenv": "^16.4.5",

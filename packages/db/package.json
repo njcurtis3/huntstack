@@ -1,5 +1,5 @@
 {
-  "name": "@huntsource/db",
+  "name": "@huntstack/db",
   "version": "0.1.0",
   "private": true,
   "type": "module",
