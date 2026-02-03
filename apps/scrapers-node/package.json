@@ -1,0 +1,28 @@
+{
+  "name": "@huntsource/scrapers-node",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "worker": "tsx src/worker.ts",
+    "scrape:co": "tsx src/scrapers/colorado.ts",
+    "scrape:mt": "tsx src/scrapers/montana.ts"
+  },
+  "dependencies": {
+    "@huntsource/db": "workspace:*",
+    "bullmq": "^5.8.0",
+    "cheerio": "^1.0.0-rc.12",
+    "dotenv": "^16.4.5",
+    "ioredis": "^5.4.1",
+    "openai": "^4.52.0",
+    "pdf-parse": "^1.1.1",
+    "playwright": "^1.45.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "tsx": "^4.16.2",
+    "typescript": "~5.5.3"
+  }
+}

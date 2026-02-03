@@ -1,0 +1,29 @@
+import { Routes, Route } from 'react-router-dom'
+import { Layout } from './components/Layout'
+import { HomePage } from './pages/HomePage'
+import { SearchPage } from './pages/SearchPage'
+import { MapPage } from './pages/MapPage'
+import { RegulationsPage } from './pages/RegulationsPage'
+import { OutfittersPage } from './pages/OutfittersPage'
+import { ChatPage } from './pages/ChatPage'
+import { NotFoundPage } from './pages/NotFoundPage'
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Layout />}>
+        <Route index element={<HomePage />} />
+        <Route path="search" element={<SearchPage />} />
+        <Route path="map" element={<MapPage />} />
+        <Route path="regulations" element={<RegulationsPage />} />
+        <Route path="regulations/:state" element={<RegulationsPage />} />
+        <Route path="outfitters" element={<OutfittersPage />} />
+        <Route path="outfitters/:id" element={<OutfittersPage />} />
+        <Route path="chat" element={<ChatPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
+    </Routes>
+  )
+}
+
+export default App
