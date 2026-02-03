@@ -1,5 +1,5 @@
 -- ===========================================
--- HuntSource Database Initialization
+-- HuntStack Database Initialization
 -- Run this in Supabase SQL Editor before deploying
 -- ===========================================
 

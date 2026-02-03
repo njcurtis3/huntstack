@@ -1,12 +1,12 @@
-# Scrapy settings for huntsource_scrapers project
+# Scrapy settings for huntstack_scrapers project
 
-BOT_NAME = "huntsource_scrapers"
+BOT_NAME = "huntstack_scrapers"
 
-SPIDER_MODULES = ["huntsource_scrapers.spiders"]
-NEWSPIDER_MODULE = "huntsource_scrapers.spiders"
+SPIDER_MODULES = ["huntstack_scrapers.spiders"]
+NEWSPIDER_MODULE = "huntstack_scrapers.spiders"
 
 # Crawl responsibly by identifying yourself
-USER_AGENT = "HuntSource Bot (+https://huntsource.com/bot)"
+USER_AGENT = "HuntStack Bot (+https://huntstack.com/bot)"
 
 # Obey robots.txt rules
 ROBOTSTXT_OBEY = True
@@ -28,8 +28,8 @@ DOWNLOADER_MIDDLEWARES = {
 
 # Configure item pipelines
 ITEM_PIPELINES = {
-    "huntsource_scrapers.pipelines.DatabasePipeline": 300,
-    "huntsource_scrapers.pipelines.EmbeddingPipeline": 400,
+    "huntstack_scrapers.pipelines.DatabasePipeline": 300,
+    "huntstack_scrapers.pipelines.EmbeddingPipeline": 400,
 }
 
 # Enable and configure HTTP caching

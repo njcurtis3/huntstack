@@ -37,7 +37,7 @@ await app.register(rateLimit, {
 await app.register(swagger, {
   openapi: {
     info: {
-      title: 'HuntSource API',
+      title: 'HuntStack API',
       description: 'API for hunting regulations, locations, and AI-powered search',
       version: '0.1.0',
     },

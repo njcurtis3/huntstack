@@ -125,7 +125,7 @@ export function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl font-bold mb-4">Are You an Outfitter?</h2>
           <p className="text-earth-200 text-lg max-w-2xl mx-auto mb-8">
-            List your business on HuntSource to reach thousands of hunters. 
+            List your business on HuntStack to reach thousands of hunters. 
             Get regulation alerts, manage your profile, and grow your client base.
           </p>
           <button className="btn bg-white text-earth-900 hover:bg-earth-50 px-6 py-3">

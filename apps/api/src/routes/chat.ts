@@ -140,7 +140,7 @@ function buildSystemPrompt(context: {
     .map(doc => doc.content)
     .join('\n\n---\n\n')
 
-  return `You are HuntSource AI, a helpful assistant specializing in hunting regulations, seasons, locations, and wildlife information across the United States.
+  return `You are HuntStack AI, a helpful assistant specializing in hunting regulations, seasons, locations, and wildlife information across the United States.
 
 Your role is to:
 1. Answer questions about hunting regulations accurately

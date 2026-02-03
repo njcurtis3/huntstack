@@ -1,8 +1,8 @@
-# CLAUDE.md - HuntSource Project Specification
+# CLAUDE.md - HuntStack Project Specification
 
 ## Project Overview
 
-**HuntSource** is a comprehensive hunting information platform serving as the definitive one-stop resource for hunters and outfitters across the United States. The application aggregates open-source data on migratory bird tracking, big game hunting, regulations, licensing, hunting locations, outfitter services, and interactive mapping—all queryable through an integrated LLM interface.
+**HuntStack** is a comprehensive hunting information platform serving as the definitive one-stop resource for hunters and outfitters across the United States. The application aggregates open-source data on migratory bird tracking, big game hunting, regulations, licensing, hunting locations, outfitter services, and interactive mapping—all queryable through an integrated LLM interface.
 
 ---
 
@@ -287,7 +287,7 @@ pnpm test             # Run all tests
 ## Project Structure
 
 ```
-huntsource/
+huntstack/
 ├── apps/
 │   ├── web/                 # React + Vite frontend
 │   │   └── src/
@@ -333,5 +333,5 @@ When working on this project:
 5. **Mobile-first** - Hunters use phones in the field
 6. **Offline consideration** - Cell service is limited in hunting areas
 7. **Plain language** - Regulations are complex; simplify for users
-8. **Type safety** - Use shared types from `@huntsource/types`
-9. **Validation** - Use Zod schemas from `@huntsource/shared`
+8. **Type safety** - Use shared types from `@huntstack/types`
+9. **Validation** - Use Zod schemas from `@huntstack/shared`

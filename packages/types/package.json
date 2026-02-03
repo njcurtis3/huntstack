@@ -1,5 +1,5 @@
 {
-  "name": "@huntsource/types",
+  "name": "@huntstack/types",
   "version": "0.1.0",
   "private": true,
   "type": "module",

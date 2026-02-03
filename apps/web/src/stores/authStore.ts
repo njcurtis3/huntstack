@@ -106,7 +106,7 @@ export const useAuthStore = create<AuthState>()(
       },
     }),
     {
-      name: 'huntsource-auth',
+      name: 'huntstack-auth',
       partialize: (state) => ({ user: state.user }),
     }
   )

@@ -81,7 +81,7 @@ The AI assistant will use RAG (Retrieval-Augmented Generation) to provide accura
             <Sparkles className="w-5 h-5 text-forest-600" />
           </div>
           <div>
-            <h1 className="font-semibold text-gray-900">HuntSource AI Assistant</h1>
+            <h1 className="font-semibold text-gray-900">HuntStack AI Assistant</h1>
             <p className="text-sm text-gray-500">Ask anything about hunting regulations, seasons, and locations</p>
           </div>
         </div>

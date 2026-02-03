@@ -171,7 +171,7 @@ export function OutfittersPage() {
       <div className="mt-12 bg-gradient-to-r from-earth-800 to-earth-900 rounded-2xl p-8 text-center text-white">
         <h2 className="text-2xl font-bold mb-4">Are You an Outfitter?</h2>
         <p className="text-earth-200 mb-6 max-w-2xl mx-auto">
-          Join HuntSource to reach thousands of hunters looking for their next adventure. 
+          Join HuntStack to reach thousands of hunters looking for their next adventure. 
           Get your business listed and start connecting with clients today.
         </p>
         <button className="btn bg-white text-earth-900 hover:bg-earth-50">
