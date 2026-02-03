@@ -1,8 +1,8 @@
-# HuntSource
+# hunststack
 
 > Your comprehensive hunting information platform
 
-HuntSource aggregates hunting regulations, season dates, license requirements, public land maps, and outfitter listings across all 50 states. Features AI-powered natural language search using RAG (Retrieval-Augmented Generation).
+**huntstack** aggregates hunting regulations, season dates, license requirements, public land maps, and outfitter listings across all 50 states. Features AI-powered natural language search using RAG (Retrieval-Augmented Generation).
 
 ## Features
 
@@ -29,7 +29,7 @@ HuntSource aggregates hunting regulations, season dates, license requirements, p
 ## Project Structure
 
 ```
-huntsource/
+huntstack/
 ├── apps/
 │   ├── web/                 # React frontend
 │   ├── api/                 # Fastify backend
@@ -57,8 +57,8 @@ huntsource/
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/huntsource.git
-cd huntsource
+git clone https://github.com/yourusername/huntstack.git
+cd huntstack
 
 # Install dependencies
 pnpm install
