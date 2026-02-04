@@ -1,4 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
+import { getDb } from '../lib/db.js'
+import { states } from '@huntstack/db/schema'
 
 export const regulationsRoutes: FastifyPluginAsync = async (app) => {
   // List all states with regulations
@@ -17,8 +19,10 @@ export const regulationsRoutes: FastifyPluginAsync = async (app) => {
                 properties: {
                   code: { type: 'string' },
                   name: { type: 'string' },
-                  lastUpdated: { type: 'string' },
-                  categories: { type: 'array', items: { type: 'string' } },
+                  agencyName: { type: 'string' },
+                  agencyUrl: { type: 'string' },
+                  regulationsUrl: { type: 'string' },
+                  licenseUrl: { type: 'string' },
                 },
               },
             },
@@ -27,14 +31,17 @@ export const regulationsRoutes: FastifyPluginAsync = async (app) => {
       },
     },
   }, async () => {
-    // TODO: Fetch from database
-    return {
-      states: [
-        { code: 'CO', name: 'Colorado', lastUpdated: '2025-01-15', categories: ['big-game', 'waterfowl'] },
-        { code: 'MT', name: 'Montana', lastUpdated: '2025-01-10', categories: ['big-game', 'upland'] },
-        // ... more states
-      ],
-    }
+    const db = getDb()
+    const rows = await db.select({
+      code: states.code,
+      name: states.name,
+      agencyName: states.agencyName,
+      agencyUrl: states.agencyUrl,
+      regulationsUrl: states.regulationsUrl,
+      licenseUrl: states.licenseUrl,
+    }).from(states)
+
+    return { states: rows }
   })
 
   // Get regulations for a specific state
