@@ -4,7 +4,10 @@ import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
-import 'dotenv/config'
+import { config } from 'dotenv'
+import { resolve } from 'path'
+
+config({ path: resolve(import.meta.dirname, '../../../.env') })
 
 import { healthRoutes } from './routes/health.js'
 import { searchRoutes } from './routes/search.js'
