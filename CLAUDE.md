@@ -12,6 +12,92 @@ Provide hunters and outfitters with the most accurate, up-to-date, and comprehen
 
 ---
 
+## Strategic Positioning
+
+**HuntStack tells you WHERE to hunt. OnX helps you get there.**
+
+### Competitive Landscape
+
+| Category | OnX | HuntStand | BaseMap | HuntStack |
+|----------|-----|-----------|---------|-----------|
+| Offline GPS navigation | Yes | Yes | Yes | No (don't compete) |
+| Public/private land ownership | Yes | Yes | Yes | Maybe later |
+| Waypoints / tracking | Yes | Yes | Yes | Not core |
+| Satellite / topo maps | Yes | Yes | Yes | Minimal or none |
+| State regulations | Basic links | Basic | Basic | **Deep, structured, searchable** |
+| License requirements | No | No | No | **Yes** |
+| Season comparison across states | No | No | No | **Yes** |
+| Migration intelligence | No | No | No | **Core feature** |
+| Harvest / refuge counts | No | No | No | **Yes** |
+| Public hunting recommendations | No | No | No | **Yes** |
+| Outfitter discovery | Limited | Limited | Limited | **Integrated + data context** |
+| Trip planning (multi-state) | No | No | No | **Yes** |
+| AI / natural language search | No | No | No | **Core feature** |
+| Cross-data reasoning | No | No | No | **Core feature** |
+
+### The Big Strategic Rule
+
+**Do not build maps first.**
+
+Every failed hunting startup tries to compete with OnX on mapping. Instead, build the thing hunters currently do with:
+- Google searches
+- 6 state websites
+- 3 PDFs
+- Facebook groups
+- Refuge reports
+
+If HuntStack replaces that fragmented workflow, we win.
+
+**They own in-field tools. We own pre-hunt intelligence.**
+
+---
+
+## 3 Killer Features
+
+These are the differentiators that make HuntStack unique:
+
+### Killer Feature #1: "Where should I hunt this weekend?"
+
+Example query: *"Snow geese within 3 hours of Amarillo"*
+
+Output includes:
+- Top regions ranked by opportunity
+- Migration activity (based on counts)
+- Recent refuge reports
+- Weather alignment
+- Public land options
+- Active seasons
+- License requirements
+
+**This is the holy grail. No app does this.**
+
+### Killer Feature #2: Migration Intelligence Dashboard
+
+For waterfowl, show:
+- Refuge counts (weekly)
+- Historical trends
+- Weather fronts vs movement correlation
+- Flyway progression
+- "Birds arriving / leaving" signals
+
+**If this works, waterfowl hunters will check it weekly. This is the category-defining feature.**
+
+### Killer Feature #3: Regulation + License Intelligence (LLM)
+
+Instead of PDFs, users ask: *"What do I need to hunt NM conservation order?"*
+
+Response includes:
+- Federal stamp requirements
+- State license requirements
+- HIP registration
+- Electronic calls allowed?
+- Shooting hours
+- Plug requirements
+
+**This saves real frustration.**
+
+---
+
 ## User Types
 
 ### 1. Hunters (Primary Consumer)
@@ -183,31 +269,74 @@ Professional hunting guides and outfitting services seeking visibility and regul
 
 ---
 
-## MVP Scope (Phase 1)
+## Product Roadmap
 
-### Must Have
-1. **Core Data Models**: Species, regulations, locations, outfitters
-2. **State Regulation Database**: Start with 5-10 priority states
-3. **Basic Search**: Filter by state, species, season
-4. **Interactive Map**: Public lands, basic hunting areas
-5. **Outfitter Listings**: Basic profiles and search
-6. **LLM Query Interface**: Basic Q&A over aggregated data
-7. **User Authentication**: Hunter and Outfitter account types
+### V1 - Planning Intelligence for Waterfowl (Build Now)
 
-### Priority States (Suggested)
-- Colorado, Montana, Wyoming (big game)
-- Arkansas, Louisiana, Texas (waterfowl)
-- South Dakota, Kansas (upland/waterfowl)
-- Wisconsin, Michigan (deer/waterfowl)
+**Goal**: Replace the fragmented workflow of Google + state websites + PDFs + Facebook groups + refuge reports
 
-### Nice to Have (Phase 2+)
-- All 50 states coverage
-- Real-time migration tracking integration
-- Advanced trip planning tools
-- Mobile native apps
-- Outfitter booking integration
-- Social features (hunt reports, photos)
-- Predictive analytics (best times/places)
+#### Core Data
+
+- State seasons (structured, not PDF links)
+- Conservation orders
+- License requirements
+- Refuge bird counts (CSV ingestion)
+- Basic public hunting areas
+- Weather API integration
+
+#### Core Features
+
+- LLM search over structured data
+- "Where to hunt" by species + location
+- Migration dashboard (simple charts)
+- State comparison tool
+
+#### Explicitly NOT in V1
+
+- Offline maps
+- Property boundaries
+- GPS tracking
+
+**Stay out of OnX territory.**
+
+#### Priority States (Waterfowl Focus)
+
+- Texas, New Mexico (conservation order, Central Flyway)
+- Arkansas, Louisiana (Mississippi Flyway)
+- Kansas, Oklahoma (Central Flyway)
+
+---
+
+### V2 - Expansion (When V1 Gets Traction)
+
+- Public land layers (from state GIS)
+- Distance filters ("within 3 hours of...")
+- Outfitter directory
+- Trip planning (save locations, notes)
+- Notifications: "Snow geese numbers jumped in Clovis"
+
+---
+
+### V3 - Moat Phase (Become Infrastructure)
+
+This is where HuntStack becomes hard to compete with:
+
+- Predictive migration models
+- Weather-movement correlation analysis
+- User harvest reports (crowdsourced)
+- Data export to OnX / HuntStand
+- API for outfitters
+
+---
+
+### Big Game Expansion (Future)
+
+After waterfowl is solid:
+
+- Colorado, Montana, Wyoming (elk, deer)
+- Draw/tag systems and odds
+- Unit-by-unit success rates
+- Wisconsin, Michigan (whitetail)
 
 ---
 
@@ -238,7 +367,11 @@ Professional hunting guides and outfitting services seeking visibility and regul
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| *To be filled during planning* | | |
+| Primary focus | Waterfowl first | Clear market gap, migration intelligence is unique differentiator |
+| Mapping strategy | Minimal/none | Avoid competing with OnX, HuntStand, BaseMap on their strength |
+| Core differentiator | Pre-hunt intelligence | "HuntStack tells you WHERE to hunt. OnX helps you get there." |
+| V1 target users | Waterfowl hunters | Plan around refuge counts, weather fronts, migration timing |
+| GPS/offline features | Defer to later phases | Not core to value proposition, competitors own this space |
 
 ---
 
@@ -326,12 +459,28 @@ huntstack/
 
 When working on this project:
 
+### Strategic Priorities
+
+1. **Waterfowl first** - V1 focuses on waterfowl/migratory bird hunters
+2. **Pre-hunt intelligence** - We help hunters decide WHERE to hunt, not navigate in the field
+3. **Don't build maps** - Avoid GPS, offline maps, property boundaries (OnX territory)
+4. **Replace fragmented workflow** - Target the Google + PDFs + Facebook groups research process
+
+### Development Guidelines
+
 1. **Prioritize data accuracy** - Hunting regulations have legal implications
 2. **Source attribution** - Always track where data comes from
 3. **Incremental development** - Build state-by-state, feature-by-feature
-4. **Test with real scenarios** - Use actual hunting planning use cases
-5. **Mobile-first** - Hunters use phones in the field
-6. **Offline consideration** - Cell service is limited in hunting areas
-7. **Plain language** - Regulations are complex; simplify for users
-8. **Type safety** - Use shared types from `@huntstack/types`
-9. **Validation** - Use Zod schemas from `@huntstack/shared`
+4. **Test with real scenarios** - Use actual hunting planning use cases (e.g., "snow geese near Amarillo")
+5. **Mobile-first** - Hunters use phones for research
+6. **Plain language** - Regulations are complex; simplify for users
+7. **Type safety** - Use shared types from `@huntstack/types`
+8. **Validation** - Use Zod schemas from `@huntstack/shared`
+
+### V1 Focus Areas
+
+- Structured regulation data (not PDF links)
+- Refuge bird count ingestion
+- Migration dashboard
+- LLM-powered "where should I hunt?" queries
+- State-by-state season comparison
