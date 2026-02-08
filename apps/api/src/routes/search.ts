@@ -1,11 +1,13 @@
 import { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
+import { ilike, or, eq, and, sql } from 'drizzle-orm'
+import { getDb } from '../lib/db.js'
+import { regulations, species, states, locations, seasons } from '@huntstack/db/schema'
 
 const searchQuerySchema = z.object({
   q: z.string().min(1).max(500),
-  type: z.enum(['all', 'regulations', 'species', 'outfitters', 'locations']).optional(),
+  type: z.enum(['all', 'regulations', 'species', 'locations']).optional(),
   state: z.string().length(2).optional(),
-  species: z.string().optional(),
   limit: z.coerce.number().min(1).max(100).optional().default(20),
   offset: z.coerce.number().min(0).optional().default(0),
 })
@@ -20,9 +22,8 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
         type: 'object',
         properties: {
           q: { type: 'string', description: 'Search query' },
-          type: { type: 'string', enum: ['all', 'regulations', 'species', 'outfitters', 'locations'] },
-          state: { type: 'string', description: 'Filter by state code (e.g., CO)' },
-          species: { type: 'string', description: 'Filter by species' },
+          type: { type: 'string', enum: ['all', 'regulations', 'species', 'locations'] },
+          state: { type: 'string', description: 'Filter by state code (e.g., TX)' },
           limit: { type: 'number', default: 20 },
           offset: { type: 'number', default: 0 },
         },
@@ -41,22 +42,136 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
     },
   }, async (request) => {
     const query = searchQuerySchema.parse(request.query)
-    
-    // TODO: Implement actual search using PostgreSQL full-text + pgvector
-    // For now, return placeholder
+    const db = getDb()
+    const pattern = `%${query.q}%`
+
+    const results: Array<{ type: string; id: string; title: string; snippet: string; stateCode?: string; category?: string }> = []
+
+    const searchType = query.type || 'all'
+
+    // Search species
+    if (searchType === 'all' || searchType === 'species') {
+      const speciesResults = await db
+        .select({
+          id: species.id,
+          slug: species.slug,
+          name: species.name,
+          category: species.category,
+          description: species.description,
+        })
+        .from(species)
+        .where(or(
+          ilike(species.name, pattern),
+          ilike(species.description, pattern),
+          ilike(species.habitat, pattern),
+        ))
+        .limit(query.limit)
+
+      for (const s of speciesResults) {
+        results.push({
+          type: 'species',
+          id: s.slug,
+          title: s.name,
+          snippet: s.description?.slice(0, 200) || '',
+          category: s.category,
+        })
+      }
+    }
+
+    // Search regulations
+    if (searchType === 'all' || searchType === 'regulations') {
+      const regConditions = [
+        eq(regulations.isActive, true),
+        or(
+          ilike(regulations.title, pattern),
+          ilike(regulations.content, pattern),
+          ilike(regulations.summary, pattern),
+        ),
+      ]
+
+      // State filter
+      if (query.state) {
+        const stateRows = await db.select({ id: states.id }).from(states).where(eq(states.code, query.state.toUpperCase()))
+        if (stateRows.length > 0) {
+          regConditions.push(eq(regulations.stateId, stateRows[0].id))
+        }
+      }
+
+      const regResults = await db
+        .select({
+          id: regulations.id,
+          title: regulations.title,
+          summary: regulations.summary,
+          content: regulations.content,
+          category: regulations.category,
+          stateCode: states.code,
+        })
+        .from(regulations)
+        .innerJoin(states, eq(regulations.stateId, states.id))
+        .where(and(...regConditions))
+        .limit(query.limit)
+
+      for (const r of regResults) {
+        results.push({
+          type: 'regulation',
+          id: r.id,
+          title: r.title,
+          snippet: (r.summary || r.content)?.slice(0, 200) || '',
+          stateCode: r.stateCode,
+          category: r.category,
+        })
+      }
+    }
+
+    // Search locations
+    if (searchType === 'all' || searchType === 'locations') {
+      const locConditions = [
+        or(
+          ilike(locations.name, pattern),
+          ilike(locations.description, pattern),
+        ),
+      ]
+
+      if (query.state) {
+        const stateRows = await db.select({ id: states.id }).from(states).where(eq(states.code, query.state.toUpperCase()))
+        if (stateRows.length > 0) {
+          locConditions.push(eq(locations.stateId, stateRows[0].id))
+        }
+      }
+
+      const locResults = await db
+        .select({
+          id: locations.id,
+          name: locations.name,
+          locationType: locations.locationType,
+          description: locations.description,
+          stateCode: states.code,
+        })
+        .from(locations)
+        .innerJoin(states, eq(locations.stateId, states.id))
+        .where(and(...locConditions))
+        .limit(query.limit)
+
+      for (const l of locResults) {
+        results.push({
+          type: 'location',
+          id: l.id,
+          title: l.name,
+          snippet: l.description?.slice(0, 200) || '',
+          stateCode: l.stateCode,
+          category: l.locationType,
+        })
+      }
+    }
+
     return {
-      results: [],
-      total: 0,
+      results: results.slice(query.offset, query.offset + query.limit),
+      total: results.length,
       query: query.q,
-      filters: {
-        type: query.type,
-        state: query.state,
-        species: query.species,
-      },
     }
   })
 
-  // Semantic search using RAG
+  // Semantic search using RAG (placeholder - needs pgvector + embeddings)
   app.post('/semantic', {
     schema: {
       tags: ['search'],
@@ -81,12 +196,12 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
     },
   }, async (request) => {
     const { query, limit = 10 } = request.body as { query: string; limit?: number }
-    
-    // TODO: Implement semantic search
+
+    // TODO: Implement when pgvector embeddings are populated
     // 1. Generate embedding for query using OpenAI
-    // 2. Query pgvector for similar documents
-    // 3. Return ranked results
-    
+    // 2. Query pgvector for similar document_chunks
+    // 3. Return ranked results with source attribution
+
     return {
       results: [],
       query,

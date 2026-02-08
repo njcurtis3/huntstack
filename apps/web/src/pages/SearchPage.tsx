@@ -1,77 +1,177 @@
 import { useState } from 'react'
-import { Search, Filter, MapPin } from 'lucide-react'
+import { Search, MapPin, FileText, Bird, TreePine, Loader2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { api } from '../lib/api'
+
+type SearchResult = {
+  type: string
+  id: string
+  title: string
+  snippet: string
+  stateCode?: string
+  category?: string
+}
+
+const categoryFilters = [
+  { value: 'all', label: 'All' },
+  { value: 'species', label: 'Species' },
+  { value: 'regulations', label: 'Regulations' },
+  { value: 'locations', label: 'Locations' },
+] as const
 
 export function SearchPage() {
   const [query, setQuery] = useState('')
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [total, setTotal] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [searched, setSearched] = useState(false)
+  const [activeFilter, setActiveFilter] = useState<string>('all')
+
+  const handleSearch = async (filterOverride?: string) => {
+    const q = query.trim()
+    if (!q) return
+
+    setLoading(true)
+    setSearched(true)
+    try {
+      const filter = filterOverride ?? activeFilter
+      const data = await api.search(q, {
+        type: filter as 'all' | 'regulations' | 'species' | 'locations',
+      })
+      setResults((data as { results: SearchResult[] }).results)
+      setTotal((data as { total: number }).total)
+    } catch {
+      setResults([])
+      setTotal(0)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleFilterChange = (value: string) => {
+    setActiveFilter(value)
+    if (searched) {
+      handleSearch(value)
+    }
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    handleSearch()
+  }
+
+  const getResultIcon = (type: string) => {
+    switch (type) {
+      case 'species': return <Bird className="w-5 h-5 text-forest-600" />
+      case 'regulation': return <FileText className="w-5 h-5 text-blue-600" />
+      case 'location': return <TreePine className="w-5 h-5 text-green-600" />
+      default: return <MapPin className="w-5 h-5 text-gray-600" />
+    }
+  }
+
+  const getResultLink = (result: SearchResult) => {
+    switch (result.type) {
+      case 'species': return `/species/${result.id}`
+      case 'regulation': return result.stateCode ? `/regulations/${result.stateCode.toLowerCase()}` : '/regulations'
+      case 'location': return '/map'
+      default: return '#'
+    }
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Search Header */}
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">Search Hunting Opportunities</h1>
-        <div className="flex gap-4">
+        <h1 className="text-3xl font-bold text-gray-900 mb-4">Search Hunting Data</h1>
+        <form onSubmit={handleSubmit} className="flex gap-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by species, location, or keywords..."
+              placeholder="Search species, regulations, locations..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="input pl-10"
             />
           </div>
-          <button className="btn-outline flex items-center gap-2">
-            <Filter className="w-4 h-4" />
-            Filters
+          <button type="submit" className="btn-primary px-6" disabled={loading || !query.trim()}>
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Search'}
           </button>
-        </div>
+        </form>
       </div>
 
       {/* Filter Pills */}
       <div className="flex flex-wrap gap-2 mb-8">
-        <button className="px-3 py-1.5 bg-forest-100 text-forest-700 rounded-full text-sm font-medium">
-          All Species
-        </button>
-        <button className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-full text-sm font-medium hover:bg-gray-200">
-          Waterfowl
-        </button>
-        <button className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-full text-sm font-medium hover:bg-gray-200">
-          Big Game
-        </button>
-        <button className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-full text-sm font-medium hover:bg-gray-200">
-          Upland
-        </button>
-        <button className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-full text-sm font-medium hover:bg-gray-200">
-          Small Game
-        </button>
-      </div>
-
-      {/* Results Placeholder */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {[1, 2, 3, 4, 5, 6].map((i) => (
-          <div key={i} className="card p-6">
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-12 h-12 bg-gray-200 rounded-lg animate-pulse" />
-              <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
-                In Season
-              </span>
-            </div>
-            <div className="h-5 bg-gray-200 rounded w-3/4 mb-2 animate-pulse" />
-            <div className="h-4 bg-gray-100 rounded w-1/2 mb-4 animate-pulse" />
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <MapPin className="w-4 h-4" />
-              <span>Loading...</span>
-            </div>
-          </div>
+        {categoryFilters.map((f) => (
+          <button
+            key={f.value}
+            onClick={() => handleFilterChange(f.value)}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium ${
+              activeFilter === f.value
+                ? 'bg-forest-100 text-forest-700'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {f.label}
+          </button>
         ))}
       </div>
 
-      {/* Empty State - shown when API is connected */}
-      <div className="hidden text-center py-16">
-        <Search className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 mb-2">No results found</h3>
-        <p className="text-gray-600">Try adjusting your search or filters</p>
-      </div>
+      {/* Results */}
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-8 h-8 animate-spin text-forest-600" />
+        </div>
+      ) : searched ? (
+        results.length > 0 ? (
+          <>
+            <p className="text-sm text-gray-500 mb-4">{total} result{total !== 1 ? 's' : ''} found</p>
+            <div className="space-y-4">
+              {results.map((result) => (
+                <Link
+                  key={`${result.type}-${result.id}`}
+                  to={getResultLink(result)}
+                  className="card p-5 block hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-start gap-4">
+                    <div className="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                      {getResultIcon(result.type)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-semibold text-gray-900">{result.title}</h3>
+                        <span className="text-xs bg-gray-100 text-gray-600 rounded px-2 py-0.5 capitalize">
+                          {result.type}
+                        </span>
+                        {result.stateCode && (
+                          <span className="text-xs bg-blue-50 text-blue-700 rounded px-2 py-0.5">
+                            {result.stateCode}
+                          </span>
+                        )}
+                      </div>
+                      {result.snippet && (
+                        <p className="text-sm text-gray-600 line-clamp-2">{result.snippet}</p>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="text-center py-16">
+            <Search className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No results found</h3>
+            <p className="text-gray-600">Try different keywords or adjust your filters</p>
+          </div>
+        )
+      ) : (
+        <div className="text-center py-16">
+          <Search className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">Search hunting data</h3>
+          <p className="text-gray-600">Find species, regulations, and public hunting locations across the U.S.</p>
+        </div>
+      )}
     </div>
   )
 }

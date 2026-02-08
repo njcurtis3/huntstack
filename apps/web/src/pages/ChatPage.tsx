@@ -1,25 +1,34 @@
 import { useState, useRef, useEffect } from 'react'
-import { Send, Bot, User, Loader2, Sparkles } from 'lucide-react'
+import { Send, Bot, User, Loader2, Sparkles, ExternalLink } from 'lucide-react'
+import { api } from '../lib/api'
+
+interface Source {
+  title: string
+  url?: string
+  snippet: string
+}
 
 interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
+  sources?: Source[]
   timestamp: Date
 }
 
 const suggestedQuestions = [
-  "What are the elk hunting seasons in Colorado?",
-  "Where can I hunt waterfowl in Arkansas?",
-  "What license do I need for deer hunting in Texas as a non-resident?",
-  "Best public land for mule deer in Wyoming?",
-  "When does duck season open in the Central Flyway?",
+  "What are the waterfowl hunting seasons in Texas?",
+  "Where can I hunt snow geese in New Mexico?",
+  "What license do I need for duck hunting in Arkansas as a non-resident?",
+  "When does conservation order start in the Central Flyway?",
+  "What are the bag limits for geese in Kansas?",
 ]
 
 export function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [conversationId, setConversationId] = useState<string | undefined>()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -30,14 +39,13 @@ export function ChatPage() {
     scrollToBottom()
   }, [messages])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!input.trim() || isLoading) return
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || isLoading) return
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input.trim(),
+      content: text.trim(),
       timestamp: new Date(),
     }
 
@@ -45,31 +53,43 @@ export function ChatPage() {
     setInput('')
     setIsLoading(true)
 
-    // TODO: Replace with actual API call to RAG endpoint
-    setTimeout(() => {
+    try {
+      const data = await api.chat(text.trim(), conversationId)
+
+      if (data.conversationId) {
+        setConversationId(data.conversationId)
+      }
+
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: `Thanks for your question about "${userMessage.content}". 
-
-This is a placeholder response. Once the backend is connected, I'll be able to:
-
-• Search our database of hunting regulations across all 50 states
-• Provide specific season dates and bag limits
-• Explain license requirements
-• Recommend hunting locations based on your criteria
-• Answer questions about migratory bird patterns
-
-The AI assistant will use RAG (Retrieval-Augmented Generation) to provide accurate, up-to-date information sourced from official state and federal wildlife agencies.`,
+        content: data.response,
+        sources: data.sources,
         timestamp: new Date(),
       }
       setMessages((prev) => [...prev, assistantMessage])
+    } catch (error) {
+      const errorMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: error instanceof Error && error.message.includes('503')
+          ? 'The AI service is not configured yet. Please set the ANTHROPIC_API_KEY in your .env file to enable the chat assistant.'
+          : 'Sorry, something went wrong. Please try again.',
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, errorMessage])
+    } finally {
       setIsLoading(false)
-    }, 1500)
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    sendMessage(input)
   }
 
   const handleSuggestedQuestion = (question: string) => {
-    setInput(question)
+    sendMessage(question)
   }
 
   return (
@@ -100,10 +120,10 @@ The AI assistant will use RAG (Retrieval-Augmented Generation) to provide accura
                 How can I help you today?
               </h2>
               <p className="text-gray-600 mb-8 max-w-md mx-auto">
-                Ask me about hunting regulations, seasons, license requirements, 
+                Ask me about hunting regulations, seasons, license requirements,
                 or help finding the perfect hunting location.
               </p>
-              
+
               <div className="space-y-2">
                 <p className="text-sm font-medium text-gray-500 mb-3">Try asking:</p>
                 <div className="flex flex-wrap justify-center gap-2">
@@ -132,15 +152,38 @@ The AI assistant will use RAG (Retrieval-Augmented Generation) to provide accura
                       <Bot className="w-4 h-4 text-forest-600" />
                     </div>
                   )}
-                  
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                      message.role === 'user'
-                        ? 'bg-forest-600 text-white'
-                        : 'bg-gray-100 text-gray-900'
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap">{message.content}</p>
+
+                  <div className={`max-w-[80%] ${message.role === 'user' ? '' : ''}`}>
+                    <div
+                      className={`rounded-2xl px-4 py-3 ${
+                        message.role === 'user'
+                          ? 'bg-forest-600 text-white'
+                          : 'bg-gray-100 text-gray-900'
+                      }`}
+                    >
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    </div>
+
+                    {/* Sources */}
+                    {message.sources && message.sources.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        <p className="text-xs text-gray-500 font-medium">Sources:</p>
+                        {message.sources.map((source, i) => (
+                          <div key={i} className="text-xs text-gray-600 bg-gray-50 rounded px-2 py-1">
+                            {source.url ? (
+                              <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-forest-600 hover:underline inline-flex items-center gap-1">
+                                {source.title} <ExternalLink className="w-3 h-3" />
+                              </a>
+                            ) : (
+                              <span>{source.title}</span>
+                            )}
+                            {source.snippet && (
+                              <span className="text-gray-400 ml-1">- {source.snippet}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {message.role === 'user' && (

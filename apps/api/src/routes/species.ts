@@ -1,4 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
+import { eq, and } from 'drizzle-orm'
+import { getDb } from '../lib/db.js'
+import { species, regulations, seasons, states } from '@huntstack/db/schema'
 
 export const speciesRoutes: FastifyPluginAsync = async (app) => {
   // List all species
@@ -9,28 +12,32 @@ export const speciesRoutes: FastifyPluginAsync = async (app) => {
       querystring: {
         type: 'object',
         properties: {
-          category: { 
-            type: 'string', 
+          category: {
+            type: 'string',
             enum: ['big-game', 'waterfowl', 'upland', 'small-game', 'migratory'],
-            description: 'Filter by category' 
+            description: 'Filter by category'
           },
-          state: { type: 'string', description: 'Filter by state where species is huntable' },
         },
       },
       response: {
         200: {
           type: 'object',
           properties: {
-            species: { 
+            species: {
               type: 'array',
               items: {
                 type: 'object',
                 properties: {
                   id: { type: 'string' },
+                  slug: { type: 'string' },
                   name: { type: 'string' },
                   scientificName: { type: 'string' },
                   category: { type: 'string' },
-                  states: { type: 'array', items: { type: 'string' } },
+                  description: { type: 'string' },
+                  habitat: { type: 'string' },
+                  isMigratory: { type: 'boolean' },
+                  flyways: {},
+                  imageUrl: { type: 'string' },
                 },
               },
             },
@@ -39,42 +46,31 @@ export const speciesRoutes: FastifyPluginAsync = async (app) => {
       },
     },
   }, async (request) => {
-    const { category, state } = request.query as { category?: string; state?: string }
+    const { category } = request.query as { category?: string }
 
-    // TODO: Fetch from database
-    return {
-      species: [
-        { 
-          id: 'whitetail-deer', 
-          name: 'Whitetail Deer', 
-          scientificName: 'Odocoileus virginianus',
-          category: 'big-game',
-          states: ['TX', 'WI', 'MI', '...48 more'],
-        },
-        { 
-          id: 'elk', 
-          name: 'Elk', 
-          scientificName: 'Cervus canadensis',
-          category: 'big-game',
-          states: ['CO', 'MT', 'WY', 'ID', 'NM', 'AZ', 'UT', 'WA', 'OR', 'KS', 'KY', 'PA'],
-        },
-        { 
-          id: 'mallard', 
-          name: 'Mallard', 
-          scientificName: 'Anas platyrhynchos',
-          category: 'waterfowl',
-          states: ['All 50 states'],
-        },
-      ],
-      filters: { category, state },
-    }
+    const db = getDb()
+
+    const rows = await db.select({
+      id: species.id,
+      slug: species.slug,
+      name: species.name,
+      scientificName: species.scientificName,
+      category: species.category,
+      description: species.description,
+      habitat: species.habitat,
+      isMigratory: species.isMigratory,
+      flyways: species.flyways,
+      imageUrl: species.imageUrl,
+    }).from(species).where(category ? eq(species.category, category) : undefined)
+
+    return { species: rows }
   })
 
-  // Get species details
+  // Get species details by slug
   app.get('/:id', {
     schema: {
       tags: ['species'],
-      summary: 'Get species details',
+      summary: 'Get species details by slug',
       params: {
         type: 'object',
         properties: {
@@ -83,21 +79,38 @@ export const speciesRoutes: FastifyPluginAsync = async (app) => {
         required: ['id'],
       },
     },
-  }, async (request) => {
+  }, async (request, reply) => {
     const { id } = request.params as { id: string }
 
-    // TODO: Fetch from database
+    const db = getDb()
+    const rows = await db.select().from(species).where(eq(species.slug, id))
+
+    if (rows.length === 0) {
+      return reply.status(404).send({ error: true, message: `Species '${id}' not found` })
+    }
+
+    const sp = rows[0]
+
+    // Get seasons for this species across all states
+    const speciesSeasons = await db
+      .select({
+        id: seasons.id,
+        name: seasons.name,
+        seasonType: seasons.seasonType,
+        startDate: seasons.startDate,
+        endDate: seasons.endDate,
+        year: seasons.year,
+        bagLimit: seasons.bagLimit,
+        stateCode: states.code,
+        stateName: states.name,
+      })
+      .from(seasons)
+      .innerJoin(states, eq(seasons.stateId, states.id))
+      .where(eq(seasons.speciesId, sp.id))
+
     return {
-      species: {
-        id,
-        name: 'Species Name',
-        scientificName: 'Scientific name',
-        category: 'big-game',
-        description: 'Description of the species...',
-        states: [],
-        habitat: '',
-        seasons: [],
-      },
+      species: sp,
+      seasons: speciesSeasons,
     }
   })
 
@@ -116,19 +129,52 @@ export const speciesRoutes: FastifyPluginAsync = async (app) => {
       querystring: {
         type: 'object',
         properties: {
-          state: { type: 'string', description: 'Filter to specific state' },
+          state: { type: 'string', description: 'Filter to specific state code' },
         },
       },
     },
-  }, async (request) => {
+  }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const { state } = request.query as { state?: string }
 
-    // TODO: Fetch from database
+    const db = getDb()
+
+    // Resolve species slug to ID
+    const speciesRows = await db.select({ id: species.id }).from(species).where(eq(species.slug, id))
+    if (speciesRows.length === 0) {
+      return reply.status(404).send({ error: true, message: `Species '${id}' not found` })
+    }
+    const speciesId = speciesRows[0].id
+
+    const conditions = [eq(regulations.speciesId, speciesId), eq(regulations.isActive, true)]
+
+    if (state) {
+      const stateRows = await db.select({ id: states.id }).from(states).where(eq(states.code, state.toUpperCase()))
+      if (stateRows.length > 0) {
+        conditions.push(eq(regulations.stateId, stateRows[0].id))
+      }
+    }
+
+    const regs = await db
+      .select({
+        id: regulations.id,
+        category: regulations.category,
+        title: regulations.title,
+        content: regulations.content,
+        summary: regulations.summary,
+        seasonYear: regulations.seasonYear,
+        sourceUrl: regulations.sourceUrl,
+        metadata: regulations.metadata,
+        stateCode: states.code,
+        stateName: states.name,
+      })
+      .from(regulations)
+      .innerJoin(states, eq(regulations.stateId, states.id))
+      .where(and(...conditions))
+
     return {
-      speciesId: id,
-      regulations: [],
-      filters: { state },
+      speciesSlug: id,
+      regulations: regs,
     }
   })
 
@@ -147,24 +193,42 @@ export const speciesRoutes: FastifyPluginAsync = async (app) => {
       querystring: {
         type: 'object',
         properties: {
-          flyway: { 
-            type: 'string', 
+          flyway: {
+            type: 'string',
             enum: ['pacific', 'central', 'mississippi', 'atlantic'],
-            description: 'Filter by flyway' 
+            description: 'Filter by flyway'
           },
         },
       },
     },
-  }, async (request) => {
+  }, async (request, reply) => {
     const { id } = request.params as { id: string }
     const { flyway } = request.query as { flyway?: string }
 
-    // TODO: Fetch migration data from eBird or other sources
+    const db = getDb()
+    const rows = await db.select().from(species).where(eq(species.slug, id))
+
+    if (rows.length === 0) {
+      return reply.status(404).send({ error: true, message: `Species '${id}' not found` })
+    }
+
+    const sp = rows[0]
+
+    if (!sp.isMigratory) {
+      return { speciesSlug: id, isMigratory: false, flyways: [], message: 'This species is not migratory.' }
+    }
+
+    const allFlyways = (sp.flyways as string[]) || []
+    const filteredFlyways = flyway ? allFlyways.filter(f => f === flyway) : allFlyways
+
+    // Migration data will come from external sources (eBird, refuge counts) in V1
+    // For now return the species flyway info from the DB
     return {
-      speciesId: id,
+      speciesSlug: id,
       isMigratory: true,
-      flyways: [],
-      currentLocations: [], // From real-time tracking data
+      flyways: filteredFlyways,
+      // These will be populated when refuge count ingestion is built
+      currentLocations: [],
       historicalPatterns: [],
     }
   })

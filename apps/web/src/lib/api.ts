@@ -52,19 +52,32 @@ class ApiClient {
 
   // Search
   async search(query: string, options?: {
-    type?: 'all' | 'regulations' | 'species' | 'outfitters' | 'locations'
+    type?: 'all' | 'regulations' | 'species' | 'locations'
     state?: string
-    species?: string
     limit?: number
     offset?: number
   }) {
-    return this.request('/api/search', {
+    return this.request<{
+      results: Array<{
+        type: string
+        id: string
+        title: string
+        snippet: string
+        stateCode?: string
+        category?: string
+      }>
+      total: number
+      query: string
+    }>('/api/search', {
       params: { q: query, ...options },
     })
   }
 
   async semanticSearch(query: string, limit = 10) {
-    return this.request('/api/search/semantic', {
+    return this.request<{
+      results: Array<{ content: string; metadata: unknown }>
+      query: string
+    }>('/api/search/semantic', {
       method: 'POST',
       body: JSON.stringify({ query, limit }),
     })
@@ -160,21 +173,77 @@ class ApiClient {
   // Species
   async getSpecies(options?: {
     category?: string
-    state?: string
   }) {
-    return this.request('/api/species', { params: options })
+    return this.request<{
+      species: Array<{
+        id: string
+        slug: string
+        name: string
+        scientificName: string | null
+        category: string
+        description: string | null
+        habitat: string | null
+        isMigratory: boolean | null
+        flyways: unknown
+        imageUrl: string | null
+      }>
+    }>('/api/species', { params: options })
   }
 
-  async getSpeciesById(id: string) {
-    return this.request(`/api/species/${id}`)
+  async getSpeciesById(slug: string) {
+    return this.request<{
+      species: {
+        id: string
+        slug: string
+        name: string
+        scientificName: string | null
+        category: string
+        description: string | null
+        habitat: string | null
+        isMigratory: boolean | null
+        flyways: unknown
+        imageUrl: string | null
+      }
+      seasons: Array<{
+        id: string
+        name: string
+        seasonType: string | null
+        startDate: string
+        endDate: string
+        year: number
+        bagLimit: unknown
+        stateCode: string
+        stateName: string
+      }>
+    }>(`/api/species/${slug}`)
   }
 
-  async getSpeciesRegulations(id: string, state?: string) {
-    return this.request(`/api/species/${id}/regulations`, { params: { state } })
+  async getSpeciesRegulations(slug: string, state?: string) {
+    return this.request<{
+      speciesSlug: string
+      regulations: Array<{
+        id: string
+        category: string
+        title: string
+        content: string
+        summary: string | null
+        seasonYear: number | null
+        sourceUrl: string | null
+        metadata: unknown
+        stateCode: string
+        stateName: string
+      }>
+    }>(`/api/species/${slug}/regulations`, { params: { state } })
   }
 
-  async getSpeciesMigration(id: string, flyway?: string) {
-    return this.request(`/api/species/${id}/migration`, { params: { flyway } })
+  async getSpeciesMigration(slug: string, flyway?: string) {
+    return this.request<{
+      speciesSlug: string
+      isMigratory: boolean
+      flyways: string[]
+      currentLocations: unknown[]
+      historicalPatterns: unknown[]
+    }>(`/api/species/${slug}/migration`, { params: { flyway } })
   }
 
   // Outfitters
