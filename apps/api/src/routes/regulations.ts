@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
+import { eq, and } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
-import { states } from '@huntstack/db/schema'
+import { states, regulations, seasons, licenses, species } from '@huntstack/db/schema'
 
 export const regulationsRoutes: FastifyPluginAsync = async (app) => {
   // List all states with regulations
@@ -60,46 +61,63 @@ export const regulationsRoutes: FastifyPluginAsync = async (app) => {
         type: 'object',
         properties: {
           category: { type: 'string', description: 'Filter by category (big-game, waterfowl, etc.)' },
-          species: { type: 'string', description: 'Filter by species' },
-        },
-      },
-      response: {
-        200: {
-          type: 'object',
-          properties: {
-            state: { type: 'object' },
-            regulations: { type: 'array' },
-          },
-        },
-        404: {
-          type: 'object',
-          properties: {
-            error: { type: 'boolean' },
-            message: { type: 'string' },
-          },
+          species: { type: 'string', description: 'Filter by species slug' },
         },
       },
     },
   }, async (request, reply) => {
     const { stateCode } = request.params as { stateCode: string }
-    const { category, species } = request.query as { category?: string; species?: string }
+    const { category, species: speciesSlug } = request.query as { category?: string; species?: string }
 
-    // TODO: Fetch from database
-    // For now, return placeholder
-    
+    const db = getDb()
+    const code = stateCode.toUpperCase()
+
+    // Look up the state
+    const stateRows = await db.select().from(states).where(eq(states.code, code))
+    if (stateRows.length === 0) {
+      return reply.status(404).send({ error: true, message: `State '${code}' not found` })
+    }
+    const state = stateRows[0]
+
+    // Build filters for regulations query
+    const conditions = [eq(regulations.stateId, state.id), eq(regulations.isActive, true)]
+
+    if (category) {
+      conditions.push(eq(regulations.category, category))
+    }
+
+    // If filtering by species slug, resolve to species ID first
+    if (speciesSlug) {
+      const speciesRows = await db.select({ id: species.id }).from(species).where(eq(species.slug, speciesSlug))
+      if (speciesRows.length > 0) {
+        conditions.push(eq(regulations.speciesId, speciesRows[0].id))
+      }
+    }
+
+    const regs = await db.select({
+      id: regulations.id,
+      category: regulations.category,
+      title: regulations.title,
+      content: regulations.content,
+      summary: regulations.summary,
+      seasonYear: regulations.seasonYear,
+      effectiveDate: regulations.effectiveDate,
+      expirationDate: regulations.expirationDate,
+      sourceUrl: regulations.sourceUrl,
+      metadata: regulations.metadata,
+    }).from(regulations).where(and(...conditions))
+
     return {
       state: {
-        code: stateCode.toUpperCase(),
-        name: 'State Name', // Look up from DB
-        lastUpdated: '2025-01-15',
-        source: 'State Wildlife Agency',
-        sourceUrl: 'https://example.com',
+        code: state.code,
+        name: state.name,
+        agencyName: state.agencyName,
+        agencyUrl: state.agencyUrl,
+        regulationsUrl: state.regulationsUrl,
+        licenseUrl: state.licenseUrl,
+        lastScraped: state.lastScraped,
       },
-      regulations: [],
-      filters: {
-        category,
-        species,
-      },
+      regulations: regs,
     }
   })
 
@@ -119,19 +137,55 @@ export const regulationsRoutes: FastifyPluginAsync = async (app) => {
         type: 'object',
         properties: {
           year: { type: 'number', description: 'Season year' },
-          species: { type: 'string' },
+          species: { type: 'string', description: 'Filter by species slug' },
         },
       },
     },
-  }, async (request) => {
+  }, async (request, reply) => {
     const { stateCode } = request.params as { stateCode: string }
-    const { year, species } = request.query as { year?: number; species?: string }
+    const { year, species: speciesSlug } = request.query as { year?: number; species?: string }
 
-    // TODO: Fetch season data from database
+    const db = getDb()
+    const code = stateCode.toUpperCase()
+
+    const stateRows = await db.select().from(states).where(eq(states.code, code))
+    if (stateRows.length === 0) {
+      return reply.status(404).send({ error: true, message: `State '${code}' not found` })
+    }
+    const state = stateRows[0]
+
+    const conditions = [eq(seasons.stateId, state.id)]
+
+    if (year) {
+      conditions.push(eq(seasons.year, year))
+    }
+
+    if (speciesSlug) {
+      const speciesRows = await db.select({ id: species.id }).from(species).where(eq(species.slug, speciesSlug))
+      if (speciesRows.length > 0) {
+        conditions.push(eq(seasons.speciesId, speciesRows[0].id))
+      }
+    }
+
+    const seasonRows = await db.select({
+      id: seasons.id,
+      name: seasons.name,
+      seasonType: seasons.seasonType,
+      startDate: seasons.startDate,
+      endDate: seasons.endDate,
+      year: seasons.year,
+      bagLimit: seasons.bagLimit,
+      shootingHours: seasons.shootingHours,
+      restrictions: seasons.restrictions,
+      units: seasons.units,
+      sourceUrl: seasons.sourceUrl,
+      speciesId: seasons.speciesId,
+    }).from(seasons).where(and(...conditions))
+
     return {
-      state: stateCode.toUpperCase(),
+      state: code,
       year: year || new Date().getFullYear(),
-      seasons: [],
+      seasons: seasonRows,
     }
   })
 
@@ -150,23 +204,51 @@ export const regulationsRoutes: FastifyPluginAsync = async (app) => {
       querystring: {
         type: 'object',
         properties: {
-          resident: { type: 'boolean', description: 'Resident vs non-resident' },
-          species: { type: 'string' },
+          resident: { type: 'boolean', description: 'Filter resident-only licenses' },
+          type: { type: 'string', description: 'Filter by license type (base, species, stamp, permit)' },
         },
       },
     },
-  }, async (request) => {
+  }, async (request, reply) => {
     const { stateCode } = request.params as { stateCode: string }
-    const { resident, species } = request.query as { resident?: boolean; species?: string }
+    const { resident, type } = request.query as { resident?: boolean; type?: string }
 
-    // TODO: Fetch license data from database
+    const db = getDb()
+    const code = stateCode.toUpperCase()
+
+    const stateRows = await db.select().from(states).where(eq(states.code, code))
+    if (stateRows.length === 0) {
+      return reply.status(404).send({ error: true, message: `State '${code}' not found` })
+    }
+    const state = stateRows[0]
+
+    const conditions = [eq(licenses.stateId, state.id)]
+
+    if (resident !== undefined) {
+      conditions.push(eq(licenses.isResidentOnly, resident))
+    }
+
+    if (type) {
+      conditions.push(eq(licenses.licenseType, type))
+    }
+
+    const licenseRows = await db.select({
+      id: licenses.id,
+      name: licenses.name,
+      licenseType: licenses.licenseType,
+      description: licenses.description,
+      isResidentOnly: licenses.isResidentOnly,
+      priceResident: licenses.priceResident,
+      priceNonResident: licenses.priceNonResident,
+      validFor: licenses.validFor,
+      requirements: licenses.requirements,
+      applicationDeadline: licenses.applicationDeadline,
+      purchaseUrl: licenses.purchaseUrl,
+    }).from(licenses).where(and(...conditions))
+
     return {
-      state: stateCode.toUpperCase(),
-      licenses: [],
-      filters: {
-        resident,
-        species,
-      },
+      state: code,
+      licenses: licenseRows,
     }
   })
 }

@@ -75,8 +75,10 @@ class ApiClient {
     return this.request<{ states: Array<{
       code: string
       name: string
-      lastUpdated: string
-      categories: string[]
+      agencyName: string | null
+      agencyUrl: string | null
+      regulationsUrl: string | null
+      licenseUrl: string | null
     }> }>('/api/regulations/states')
   }
 
@@ -84,21 +86,75 @@ class ApiClient {
     category?: string
     species?: string
   }) {
-    return this.request(`/api/regulations/${stateCode}`, { params: options })
+    return this.request<{
+      state: {
+        code: string
+        name: string
+        agencyName: string | null
+        agencyUrl: string | null
+        regulationsUrl: string | null
+        licenseUrl: string | null
+        lastScraped: string | null
+      }
+      regulations: Array<{
+        id: string
+        category: string
+        title: string
+        content: string
+        summary: string | null
+        seasonYear: number | null
+        effectiveDate: string | null
+        expirationDate: string | null
+        sourceUrl: string | null
+        metadata: unknown
+      }>
+    }>(`/api/regulations/${stateCode}`, { params: options })
   }
 
   async getStateSeasons(stateCode: string, options?: {
     year?: number
     species?: string
   }) {
-    return this.request(`/api/regulations/${stateCode}/seasons`, { params: options })
+    return this.request<{
+      state: string
+      year: number
+      seasons: Array<{
+        id: string
+        name: string
+        seasonType: string | null
+        startDate: string
+        endDate: string
+        year: number
+        bagLimit: unknown
+        shootingHours: unknown
+        restrictions: string | null
+        units: unknown
+        sourceUrl: string | null
+        speciesId: string
+      }>
+    }>(`/api/regulations/${stateCode}/seasons`, { params: options })
   }
 
   async getStateLicenses(stateCode: string, options?: {
     resident?: boolean
-    species?: string
+    type?: string
   }) {
-    return this.request(`/api/regulations/${stateCode}/licenses`, { params: options })
+    return this.request<{
+      state: string
+      licenses: Array<{
+        id: string
+        name: string
+        licenseType: string
+        description: string | null
+        isResidentOnly: boolean | null
+        priceResident: number | null
+        priceNonResident: number | null
+        validFor: unknown
+        requirements: unknown
+        applicationDeadline: string | null
+        purchaseUrl: string | null
+      }>
+    }>(`/api/regulations/${stateCode}/licenses`, { params: options })
   }
 
   // Species
