@@ -92,10 +92,13 @@ class TexasRegulationsSpider(StateRegulationsSpider):
     state_name = "Texas"
 
     start_urls = [
-        # Outdoor Annual - migratory game birds (waterfowl, doves)
-        "https://tpwd.texas.gov/regulations/outdoor-annual/hunting/migratory-game-birds",
-        # Waterfowl-specific pages
-        "https://tpwd.texas.gov/regulations/outdoor-annual/hunting/migratory-game-birds/waterfowl",
+        # Outdoor Annual - migratory game bird regulations (restructured 2025)
+        "https://tpwd.texas.gov/regulations/outdoor-annual/hunting/migratory-game-bird-regulations",
+        # Species-specific waterfowl pages
+        "https://tpwd.texas.gov/regulations/outdoor-annual/regs/animals/duck",
+        "https://tpwd.texas.gov/regulations/outdoor-annual/regs/animals/goose",
+        # Stamps, permits, and certification
+        "https://tpwd.texas.gov/regulations/outdoor-annual/hunting/migratory-game-bird-regulations/stamps-permits-and-certification",
         # Licenses
         "https://tpwd.texas.gov/regulations/outdoor-annual/licenses",
     ]
@@ -196,13 +199,12 @@ class ArkansasRegulationsSpider(StateRegulationsSpider):
     state_name = "Arkansas"
 
     start_urls = [
-        # Main hunting regulations
-        "https://www.agfc.com/en/hunting/regulations/",
-        # Migratory birds / waterfowl
-        "https://www.agfc.com/en/hunting/migratory-birds/",
-        "https://www.agfc.com/en/hunting/migratory-birds/waterfowl/",
-        # Licensing
-        "https://www.agfc.com/en/licensing/",
+        # Main regulations (AGFC dropped /en/ prefix)
+        "https://www.agfc.com/regulations/",
+        # Waterfowl hunting
+        "https://www.agfc.com/hunting/waterfowl/",
+        # Waterfowl dates, rules, and regulations
+        "https://www.agfc.com/hunting/waterfowl/waterfowl-dates-rules-regulations/",
     ]
 
     def parse(self, response: Response) -> Generator[Any, None, None]:
@@ -231,7 +233,7 @@ class ArkansasRegulationsSpider(StateRegulationsSpider):
             'a[href*="waterfowl"]::attr(href), '
             'a[href*="migratory"]::attr(href), '
             'a[href*="regulations"]::attr(href), '
-            'a[href*="licensing"]::attr(href)'
+            'a[href*="hunting"]::attr(href)'
         ).getall()
 
         seen = set()
@@ -306,8 +308,9 @@ class NewMexicoRegulationsSpider(StateRegulationsSpider):
     state_name = "New Mexico"
 
     start_urls = [
-        "https://www.wildlife.state.nm.us/hunting/regulations-and-rules/",
-        "https://www.wildlife.state.nm.us/hunting/waterfowl/",
+        # NM Game & Fish migrated to new domain
+        "https://wildlife.dgf.nm.gov/hunting/",
+        "https://wildlife.dgf.nm.gov/hunting/information-by-animal/migratory-bird/",
     ]
 
 
@@ -348,8 +351,10 @@ class KansasRegulationsSpider(StateRegulationsSpider):
     state_name = "Kansas"
 
     start_urls = [
-        "https://ksoutdoors.com/Hunting/Migratory-Birds",
-        "https://ksoutdoors.com/Hunting/Migratory-Birds/Waterfowl",
+        # KS migrated from .com to .gov
+        "https://ksoutdoors.gov/Hunting/Migratory-Birds",
+        "https://ksoutdoors.gov/Hunting/Migratory-Birds/Ducks",
+        "https://ksoutdoors.gov/Hunting/Migratory-Birds/Geese/REGULATIONS",
     ]
 
 
@@ -368,8 +373,10 @@ class OklahomaRegulationsSpider(StateRegulationsSpider):
     state_name = "Oklahoma"
 
     start_urls = [
-        "https://www.wildlifedepartment.com/hunting/migratory-birds",
-        "https://www.wildlifedepartment.com/hunting/migratory-birds/waterfowl",
+        # OK restructured hunting URLs
+        "https://www.wildlifedepartment.com/hunting/regs/migratory-game-bird-regulations",
+        "https://www.wildlifedepartment.com/hunting/resources/waterfowl",
+        "https://www.wildlifedepartment.com/hunting/seasons",
     ]
 
 
