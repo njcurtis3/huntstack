@@ -73,7 +73,7 @@ export function ChatPage() {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
         content: error instanceof Error && error.message.includes('503')
-          ? 'The AI service is not configured yet. Please set the ANTHROPIC_API_KEY in your .env file to enable the chat assistant.'
+          ? 'The AI service is not configured yet. Please set the TOGETHER_API_KEY in your .env file to enable the chat assistant.'
           : 'Sorry, something went wrong. Please try again.',
         timestamp: new Date(),
       }

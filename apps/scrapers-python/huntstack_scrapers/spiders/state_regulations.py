@@ -330,8 +330,12 @@ class LouisianaRegulationsSpider(StateRegulationsSpider):
     state_name = "Louisiana"
 
     start_urls = [
-        "https://www.wlf.louisiana.gov/page/hunting-regulations",
-        "https://www.wlf.louisiana.gov/page/waterfowl-seasons",
+        # LDWF restructured URLs
+        "https://www.wlf.louisiana.gov/page/seasons-and-regulations",
+        "https://www.wlf.louisiana.gov/species",
+        "https://www.wlf.louisiana.gov/page/wmas-refuges-and-conservation-areas",
+        "https://www.wlf.louisiana.gov/page/hunting-licenses-permits-tags",
+        "https://www.wlf.louisiana.gov/page/wmarefugeconservation-area-licenses-and-permits",
     ]
 
 
