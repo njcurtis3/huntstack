@@ -47,4 +47,4 @@ FEED_EXPORT_ENCODING = "utf-8"
 import os
 DATABASE_URL = os.getenv("DATABASE_URL")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")

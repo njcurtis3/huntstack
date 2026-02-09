@@ -2,7 +2,8 @@ import { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { ilike, or, eq, and, sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
-import { regulations, species, states, locations, seasons } from '@huntstack/db/schema'
+import { isConfigured, generateEmbedding } from '../lib/together.js'
+import { regulations, species, states, locations } from '@huntstack/db/schema'
 
 const searchQuerySchema = z.object({
   q: z.string().min(1).max(500),
@@ -171,7 +172,7 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
     }
   })
 
-  // Semantic search using RAG (placeholder - needs pgvector + embeddings)
+  // Semantic search using vector embeddings (Together.ai + pgvector)
   app.post('/semantic', {
     schema: {
       tags: ['search'],
@@ -194,18 +195,61 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
         },
       },
     },
-  }, async (request) => {
+  }, async (request, reply) => {
     const { query, limit = 10 } = request.body as { query: string; limit?: number }
 
-    // TODO: Implement when pgvector embeddings are populated
-    // 1. Generate embedding for query using OpenAI
-    // 2. Query pgvector for similar document_chunks
-    // 3. Return ranked results with source attribution
+    if (!isConfigured()) {
+      return reply.status(503).send({
+        error: true,
+        message: 'AI service not configured. Please set TOGETHER_API_KEY.',
+      })
+    }
 
-    return {
-      results: [],
-      query,
-      limit,
+    try {
+      const queryEmbedding = await generateEmbedding(query)
+      const db = getDb()
+
+      const results = await db.execute(sql`
+        SELECT
+          dc.content,
+          d.title,
+          d.source_url,
+          d.document_type,
+          d.metadata AS doc_metadata,
+          1 - (dc.embedding <=> ${JSON.stringify(queryEmbedding)}::vector) AS similarity
+        FROM document_chunks dc
+        JOIN documents d ON dc.document_id = d.id
+        WHERE dc.embedding IS NOT NULL
+        ORDER BY dc.embedding <=> ${JSON.stringify(queryEmbedding)}::vector
+        LIMIT ${limit}
+      `)
+
+      const rows = results as unknown as Array<{
+        content: string
+        title: string
+        source_url: string | null
+        document_type: string
+        doc_metadata: Record<string, unknown> | null
+        similarity: number
+      }>
+
+      return {
+        results: rows.filter(r => r.similarity > 0.3).map(r => ({
+          content: r.content,
+          title: r.title,
+          sourceUrl: r.source_url,
+          documentType: r.document_type,
+          similarity: r.similarity,
+          metadata: r.doc_metadata,
+        })),
+        query,
+      }
+    } catch (error) {
+      app.log.error(error)
+      return {
+        results: [],
+        query,
+      }
     }
   })
 }

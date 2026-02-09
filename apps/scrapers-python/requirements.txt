@@ -19,8 +19,8 @@ sqlalchemy>=2.0.0
 redis>=5.0.0
 rq>=1.16.0
 
-# AI/Embeddings
-openai>=1.35.0
+# AI/Embeddings (Together.ai - uses requests for HTTP calls)
+# No extra SDK needed - uses requests which is already listed below
 
 # Utilities
 python-dotenv>=1.0.0
