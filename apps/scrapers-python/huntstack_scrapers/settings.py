@@ -45,6 +45,12 @@ FEED_EXPORT_ENCODING = "utf-8"
 
 # Database connection (from environment)
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env from project root
+load_dotenv(Path(__file__).resolve().parents[3] / ".env")
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 TOGETHER_API_KEY = os.getenv("TOGETHER_API_KEY")

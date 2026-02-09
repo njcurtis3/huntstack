@@ -45,13 +45,11 @@ export function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 md:py-32">
           <div className="max-w-3xl">
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight">
-              Your Complete Hunting
-              <span className="text-forest-300"> Information Hub</span>
+              Pre-hunt intelligence
+              <span className="text-forest-300">.</span>
             </h1>
             <p className="mt-6 text-lg md:text-xl text-forest-100 leading-relaxed">
-              Access comprehensive data on hunting regulations, migratory bird tracking, 
-              public lands, and outfitters across all 50 states. Plan your perfect hunt 
-              with AI-powered search.
+              The open data and AI platform for modern hunters and outfitters.
             </p>
             <div className="mt-10 flex flex-col sm:flex-row gap-4">
               <Link to="/search" className="btn-primary text-base px-6 py-3">
@@ -70,9 +68,9 @@ export function HomePage() {
       <section className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-gray-900">Everything You Need to Plan Your Hunt</h2>
+            <h2 className="text-3xl font-bold text-gray-900">Plan Your Hunt</h2>
             <p className="mt-4 text-lg text-gray-600 max-w-2xl mx-auto">
-              From regulations to maps to AI-powered answers, we've got you covered.
+              Search. Maps. Regulations. AI Assistant. For all 50 US states
             </p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
