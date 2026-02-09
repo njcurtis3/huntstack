@@ -55,3 +55,7 @@ httpcache/
 # Secrets
 *.pem
 *.key
+
+# claude
+plans/
+claude.md
