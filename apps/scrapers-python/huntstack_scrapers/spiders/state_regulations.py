@@ -309,8 +309,13 @@ class NewMexicoRegulationsSpider(StateRegulationsSpider):
 
     start_urls = [
         # NM Game & Fish migrated to new domain
+        "https://wildlife.dgf.nm.gov/",
         "https://wildlife.dgf.nm.gov/hunting/",
+        "https://wildlife.dgf.nm.gov/home/publications/",
+        "https://wildlife.dgf.nm.gov/hunting/applications-and-draw-information/",
+        "https://wildlife.dgf.nm.gov/hunting/maps/",
         "https://wildlife.dgf.nm.gov/hunting/information-by-animal/migratory-bird/",
+        "https://wildlife.dgf.nm.gov/hunting/harvest-reporting-information/",
     ]
 
 
