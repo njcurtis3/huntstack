@@ -224,6 +224,30 @@ export const locations = pgTable('locations', {
 }))
 
 // ============================================
+// REFUGE BIRD COUNTS (Migration Intelligence)
+// ============================================
+
+export const refugeCounts = pgTable('refuge_counts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  locationId: uuid('location_id').notNull().references(() => locations.id),
+  speciesId: uuid('species_id').notNull().references(() => species.id),
+  surveyDate: timestamp('survey_date').notNull(),
+  count: integer('count').notNull(),
+  surveyType: varchar('survey_type', { length: 30 }).notNull().default('weekly'), // 'weekly' | 'mwi_annual'
+  sourceUrl: text('source_url'),
+  observers: text('observers'),
+  notes: text('notes'),
+  metadata: jsonb('metadata'), // weather conditions, survey method, etc.
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+  locationIdx: index('rc_location_idx').on(table.locationId),
+  speciesIdx: index('rc_species_idx').on(table.speciesId),
+  dateIdx: index('rc_date_idx').on(table.surveyDate),
+  locationDateIdx: index('rc_loc_date_idx').on(table.locationId, table.surveyDate),
+  uniqueSurvey: uniqueIndex('rc_unique_idx').on(table.locationId, table.speciesId, table.surveyDate, table.surveyType),
+}))
+
+// ============================================
 // DOCUMENTS (for RAG)
 // ============================================
 
@@ -285,6 +309,7 @@ export const speciesRelations = relations(species, ({ many }) => ({
   regulations: many(regulations),
   seasons: many(seasons),
   documents: many(documents),
+  refugeCounts: many(refugeCounts),
 }))
 
 export const regulationsRelations = relations(regulations, ({ one }) => ({
@@ -335,10 +360,22 @@ export const reviewsRelations = relations(reviews, ({ one }) => ({
   }),
 }))
 
-export const locationsRelations = relations(locations, ({ one }) => ({
+export const locationsRelations = relations(locations, ({ one, many }) => ({
   state: one(states, {
     fields: [locations.stateId],
     references: [states.id],
+  }),
+  refugeCounts: many(refugeCounts),
+}))
+
+export const refugeCountsRelations = relations(refugeCounts, ({ one }) => ({
+  location: one(locations, {
+    fields: [refugeCounts.locationId],
+    references: [locations.id],
+  }),
+  species: one(species, {
+    fields: [refugeCounts.speciesId],
+    references: [species.id],
   }),
 }))
 

@@ -10,6 +10,8 @@ import pdfplumber
 from io import BytesIO
 from datetime import datetime
 
+from huntstack_scrapers.species_mapping import resolve_species_slug
+
 
 class DatabasePipeline:
     """Pipeline to store scraped items in PostgreSQL."""
@@ -18,6 +20,8 @@ class DatabasePipeline:
         self.db_url = os.getenv("DATABASE_URL")
         self.conn = None
         self.state_id_map = {}  # state_code -> state_id
+        self.species_map = {}  # species_slug -> species_id
+        self.location_map = {}  # refuge_name -> location_id
 
     def open_spider(self, spider):
         """Connect to database when spider opens."""
@@ -31,6 +35,24 @@ class DatabasePipeline:
                 for code, state_id in cur.fetchall():
                     self.state_id_map[code] = str(state_id)
             spider.logger.info(f"Loaded {len(self.state_id_map)} state mappings")
+
+            # Load species slug -> id mapping
+            with self.conn.cursor() as cur:
+                cur.execute("SELECT slug, id FROM species")
+                for slug, sp_id in cur.fetchall():
+                    self.species_map[slug] = str(sp_id)
+            spider.logger.info(f"Loaded {len(self.species_map)} species mappings")
+
+            # Load refuge location name -> id mapping
+            with self.conn.cursor() as cur:
+                cur.execute("""
+                    SELECT name, id FROM locations
+                    WHERE location_type = 'wildlife_refuge'
+                      AND name NOT LIKE '%% - Statewide MWI'
+                """)
+                for name, loc_id in cur.fetchall():
+                    self.location_map[name] = str(loc_id)
+            spider.logger.info(f"Loaded {len(self.location_map)} refuge location mappings")
         else:
             spider.logger.warning("DATABASE_URL not set, items will not be stored")
 
@@ -52,6 +74,8 @@ class DatabasePipeline:
             self._process_page(item, spider)
         elif item_type == "regulation":
             self._process_regulation(item, spider)
+        elif item_type == "refuge_count":
+            self._process_refuge_count(item, spider)
 
         return item
 
@@ -157,6 +181,68 @@ class DatabasePipeline:
 
         except Exception as e:
             spider.logger.error(f"Error storing regulation: {e}")
+
+    def _process_refuge_count(self, item: dict, spider):
+        """Store weekly refuge survey counts in refuge_counts table."""
+        try:
+            refuge_name = item.get("refuge_name")
+            location_id = self.location_map.get(refuge_name)
+            if not location_id:
+                spider.logger.warning(f"No location_id found for refuge: {refuge_name}")
+                return
+
+            survey_date = item.get("survey_date")
+            species_counts = item.get("species_counts", {})
+            observers = item.get("observers")
+            source_url = item.get("source_url")
+            inserted = 0
+
+            for species_name, count in species_counts.items():
+                slug = resolve_species_slug(species_name)
+                if slug is None:
+                    continue
+
+                species_id = self.species_map.get(slug)
+                if not species_id:
+                    spider.logger.debug(f"Species slug '{slug}' not in DB, skipping")
+                    continue
+
+                with self.conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO refuge_counts
+                            (location_id, species_id, survey_date, count, survey_type,
+                             source_url, observers, notes, metadata)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                        ON CONFLICT (location_id, species_id, survey_date, survey_type)
+                        DO UPDATE SET count = EXCLUDED.count,
+                                     observers = EXCLUDED.observers,
+                                     source_url = EXCLUDED.source_url
+                    """, (
+                        location_id,
+                        species_id,
+                        survey_date,
+                        count,
+                        "weekly",
+                        source_url,
+                        observers,
+                        None,
+                        json.dumps({
+                            "scraped_at": item.get("scraped_at"),
+                            "raw_species_name": species_name,
+                        }),
+                    ))
+                    inserted += 1
+
+            self.conn.commit()
+            spider.logger.info(
+                f"Stored {inserted} species counts for {refuge_name} "
+                f"(date: {survey_date})"
+            )
+
+        except Exception as e:
+            spider.logger.error(f"Error storing refuge count: {e}")
+            if self.conn:
+                self.conn.rollback()
 
 
 TOGETHER_API_URL = "https://api.together.xyz/v1/embeddings"

@@ -5,7 +5,8 @@
       "Bash(npx tsx:*)",
       "WebFetch(domain:wildlife.dgf.nm.gov)",
       "WebFetch(domain:www.agfc.com)",
-      "Bash(python -m scrapy crawl:*)"
+      "Bash(python -m scrapy crawl:*)",
+      "WebFetch(domain:www.fws.gov)"
     ]
   }
 }

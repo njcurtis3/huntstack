@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, desc, sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
-import { species, regulations, seasons, states } from '@huntstack/db/schema'
+import { species, regulations, seasons, states, locations, refugeCounts } from '@huntstack/db/schema'
 
 export const speciesRoutes: FastifyPluginAsync = async (app) => {
   // List all species
@@ -221,15 +221,62 @@ export const speciesRoutes: FastifyPluginAsync = async (app) => {
     const allFlyways = (sp.flyways as string[]) || []
     const filteredFlyways = flyway ? allFlyways.filter(f => f === flyway) : allFlyways
 
-    // Migration data will come from external sources (eBird, refuge counts) in V1
-    // For now return the species flyway info from the DB
+    // Current locations: latest refuge counts for this species
+    const currentRows = await db
+      .select({
+        refugeName: locations.name,
+        stateCode: states.code,
+        count: refugeCounts.count,
+        surveyDate: refugeCounts.surveyDate,
+        surveyType: refugeCounts.surveyType,
+        centerPoint: locations.centerPoint,
+        locationMetadata: locations.metadata,
+      })
+      .from(refugeCounts)
+      .innerJoin(locations, eq(refugeCounts.locationId, locations.id))
+      .innerJoin(states, eq(locations.stateId, states.id))
+      .where(and(
+        eq(refugeCounts.speciesId, sp.id),
+        sql`${locations.name} NOT LIKE '% - Statewide MWI'`,
+      ))
+      .orderBy(desc(refugeCounts.surveyDate))
+      .limit(50)
+
+    let currentLocations = currentRows.map(r => ({
+      refugeName: r.refugeName,
+      state: r.stateCode,
+      count: r.count,
+      surveyDate: r.surveyDate,
+      surveyType: r.surveyType,
+      centerPoint: r.centerPoint,
+      flyway: (r.locationMetadata as Record<string, unknown> | null)?.flyway || null,
+    }))
+
+    if (flyway) {
+      currentLocations = currentLocations.filter(r => r.flyway === flyway)
+    }
+
+    // Historical patterns: MWI annual data grouped by year and state
+    const historicalRows = await db.execute(sql`
+      SELECT
+        EXTRACT(YEAR FROM rc.survey_date)::integer as year,
+        s.code as state_code,
+        SUM(rc.count) as total_count
+      FROM refuge_counts rc
+      JOIN locations l ON rc.location_id = l.id
+      JOIN states s ON l.state_id = s.id
+      WHERE rc.species_id = ${sp.id}
+        AND rc.survey_type = 'mwi_annual'
+      GROUP BY EXTRACT(YEAR FROM rc.survey_date), s.code
+      ORDER BY year, s.code
+    `)
+
     return {
       speciesSlug: id,
       isMigratory: true,
       flyways: filteredFlyways,
-      // These will be populated when refuge count ingestion is built
-      currentLocations: [],
-      historicalPatterns: [],
+      currentLocations,
+      historicalPatterns: historicalRows as unknown as Array<Record<string, unknown>>,
     }
   })
 }

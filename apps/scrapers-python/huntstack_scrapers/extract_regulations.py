@@ -40,37 +40,7 @@ V1_STATES = ["TX", "AR", "NM", "LA", "KS", "OK"]
 # SPECIES ALIAS MAPPING
 # ============================================
 
-SPECIES_ALIASES = {
-    "duck": "mallard",
-    "ducks": "mallard",
-    "mallard": "mallard",
-    "mallards": "mallard",
-    "teal": "green-winged-teal",
-    "green-winged teal": "green-winged-teal",
-    "blue-winged teal": "blue-winged-teal",
-    "cinnamon teal": "green-winged-teal",
-    "pintail": "pintail",
-    "northern pintail": "pintail",
-    "wood duck": "wood-duck",
-    "redhead": "mallard",
-    "canvasback": "mallard",
-    "scaup": "mallard",
-    "snow goose": "snow-goose",
-    "snow geese": "snow-goose",
-    "light goose": "snow-goose",
-    "light geese": "snow-goose",
-    "blue goose": "snow-goose",
-    "ross goose": "ross-goose",
-    "ross's goose": "ross-goose",
-    "canada goose": "canada-goose",
-    "canada geese": "canada-goose",
-    "dark goose": "canada-goose",
-    "dark geese": "canada-goose",
-    "white-fronted goose": "white-fronted-goose",
-    "greater white-fronted goose": "white-fronted-goose",
-    "specklebelly": "white-fronted-goose",
-    "speck": "white-fronted-goose",
-}
+from huntstack_scrapers.species_mapping import SPECIES_ALIASES
 
 
 # ============================================
