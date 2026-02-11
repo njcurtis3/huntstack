@@ -17,6 +17,7 @@ class DatabasePipeline:
     def __init__(self):
         self.db_url = os.getenv("DATABASE_URL")
         self.conn = None
+        self.state_id_map = {}  # state_code -> state_id
 
     def open_spider(self, spider):
         """Connect to database when spider opens."""
@@ -24,6 +25,12 @@ class DatabasePipeline:
             import psycopg2
             self.conn = psycopg2.connect(self.db_url)
             spider.logger.info("Connected to database")
+            # Load state_code -> state_id mapping
+            with self.conn.cursor() as cur:
+                cur.execute("SELECT code, id FROM states")
+                for code, state_id in cur.fetchall():
+                    self.state_id_map[code] = str(state_id)
+            spider.logger.info(f"Loaded {len(self.state_id_map)} state mappings")
         else:
             spider.logger.warning("DATABASE_URL not set, items will not be stored")
 
@@ -66,10 +73,12 @@ class DatabasePipeline:
             full_text = "\n\n".join(text_content)
 
             # Store in documents table
+            state_code = item.get("state_code")
+            state_id = self.state_id_map.get(state_code)
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO documents (title, content, document_type, source_url, source_type, metadata)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO documents (title, content, document_type, source_url, source_type, state_id, metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT DO NOTHING
                     RETURNING id
                 """, (
@@ -78,8 +87,9 @@ class DatabasePipeline:
                     "regulation",
                     item.get("url"),
                     "state_agency",
+                    state_id,
                     json.dumps({
-                        "state_code": item.get("state_code"),
+                        "state_code": state_code,
                         "source_page": item.get("source_page"),
                         "scraped_at": item.get("scraped_at"),
                         "page_count": len(text_content),
@@ -95,10 +105,12 @@ class DatabasePipeline:
     def _process_page(self, item: dict, spider):
         """Store page content."""
         try:
+            state_code = item.get("state_code")
+            state_id = self.state_id_map.get(state_code)
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO documents (title, content, document_type, source_url, source_type, metadata)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO documents (title, content, document_type, source_url, source_type, state_id, metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT DO NOTHING
                 """, (
                     item.get("title", "Web Page"),
@@ -106,8 +118,9 @@ class DatabasePipeline:
                     "page",
                     item.get("url"),
                     "state_agency",
+                    state_id,
                     json.dumps({
-                        "state_code": item.get("state_code"),
+                        "state_code": state_code,
                         "scraped_at": item.get("scraped_at"),
                     })
                 ))
@@ -121,10 +134,12 @@ class DatabasePipeline:
     def _process_regulation(self, item: dict, spider):
         """Store regulation content."""
         try:
+            state_code = item.get("state_code")
+            state_id = self.state_id_map.get(state_code)
             with self.conn.cursor() as cur:
                 cur.execute("""
-                    INSERT INTO documents (title, content, document_type, source_url, source_type, metadata)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO documents (title, content, document_type, source_url, source_type, state_id, metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT DO NOTHING
                 """, (
                     item.get("title", "Regulation"),
@@ -132,8 +147,9 @@ class DatabasePipeline:
                     "regulation",
                     item.get("url"),
                     "state_agency",
+                    state_id,
                     json.dumps({
-                        "state_code": item.get("state_code"),
+                        "state_code": state_code,
                         "scraped_at": item.get("scraped_at"),
                     })
                 ))
