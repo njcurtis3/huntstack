@@ -1,17 +1,18 @@
-# huntstack
+# huntstack 
+🦆🦌
 
-> Your comprehensive hunting information platform
+> Pre-hunt intelligence
 
 **huntstack** aggregates hunting regulations, season dates, license requirements, public land maps, and outfitter listings across all 50 states. Features AI-powered natural language search using RAG (Retrieval-Augmented Generation).
 
 ## Features
 
-- 🦌 **Big Game Hunting** - Regulations, seasons, and draw information for elk, deer, and more
-- 🦆 **Migratory Bird Tracking** - Real-time migration data and flyway information
-- 📋 **Regulations Database** - Current hunting regulations from all 50 states
-- 🗺️ **Interactive Maps** - Public lands, hunting units, and access points
-- 🏕️ **Outfitter Directory** - Verified guides and outfitters
-- 🤖 **AI Assistant** - Ask questions in natural language
+- **Big Game Hunting** - Regulations, seasons, and draw information for elk, deer, and more
+- **Migratory Bird Tracking** - Real-time migration data and flyway information
+- **Regulations Database** - Current hunting regulations from all 50 states
+- **Interactive Maps** - Public lands, hunting units, and access points
+- **Outfitter Directory** - Verified guides and outfitters
+- **AI Assistant** - Ask questions in natural language
 
 ## Tech Stack
 
@@ -21,8 +22,8 @@
 | Backend | Fastify, TypeScript, Drizzle ORM |
 | Database | Supabase (PostgreSQL + PostGIS + pgvector) |
 | Auth | Supabase Auth |
-| LLM | Claude API (Anthropic) |
-| Embeddings | OpenAI text-embedding-3-small |
+| LLM | Meta-Llama-3.1-8B-Instruct-Turbo |
+| Embeddings | bge-base-en-v1.5 |
 | Scrapers | Node.js (Cheerio, Playwright) + Python (Scrapy, pdfplumber) |
 | Queue | BullMQ + Redis |
 
@@ -116,9 +117,9 @@ When the API is running, Swagger docs are available at:
 2. Create an API key
 3. Add to `.env` as `VITE_MAPTILER_KEY`
 
-### Anthropic & OpenAI
+### Together.ai hosted models
 
-1. Get API keys from [Anthropic](https://console.anthropic.com/) and [OpenAI](https://platform.openai.com/)
+1. Get API keys from together.ai
 2. Add to `.env`
 
 ## Deployment
