@@ -195,6 +195,7 @@ class DatabasePipeline:
             species_counts = item.get("species_counts", {})
             observers = item.get("observers")
             source_url = item.get("source_url")
+            survey_type = item.get("survey_type", "weekly")
             inserted = 0
 
             for species_name, count in species_counts.items():
@@ -222,7 +223,7 @@ class DatabasePipeline:
                         species_id,
                         survey_date,
                         count,
-                        "weekly",
+                        survey_type,
                         source_url,
                         observers,
                         None,

@@ -6,7 +6,13 @@
       "WebFetch(domain:wildlife.dgf.nm.gov)",
       "WebFetch(domain:www.agfc.com)",
       "Bash(python -m scrapy crawl:*)",
-      "WebFetch(domain:www.fws.gov)"
+      "WebFetch(domain:www.fws.gov)",
+      "WebFetch(domain:www.wildlifedepartment.com)",
+      "WebFetch(domain:migrationstationusa.com)",
+      "WebFetch(domain:migbirdapps.fws.gov)",
+      "Bash(pnpm build:api:*)",
+      "Bash(timeout:*)",
+      "Bash(curl:*)"
     ]
   }
 }

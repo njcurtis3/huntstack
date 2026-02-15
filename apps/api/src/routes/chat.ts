@@ -3,6 +3,64 @@ import { isConfigured, generateEmbedding, generateChatResponse } from '../lib/to
 import { getDb } from '../lib/db.js'
 import { sql } from 'drizzle-orm'
 
+// ─── Entity aliases for query matching ───────────────────────────────────────
+
+const STATE_ALIASES: Record<string, string> = {
+  texas: 'TX', tx: 'TX',
+  arkansas: 'AR', ar: 'AR',
+  louisiana: 'LA', la: 'LA',
+  'new mexico': 'NM', nm: 'NM',
+  kansas: 'KS', ks: 'KS',
+  oklahoma: 'OK', ok: 'OK',
+  colorado: 'CO', co: 'CO',
+  missouri: 'MO', mo: 'MO',
+  montana: 'MT', mt: 'MT',
+  wyoming: 'WY', wy: 'WY',
+}
+
+const SPECIES_ALIASES: Record<string, string> = {
+  mallard: 'mallard', mallards: 'mallard',
+  pintail: 'pintail', pintails: 'pintail', 'northern pintail': 'pintail',
+  'green-winged teal': 'green-winged-teal', 'greenwing': 'green-winged-teal', 'gw teal': 'green-winged-teal',
+  'blue-winged teal': 'blue-winged-teal', 'bluewing': 'blue-winged-teal', 'bw teal': 'blue-winged-teal',
+  'snow goose': 'snow-goose', 'snow geese': 'snow-goose', 'light goose': 'snow-goose', 'light geese': 'snow-goose',
+  'canada goose': 'canada-goose', 'canada geese': 'canada-goose', 'honker': 'canada-goose', 'honkers': 'canada-goose',
+  'ross goose': 'ross-goose', "ross's goose": 'ross-goose', 'ross geese': 'ross-goose',
+  'white-fronted goose': 'white-fronted-goose', 'specklebelly': 'white-fronted-goose', 'speck': 'white-fronted-goose', 'specks': 'white-fronted-goose',
+  'wood duck': 'wood-duck', 'woodie': 'wood-duck', 'woodies': 'wood-duck',
+  elk: 'elk',
+  'mule deer': 'mule-deer', 'muley': 'mule-deer', 'muleys': 'mule-deer',
+  'whitetail': 'whitetail-deer', 'white-tailed deer': 'whitetail-deer', 'whitetail deer': 'whitetail-deer',
+  pronghorn: 'pronghorn', antelope: 'pronghorn',
+  'black bear': 'black-bear', bear: 'black-bear',
+  turkey: 'wild-turkey', 'wild turkey': 'wild-turkey',
+  quail: 'northern-bobwhite-quail', bobwhite: 'northern-bobwhite-quail',
+  pheasant: 'ring-necked-pheasant', 'ring-necked pheasant': 'ring-necked-pheasant',
+}
+
+// Broad category keywords that indicate waterfowl interest
+const WATERFOWL_KEYWORDS = ['duck', 'ducks', 'goose', 'geese', 'waterfowl', 'teal']
+const MIGRATION_KEYWORDS = ['migration', 'migrating', 'flying', 'counts', 'refuge', 'survey', 'birds moving', 'what\'s flying']
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface ExtractedEntities {
+  stateCodes: string[]
+  speciesSlugs: string[]
+  isWaterfowl: boolean
+  isMigrationQuery: boolean
+}
+
+interface StructuredContext {
+  seasons: Array<Record<string, unknown>>
+  licenses: Array<Record<string, unknown>>
+  regulations: Array<Record<string, unknown>>
+  refugeCounts: Array<Record<string, unknown>>
+  sources: Array<{ title: string; url?: string; snippet: string }>
+}
+
+// ─── Route handler ───────────────────────────────────────────────────────────
+
 export const chatRoutes: FastifyPluginAsync = async (app) => {
   // Chat completion with RAG
   app.post('/', {
@@ -52,16 +110,37 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
     }
 
     try {
-      // Step 1: Retrieve relevant context using semantic search
-      const context = await retrieveContext(message)
+      // Step 1: Extract entities from the user's query
+      const entities = extractEntities(message)
 
-      // Step 2: Generate response using Together.ai (Llama 3 8B)
-      const systemPrompt = buildSystemPrompt(context)
+      // Step 2: Retrieve context from both sources in parallel
+      const [vectorContext, structuredCtx] = await Promise.all([
+        retrieveContext(message),
+        retrieveStructuredContext(entities),
+      ])
+
+      // Step 3: Build system prompt with both context types
+      const structuredText = formatStructuredContext(structuredCtx)
+      const systemPrompt = buildSystemPrompt(vectorContext, structuredText)
       const responseText = await generateChatResponse(message, systemPrompt)
+
+      // Step 4: Merge sources from both retrievals
+      const allSources = [
+        ...structuredCtx.sources,
+        ...vectorContext.sources,
+      ]
+      // Deduplicate by URL
+      const seen = new Set<string>()
+      const dedupedSources = allSources.filter(s => {
+        const key = s.url || s.title
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
 
       return {
         response: responseText,
-        sources: context.sources,
+        sources: dedupedSources,
         conversationId: conversationId || generateConversationId(),
       }
     } catch (error) {
@@ -97,16 +176,52 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
   })
 }
 
-// Retrieve relevant context from pgvector
+// ─── Entity extraction ───────────────────────────────────────────────────────
+
+function extractEntities(query: string): ExtractedEntities {
+  const lower = query.toLowerCase()
+  const stateCodes = new Set<string>()
+  const speciesSlugs = new Set<string>()
+
+  // Match state names and codes (longer phrases first to avoid false positives)
+  const sortedStateKeys = Object.keys(STATE_ALIASES).sort((a, b) => b.length - a.length)
+  for (const alias of sortedStateKeys) {
+    // Word boundary check: alias must be surrounded by non-letter chars or string edges
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const re = new RegExp(`(?:^|[^a-z])${escaped}(?:$|[^a-z])`)
+    if (re.test(lower)) {
+      stateCodes.add(STATE_ALIASES[alias])
+    }
+  }
+
+  // Match species names and aliases (longer phrases first)
+  const sortedSpeciesKeys = Object.keys(SPECIES_ALIASES).sort((a, b) => b.length - a.length)
+  for (const alias of sortedSpeciesKeys) {
+    if (lower.includes(alias)) {
+      speciesSlugs.add(SPECIES_ALIASES[alias])
+    }
+  }
+
+  // Check for broad category keywords
+  const isWaterfowl = WATERFOWL_KEYWORDS.some(kw => lower.includes(kw)) || speciesSlugs.size > 0
+  const isMigrationQuery = MIGRATION_KEYWORDS.some(kw => lower.includes(kw))
+
+  return {
+    stateCodes: [...stateCodes],
+    speciesSlugs: [...speciesSlugs],
+    isWaterfowl,
+    isMigrationQuery,
+  }
+}
+
+// ─── Vector context retrieval (existing, unchanged) ──────────────────────────
+
 async function retrieveContext(query: string): Promise<{
   documents: Array<{ content: string; metadata: Record<string, unknown> }>
   sources: Array<{ title: string; url?: string; snippet: string }>
 }> {
   try {
-    // Generate embedding for the user's query
     const queryEmbedding = await generateEmbedding(query)
-
-    // Query pgvector for similar document chunks
     const db = getDb()
     const results = await db.execute(sql`
       SELECT
@@ -136,7 +251,6 @@ async function retrieveContext(query: string): Promise<{
       similarity: number
     }>
 
-    // Filter out low-similarity results
     const relevant = rows.filter(r => r.similarity > 0.3)
 
     return {
@@ -157,18 +271,304 @@ async function retrieveContext(query: string): Promise<{
       })),
     }
   } catch (error) {
-    // If embeddings aren't set up yet, return empty context gracefully
     console.error('retrieveContext error:', error)
     return { documents: [], sources: [] }
   }
 }
 
-// Build system prompt with retrieved context
-function buildSystemPrompt(context: {
-  documents: Array<{ content: string; metadata: Record<string, unknown> }>
-  sources: Array<{ title: string; url?: string; snippet: string }>
-}): string {
-  const contextText = context.documents
+// ─── Structured context retrieval (NEW) ──────────────────────────────────────
+
+async function retrieveStructuredContext(entities: ExtractedEntities): Promise<StructuredContext> {
+  const db = getDb()
+  const result: StructuredContext = {
+    seasons: [],
+    licenses: [],
+    regulations: [],
+    refugeCounts: [],
+    sources: [],
+  }
+
+  const { stateCodes, speciesSlugs, isWaterfowl, isMigrationQuery } = entities
+
+  // No entities detected — skip structured queries
+  if (stateCodes.length === 0 && speciesSlugs.length === 0 && !isWaterfowl && !isMigrationQuery) {
+    return result
+  }
+
+  try {
+    const queries: Promise<void>[] = []
+
+    // ── Seasons ──────────────────────────────────────────────────────────
+    if (stateCodes.length > 0 || speciesSlugs.length > 0) {
+      queries.push((async () => {
+        const stateFilter = stateCodes.length > 0
+          ? sql`st.code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})`
+          : sql`TRUE`
+        const speciesFilter = speciesSlugs.length > 0
+          ? sql`sp.slug IN (${sql.join(speciesSlugs.map(s => sql`${s}`), sql`, `)})`
+          : sql`TRUE`
+
+        const rows = await db.execute(sql`
+          SELECT
+            se.name AS season_name,
+            se.season_type,
+            se.start_date,
+            se.end_date,
+            se.year,
+            se.bag_limit,
+            se.shooting_hours,
+            se.restrictions,
+            se.source_url,
+            st.code AS state_code,
+            sp.name AS species_name
+          FROM seasons se
+          JOIN states st ON se.state_id = st.id
+          JOIN species sp ON se.species_id = sp.id
+          WHERE (${stateFilter}) AND (${speciesFilter})
+          ORDER BY se.start_date DESC
+          LIMIT 15
+        `)
+        result.seasons = rows as unknown as Array<Record<string, unknown>>
+
+        // Add source URLs
+        for (const row of result.seasons) {
+          if (row.source_url) {
+            result.sources.push({
+              title: `${row.state_code} ${row.season_name} Season`,
+              url: row.source_url as string,
+              snippet: `${row.species_name} season in ${row.state_code}: ${row.season_name}`,
+            })
+          }
+        }
+      })())
+    }
+
+    // ── Licenses ─────────────────────────────────────────────────────────
+    if (stateCodes.length > 0) {
+      queries.push((async () => {
+        const stateFilter = sql`st.code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})`
+
+        const rows = await db.execute(sql`
+          SELECT
+            l.name AS license_name,
+            l.license_type,
+            l.description,
+            l.price_resident,
+            l.price_non_resident,
+            l.is_resident_only,
+            l.requirements,
+            l.purchase_url,
+            st.code AS state_code
+          FROM licenses l
+          JOIN states st ON l.state_id = st.id
+          WHERE ${stateFilter}
+          ORDER BY l.license_type, l.name
+          LIMIT 15
+        `)
+        result.licenses = rows as unknown as Array<Record<string, unknown>>
+
+        for (const row of result.licenses) {
+          if (row.purchase_url) {
+            result.sources.push({
+              title: `${row.state_code} ${row.license_name}`,
+              url: row.purchase_url as string,
+              snippet: `License: ${row.license_name} in ${row.state_code}`,
+            })
+          }
+        }
+      })())
+    }
+
+    // ── Regulations ──────────────────────────────────────────────────────
+    if (stateCodes.length > 0 || speciesSlugs.length > 0) {
+      queries.push((async () => {
+        const conditions: ReturnType<typeof sql>[] = [sql`r.is_active = true`]
+
+        if (stateCodes.length > 0) {
+          conditions.push(sql`st.code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})`)
+        }
+        if (speciesSlugs.length > 0) {
+          // Filter by waterfowl categories if species are waterfowl
+          conditions.push(sql`(r.category ILIKE '%waterfowl%' OR r.category ILIKE '%migratory%')`)
+        }
+
+        const rows = await db.execute(sql`
+          SELECT
+            r.title,
+            r.summary,
+            r.category,
+            r.source_url,
+            st.code AS state_code
+          FROM regulations r
+          JOIN states st ON r.state_id = st.id
+          WHERE ${sql.join(conditions, sql` AND `)}
+          ORDER BY r.updated_at DESC
+          LIMIT 8
+        `)
+        result.regulations = rows as unknown as Array<Record<string, unknown>>
+
+        for (const row of result.regulations) {
+          if (row.source_url) {
+            result.sources.push({
+              title: `${row.state_code} Regulation: ${row.title}`,
+              url: row.source_url as string,
+              snippet: (row.summary as string || row.title as string).substring(0, 150),
+            })
+          }
+        }
+      })())
+    }
+
+    // ── Refuge Counts (migration data) ───────────────────────────────────
+    if (isMigrationQuery || isWaterfowl || speciesSlugs.length > 0) {
+      queries.push((async () => {
+        const speciesFilter = speciesSlugs.length > 0
+          ? sql`AND sp.slug IN (${sql.join(speciesSlugs.map(s => sql`${s}`), sql`, `)})`
+          : sql``
+
+        const rows = await db.execute(sql`
+          SELECT DISTINCT ON (rc.location_id, rc.species_id)
+            l.name AS refuge_name,
+            st.code AS state_code,
+            sp.name AS species_name,
+            rc.count,
+            rc.survey_date,
+            rc.survey_type,
+            rc.source_url
+          FROM refuge_counts rc
+          JOIN locations l ON rc.location_id = l.id
+          JOIN states st ON l.state_id = st.id
+          JOIN species sp ON rc.species_id = sp.id
+          WHERE l.name NOT LIKE '%% - Statewide MWI'
+            ${speciesFilter}
+          ORDER BY rc.location_id, rc.species_id, rc.survey_date DESC
+          LIMIT 20
+        `)
+        result.refugeCounts = rows as unknown as Array<Record<string, unknown>>
+      })())
+    }
+
+    await Promise.all(queries)
+  } catch (error) {
+    console.error('retrieveStructuredContext error:', error)
+  }
+
+  return result
+}
+
+// ─── Format structured context for LLM ───────────────────────────────────────
+
+function formatStructuredContext(ctx: StructuredContext): string {
+  const sections: string[] = []
+
+  // Seasons
+  if (ctx.seasons.length > 0) {
+    const lines = ctx.seasons.map(s => {
+      const startDate = s.start_date ? new Date(s.start_date as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '?'
+      const endDate = s.end_date ? new Date(s.end_date as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '?'
+      const bag = s.bag_limit ? formatBagLimit(s.bag_limit) : ''
+      const hours = s.shooting_hours ? `, hours: ${formatShootingHours(s.shooting_hours)}` : ''
+      const restrictions = s.restrictions ? `, restrictions: ${(s.restrictions as string).substring(0, 100)}` : ''
+      return `- ${s.state_code} | ${s.species_name}: ${s.season_name} (${startDate} - ${endDate})${bag}${hours}${restrictions}`
+    })
+    sections.push(`## Current Seasons\n${lines.join('\n')}`)
+  }
+
+  // Licenses
+  if (ctx.licenses.length > 0) {
+    const lines = ctx.licenses.map(l => {
+      const res = l.price_resident != null ? `$${Number(l.price_resident).toFixed(2)}` : 'N/A'
+      const nonRes = l.price_non_resident != null ? `$${Number(l.price_non_resident).toFixed(2)}` : 'N/A'
+      const resOnly = l.is_resident_only ? ' (residents only)' : ''
+      const desc = l.description ? ` — ${(l.description as string).substring(0, 80)}` : ''
+      return `- ${l.state_code} | ${l.license_name} [${l.license_type}]: resident ${res}, non-resident ${nonRes}${resOnly}${desc}`
+    })
+    sections.push(`## License Requirements\n${lines.join('\n')}`)
+  }
+
+  // Refuge Counts
+  if (ctx.refugeCounts.length > 0) {
+    // Group by refuge for cleaner display
+    const byRefuge = new Map<string, Array<Record<string, unknown>>>()
+    for (const rc of ctx.refugeCounts) {
+      const key = rc.refuge_name as string
+      if (!byRefuge.has(key)) byRefuge.set(key, [])
+      byRefuge.get(key)!.push(rc)
+    }
+
+    const lines: string[] = []
+    for (const [refuge, counts] of byRefuge) {
+      const stateCode = counts[0].state_code
+      const surveyDate = counts[0].survey_date
+        ? new Date(counts[0].survey_date as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : '?'
+      const speciesList = counts
+        .map(c => `${c.species_name}: ${Number(c.count).toLocaleString()}`)
+        .join(', ')
+      lines.push(`- ${refuge} (${stateCode}, ${surveyDate}): ${speciesList}`)
+    }
+    sections.push(`## Recent Bird Survey Counts\n${lines.join('\n')}`)
+  }
+
+  // Regulations (summaries only — full text is in vector chunks)
+  if (ctx.regulations.length > 0) {
+    const lines = ctx.regulations.map(r => {
+      const summary = (r.summary as string || '').substring(0, 200)
+      return `- ${r.state_code} [${r.category}] ${r.title}${summary ? ': ' + summary : ''}`
+    })
+    sections.push(`## Relevant Regulations\n${lines.join('\n')}`)
+  }
+
+  return sections.join('\n\n')
+}
+
+function formatBagLimit(bagLimit: unknown): string {
+  if (!bagLimit) return ''
+  // Handle string-encoded JSONB (Drizzle double-encoding)
+  let bl: Record<string, unknown>
+  if (typeof bagLimit === 'string') {
+    try { bl = JSON.parse(bagLimit) } catch { return '' }
+  } else if (typeof bagLimit === 'object') {
+    bl = bagLimit as Record<string, unknown>
+  } else {
+    return ''
+  }
+  const fmt = (v: unknown): string => {
+    if (v == null) return 'none'
+    if (typeof v === 'number' || typeof v === 'string') return String(v)
+    return JSON.stringify(v)
+  }
+  const parts: string[] = []
+  if ('daily' in bl) parts.push(`daily: ${fmt(bl.daily)}`)
+  if ('possession' in bl) parts.push(`possession: ${fmt(bl.possession)}`)
+  if ('season' in bl) parts.push(`season: ${fmt(bl.season)}`)
+  return parts.length > 0 ? `, bag limit: ${parts.join(', ')}` : ''
+}
+
+function formatShootingHours(hours: unknown): string {
+  if (!hours) return ''
+  let h: Record<string, unknown>
+  if (typeof hours === 'string') {
+    try { h = JSON.parse(hours) } catch { return hours }
+  } else if (typeof hours === 'object') {
+    h = hours as Record<string, unknown>
+  } else {
+    return String(hours)
+  }
+  if (h.start && h.end) return `${h.start} to ${h.end}`
+  return JSON.stringify(h)
+}
+
+// ─── Build system prompt ─────────────────────────────────────────────────────
+
+function buildSystemPrompt(
+  vectorContext: {
+    documents: Array<{ content: string; metadata: Record<string, unknown> }>
+    sources: Array<{ title: string; url?: string; snippet: string }>
+  },
+  structuredText: string,
+): string {
+  const vectorText = vectorContext.documents
     .map(doc => doc.content)
     .join('\n\n---\n\n')
 
@@ -187,13 +587,18 @@ Important guidelines:
 - Be accurate and specific when citing regulations
 - Always mention which state's regulations you're referencing
 - Be helpful and conversational while remaining informative
+- When providing season dates, bag limits, or license prices, use the STRUCTURED DATA section first — it contains verified, structured records from state agencies
+- When explaining regulations in detail, use the DOCUMENT CONTEXT section for additional details
 
-${contextText ? `Here is relevant information from our database to help answer the user's question:
+${structuredText ? `=== STRUCTURED DATA (verified records from our database) ===
 
-${contextText}
+${structuredText}
 
-Use this information to provide an accurate response. Do not fabricate details not present in the context.` : 'Note: No specific context was retrieved for this query. Provide general guidance and encourage the user to search for specific state regulations.'}
-`
+` : ''}${vectorText ? `=== DOCUMENT CONTEXT (scraped regulation pages and PDFs) ===
+
+${vectorText}
+
+` : ''}${!structuredText && !vectorText ? 'Note: No specific context was retrieved for this query. Provide general guidance and encourage the user to search for specific state regulations.\n' : ''}Use the above information to provide an accurate response. Do not fabricate details not present in the context.`
 }
 
 function generateConversationId(): string {

@@ -104,6 +104,7 @@ REFUGE_SURVEY_MAPPING: dict[str, str | None] = {
     "Snow/Blue/Ross": "snow-goose",
     "Snow Goose": "snow-goose",
     "Ross's Goose": "ross-goose",
+    "Ross\u2019s Goose": "ross-goose",  # curly apostrophe from PDFs
     "Canada Goose": "canada-goose",
     "Canada, Large": "canada-goose",
     "Canada, Small": "canada-goose",
@@ -123,6 +124,25 @@ REFUGE_SURVEY_MAPPING: dict[str, str | None] = {
     "TOTAL GEESE": None,
     "Unidentified": None,
     "Sandhill Crane": None,
+    # Loess Bluffs PDF species — skip for V1
+    "Trumpeter Swan": None,
+    "Tundra Swan": None,
+    "American Wigeon": None,
+    "American Black Duck": None,
+    "Gadwall": None,
+    "Cinnamon Teal": None,
+    "Canvasback": None,
+    "Redhead": None,
+    "Ring-necked Duck": None,
+    "Scaup": None,
+    "Common Goldeneye": None,
+    "Hooded Merganser": None,
+    "Common Merganser": None,
+    "Red-breasted Merganser": None,
+    "Pied-billed Grebe": None,
+    "Horned Grebe": None,
+    "Eared Grebe": None,
+    "American Coot": None,
 }
 
 
