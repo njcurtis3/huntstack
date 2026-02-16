@@ -3,6 +3,7 @@ Scrapy pipelines for processing scraped hunting data.
 """
 
 import os
+import re
 import json
 import requests
 from typing import Any
@@ -11,6 +12,114 @@ from io import BytesIO
 from datetime import datetime
 
 from huntstack_scrapers.species_mapping import resolve_species_slug
+
+
+# ─── Text cleaning for RAG chunks ────────────────────────────────────────────
+
+# JavaScript / CSS patterns that should never appear in regulation text
+_JS_PATTERNS = re.compile(
+    r'querySelector|classList|addEventListener|setAttribute|removeAttribute|'
+    r'\.click\(\)|\.remove\(|\.toggle\(|\.contains\(|\.forEach\(|'
+    r'===|!==|=>|typeof |instanceof |'
+    r'document\.|window\.|console\.|'
+    r'aria-expanded|aria-hidden|aria-label|data-toggle|'
+    r'awb-menu|submenu_|nav-submenu',
+    re.IGNORECASE,
+)
+
+# Common nav/footer words that signal boilerplate (matched as whole line patterns)
+_NAV_WORDS = {
+    'home', 'about', 'about us', 'contact', 'contact us', 'login', 'log in',
+    'sign in', 'sign up', 'register', 'search', 'menu', 'main menu',
+    'skip to content', 'skip to main content', 'skip navigation',
+    'back to top', 'return to top', 'top of page',
+    'privacy policy', 'terms of service', 'terms of use', 'cookie policy',
+    'accessibility', 'sitemap', 'site map',
+    'follow us', 'share this', 'print this page',
+}
+
+_FOOTER_PATTERNS = re.compile(
+    r'©|\bcopyright\b|all rights reserved|'
+    r'\bfollow us on\b|\bshare on\b|'
+    r'\bthis site uses cookies\b|'
+    r'\bpowered by\b',
+    re.IGNORECASE,
+)
+
+_BREADCRUMB_RE = re.compile(r'^[\w\s]+(?:\s*[>»/|]\s*[\w\s]+){2,}$')
+
+
+def clean_text(text: str) -> str:
+    """Strip JavaScript, navigation menus, footers, and other noise from scraped text.
+
+    This runs before chunking to ensure only meaningful regulation/hunting content
+    gets embedded for RAG retrieval.
+    """
+    lines = text.split('\n')
+    cleaned = []
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Skip empty lines (we'll normalize whitespace later)
+        if not stripped:
+            cleaned.append('')
+            continue
+
+        # Skip lines with JavaScript/CSS artifacts
+        if _JS_PATTERNS.search(stripped):
+            continue
+
+        # Skip lines that are just a nav word
+        if stripped.lower() in _NAV_WORDS:
+            continue
+
+        # Skip footer/copyright lines
+        if _FOOTER_PATTERNS.search(stripped):
+            continue
+
+        # Skip breadcrumb-like patterns
+        if _BREADCRUMB_RE.match(stripped):
+            continue
+
+        # Skip lines with very low alpha ratio (>60% symbols/punctuation)
+        alpha_count = sum(1 for c in stripped if c.isalpha())
+        if len(stripped) > 20 and alpha_count < len(stripped) * 0.3:
+            continue
+
+        # Skip lines that look like JS variable declarations
+        if re.match(r'^(var|let|const|function)\s+\w+\s*[=({]', stripped):
+            continue
+
+        cleaned.append(stripped)
+
+    text = '\n'.join(cleaned)
+
+    # Remove sequences of 5+ very short lines (likely nav menu items)
+    # Pattern: 5+ consecutive lines each under 30 chars
+    result_lines = text.split('\n')
+    final = []
+    short_run = []
+    for line in result_lines:
+        if len(line.strip()) < 30 and line.strip():
+            short_run.append(line)
+        else:
+            if len(short_run) < 5:
+                final.extend(short_run)
+            # else: drop the run (it's likely a nav menu)
+            short_run = []
+            final.append(line)
+    if len(short_run) < 5:
+        final.extend(short_run)
+
+    text = '\n'.join(final)
+
+    # Normalize whitespace: collapse 3+ newlines to 2
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    # Collapse runs of spaces
+    text = re.sub(r' {3,}', ' ', text)
+
+    return text.strip()
 
 
 class DatabasePipeline:
@@ -274,8 +383,12 @@ class EmbeddingPipeline:
         if not content or isinstance(content, bytes):
             return item
 
-        # Skip if content is too short
-        if len(content) < 100:
+        # Clean text before chunking — strips JS, nav menus, footers
+        content = clean_text(content)
+
+        # Skip if content is too short after cleaning
+        if len(content) < 200:
+            spider.logger.info(f"Skipping {item.get('url')} — too little content after cleaning")
             return item
 
         try:

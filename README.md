@@ -140,10 +140,6 @@ railway up
 
 See [docs/deployment-aws.md](docs/deployment-aws.md) for production deployment guide.
 
-## License
-
-Private - All rights reserved
-
 ## Acknowledgments
 
 Data sources include:
@@ -151,3 +147,12 @@ Data sources include:
 - State wildlife agencies (CPW, MFWP, TPWD, etc.)
 - eBird (Cornell Lab of Ornithology)
 - USGS, BLM, USFS
+
+## License
+
+**Private**
+
+© 2026 Nathan Curtis. All rights reserved.
+
+This repository is public for viewing purposes only.
+No permission is granted to copy, modify, or redistribute the code without explicit permission.
