@@ -1,10 +1,33 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Loader2, AlertCircle, Bird, X } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
+import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
 import { api } from '../lib/api'
+
+const GEO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json'
+
+const STATE_NAME_TO_CODE: Record<string, string> = {
+  'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR',
+  'California': 'CA', 'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE',
+  'Florida': 'FL', 'Georgia': 'GA', 'Hawaii': 'HI', 'Idaho': 'ID',
+  'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA', 'Kansas': 'KS',
+  'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+  'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS',
+  'Missouri': 'MO', 'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV',
+  'New Hampshire': 'NH', 'New Jersey': 'NJ', 'New Mexico': 'NM', 'New York': 'NY',
+  'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH', 'Oklahoma': 'OK',
+  'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+  'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT',
+  'Vermont': 'VT', 'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV',
+  'Wisconsin': 'WI', 'Wyoming': 'WY', 'District of Columbia': 'DC',
+}
+
+const STATE_CODE_TO_NAME: Record<string, string> = Object.fromEntries(
+  Object.entries(STATE_NAME_TO_CODE).map(([name, code]) => [code, name])
+)
 
 type CurrentCount = {
   refugeId: string
@@ -62,6 +85,7 @@ const STATE_LINE_COLORS = ['#16a34a', '#2563eb', '#dc2626', '#f59e0b', '#8b5cf6'
 export function MigrationPage() {
   const [selectedFlyway, setSelectedFlyway] = useState('')
   const [selectedSpecies, setSelectedSpecies] = useState('')
+  const [selectedState, setSelectedState] = useState('')
 
   const [currentCounts, setCurrentCounts] = useState<CurrentCount[]>([])
   const [historicalTrends, setHistoricalTrends] = useState<HistoricalTrend[]>([])
@@ -123,11 +147,31 @@ export function MigrationPage() {
     }
   }
 
-  // Summary stats
-  const totalBirds = currentCounts.reduce((sum, c) => sum + (c.count || 0), 0)
-  const refugeCount = new Set(currentCounts.map(c => c.refugeName)).size
-  const latestDate = currentCounts.length > 0
-    ? new Date(Math.max(...currentCounts.map(c => new Date(c.surveyDate).getTime())))
+  // Derive available states from data (set of state codes that have counts)
+  const statesWithData = useMemo(() => {
+    return new Set(currentCounts.map(c => c.state))
+  }, [currentCounts])
+
+  const stateOptions = useMemo(() => {
+    return [...statesWithData].sort()
+  }, [statesWithData])
+
+  // Map click handler — toggle state selection
+  const handleMapStateClick = useCallback((stateCode: string) => {
+    setSelectedState(prev => prev === stateCode ? '' : stateCode)
+  }, [])
+
+  // Filter cards by selected state
+  const filteredCounts = useMemo(() => {
+    if (!selectedState) return currentCounts
+    return currentCounts.filter(c => c.state === selectedState)
+  }, [currentCounts, selectedState])
+
+  // Summary stats (based on filtered counts)
+  const totalBirds = filteredCounts.reduce((sum, c) => sum + (c.count || 0), 0)
+  const refugeCount = new Set(filteredCounts.map(c => c.refugeName)).size
+  const latestDate = filteredCounts.length > 0
+    ? new Date(Math.max(...filteredCounts.map(c => new Date(c.surveyDate).getTime())))
     : null
 
   // Historical chart data: pivot by year with one key per state
@@ -168,7 +212,17 @@ export function MigrationPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row gap-4 mb-6">
+          <select
+            className="input max-w-xs"
+            value={selectedState}
+            onChange={(e) => setSelectedState(e.target.value)}
+          >
+            <option value="">All States</option>
+            {stateOptions.map(s => (
+              <option key={s} value={s}>{STATE_CODE_TO_NAME[s] || s} ({s})</option>
+            ))}
+          </select>
           <select
             className="input max-w-xs"
             value={selectedSpecies}
@@ -188,6 +242,81 @@ export function MigrationPage() {
               <option key={f.value} value={f.value}>{f.label}</option>
             ))}
           </select>
+        </div>
+
+        {/* US State Map */}
+        <div className="card p-4 mb-8">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-medium text-gray-600">
+              Select a state {selectedState && (
+                <button
+                  onClick={() => setSelectedState('')}
+                  className="ml-2 text-xs text-forest-600 hover:text-forest-800 underline"
+                >
+                  Clear selection
+                </button>
+              )}
+            </h2>
+            <div className="flex items-center gap-4 text-xs text-gray-500">
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded-sm bg-forest-200 inline-block" /> Has data
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded-sm bg-forest-600 inline-block" /> Selected
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded-sm bg-gray-100 inline-block border border-gray-200" /> No data
+              </span>
+            </div>
+          </div>
+          <ComposableMap
+            projection="geoAlbersUsa"
+            projectionConfig={{ scale: 1000 }}
+            width={980}
+            height={500}
+            style={{ width: '100%', height: 'auto' }}
+          >
+            <Geographies geography={GEO_URL}>
+              {({ geographies }) =>
+                geographies.map(geo => {
+                  const stateName = geo.properties.name as string
+                  const stateCode = STATE_NAME_TO_CODE[stateName]
+                  if (!stateCode) return null
+                  const hasData = statesWithData.has(stateCode)
+                  const isSelected = selectedState === stateCode
+                  return (
+                    <Geography
+                      key={geo.rsmKey}
+                      geography={geo}
+                      onClick={() => hasData && handleMapStateClick(stateCode)}
+                      style={{
+                        default: {
+                          fill: isSelected ? '#16a34a' : hasData ? '#bbf7d0' : '#f3f4f6',
+                          stroke: '#9ca3af',
+                          strokeWidth: 0.5,
+                          outline: 'none',
+                          cursor: hasData ? 'pointer' : 'default',
+                        },
+                        hover: {
+                          fill: isSelected ? '#15803d' : hasData ? '#86efac' : '#f3f4f6',
+                          stroke: hasData ? '#16a34a' : '#9ca3af',
+                          strokeWidth: hasData ? 1.5 : 0.5,
+                          outline: 'none',
+                          cursor: hasData ? 'pointer' : 'default',
+                        },
+                        pressed: {
+                          fill: isSelected ? '#166534' : hasData ? '#4ade80' : '#f3f4f6',
+                          stroke: '#16a34a',
+                          strokeWidth: 1.5,
+                          outline: 'none',
+                        },
+                      }}
+                    />
+                  )
+                })
+              }
+            </Geographies>
+          </ComposableMap>
         </div>
 
         {/* Loading */}
@@ -230,11 +359,11 @@ export function MigrationPage() {
             </div>
 
             {/* Current Counts */}
-            {currentCounts.length > 0 ? (
+            {filteredCounts.length > 0 ? (
               <div className="mb-8">
                 <h2 className="text-xl font-semibold text-gray-900 mb-4">Latest Refuge Counts</h2>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {currentCounts.map((item, i) => (
+                  {filteredCounts.map((item, i) => (
                     <button
                       key={`${item.refugeId}-${item.species}-${i}`}
                       onClick={() => handleRefugeClick(item.refugeId, item.refugeName)}
