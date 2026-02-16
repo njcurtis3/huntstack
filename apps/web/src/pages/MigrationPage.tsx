@@ -1,0 +1,373 @@
+import { useState, useEffect, useMemo } from 'react'
+import { Loader2, AlertCircle, Bird, X } from 'lucide-react'
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, Legend, ResponsiveContainer,
+} from 'recharts'
+import { api } from '../lib/api'
+
+type CurrentCount = {
+  refugeId: string
+  refugeName: string
+  state: string
+  species: string
+  speciesName: string
+  count: number
+  surveyDate: string
+  surveyType: string
+  centerPoint: { lat: number; lng: number } | null
+  flyway: string | null
+}
+
+type HistoricalTrend = {
+  year: number
+  state_code: string
+  species_slug: string
+  total_count: number
+}
+
+type SpeciesOption = {
+  slug: string
+  name: string
+}
+
+type RefugeCount = {
+  surveyDate: string
+  count: number
+  surveyType: string
+  speciesSlug: string
+  speciesName: string
+  sourceUrl: string | null
+  observers: string | null
+  notes: string | null
+}
+
+const FLYWAY_OPTIONS = [
+  { value: '', label: 'All Flyways' },
+  { value: 'central', label: 'Central Flyway' },
+  { value: 'mississippi', label: 'Mississippi Flyway' },
+  { value: 'pacific', label: 'Pacific Flyway' },
+  { value: 'atlantic', label: 'Atlantic Flyway' },
+]
+
+const FLYWAY_COLORS: Record<string, string> = {
+  central: 'bg-blue-100 text-blue-700',
+  mississippi: 'bg-green-100 text-green-700',
+  pacific: 'bg-purple-100 text-purple-700',
+  atlantic: 'bg-orange-100 text-orange-700',
+}
+
+const STATE_LINE_COLORS = ['#16a34a', '#2563eb', '#dc2626', '#f59e0b', '#8b5cf6', '#ec4899', '#0891b2']
+
+export function MigrationPage() {
+  const [selectedFlyway, setSelectedFlyway] = useState('')
+  const [selectedSpecies, setSelectedSpecies] = useState('')
+
+  const [currentCounts, setCurrentCounts] = useState<CurrentCount[]>([])
+  const [historicalTrends, setHistoricalTrends] = useState<HistoricalTrend[]>([])
+  const [speciesOptions, setSpeciesOptions] = useState<SpeciesOption[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const [selectedRefuge, setSelectedRefuge] = useState<{ id: string; name: string } | null>(null)
+  const [refugeDetail, setRefugeDetail] = useState<RefugeCount[]>([])
+  const [refugeDetailLoading, setRefugeDetailLoading] = useState(false)
+
+  // Fetch dashboard data
+  useEffect(() => {
+    let cancelled = false
+    async function fetchData() {
+      setLoading(true)
+      setError(null)
+      try {
+        const [dashboardData, speciesData] = await Promise.all([
+          api.getMigrationDashboard({
+            flyway: selectedFlyway || undefined,
+            species: selectedSpecies || undefined,
+          }),
+          api.getSpecies({ category: 'waterfowl' }),
+        ])
+        if (cancelled) return
+        setCurrentCounts(dashboardData.currentCounts)
+        setHistoricalTrends(dashboardData.historicalTrends)
+        setSpeciesOptions(speciesData.species.map(s => ({ slug: s.slug, name: s.name })))
+      } catch (err) {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : 'Failed to load migration data')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    fetchData()
+    return () => { cancelled = true }
+  }, [selectedFlyway, selectedSpecies])
+
+  // Fetch refuge detail
+  const handleRefugeClick = async (refugeId: string, refugeName: string) => {
+    if (selectedRefuge?.id === refugeId) {
+      setSelectedRefuge(null)
+      return
+    }
+    setSelectedRefuge({ id: refugeId, name: refugeName })
+    setRefugeDetailLoading(true)
+    try {
+      const data = await api.getRefugeCounts(refugeId, {
+        species: selectedSpecies || undefined,
+        limit: 100,
+      })
+      setRefugeDetail(data.counts)
+    } catch {
+      setRefugeDetail([])
+    } finally {
+      setRefugeDetailLoading(false)
+    }
+  }
+
+  // Summary stats
+  const totalBirds = currentCounts.reduce((sum, c) => sum + (c.count || 0), 0)
+  const refugeCount = new Set(currentCounts.map(c => c.refugeName)).size
+  const latestDate = currentCounts.length > 0
+    ? new Date(Math.max(...currentCounts.map(c => new Date(c.surveyDate).getTime())))
+    : null
+
+  // Historical chart data: pivot by year with one key per state
+  const chartData = useMemo(() => {
+    const byYear: Record<number, Record<string, number>> = {}
+    historicalTrends.forEach(t => {
+      if (!byYear[t.year]) byYear[t.year] = { year: t.year }
+      byYear[t.year][t.state_code] = (byYear[t.year][t.state_code] || 0) + t.total_count
+    })
+    return Object.values(byYear).sort((a, b) => (a.year as number) - (b.year as number))
+  }, [historicalTrends])
+
+  const stateKeys = useMemo(() => {
+    return [...new Set(historicalTrends.map(t => t.state_code))]
+  }, [historicalTrends])
+
+  // Refuge detail chart data (reversed so oldest first)
+  const refugeChartData = useMemo(() => {
+    return [...refugeDetail].reverse()
+  }, [refugeDetail])
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="bg-gradient-to-br from-forest-900 to-forest-800 text-white py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-3 mb-3">
+            <Bird className="w-8 h-8" />
+            <h1 className="text-3xl font-bold">Migration Intelligence</h1>
+            <span className="text-xs bg-forest-600 rounded-full px-3 py-1 font-medium">Beta</span>
+          </div>
+          <p className="text-forest-200 max-w-2xl">
+            Track waterfowl movement across refuges and flyways. See the latest survey counts,
+            spot migration trends, and plan your hunts around real bird activity.
+          </p>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row gap-4 mb-8">
+          <select
+            className="input max-w-xs"
+            value={selectedSpecies}
+            onChange={(e) => setSelectedSpecies(e.target.value)}
+          >
+            <option value="">All Species</option>
+            {speciesOptions.map(s => (
+              <option key={s.slug} value={s.slug}>{s.name}</option>
+            ))}
+          </select>
+          <select
+            className="input max-w-xs"
+            value={selectedFlyway}
+            onChange={(e) => setSelectedFlyway(e.target.value)}
+          >
+            {FLYWAY_OPTIONS.map(f => (
+              <option key={f.value} value={f.value}>{f.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Loading */}
+        {loading && (
+          <div className="flex justify-center py-20">
+            <Loader2 className="w-8 h-8 animate-spin text-forest-600" />
+          </div>
+        )}
+
+        {/* Error */}
+        {error && !loading && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-medium text-yellow-800">Failed to load migration data</p>
+              <p className="text-sm text-yellow-700 mt-1">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Content */}
+        {!loading && !error && (
+          <>
+            {/* Summary Stats */}
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+              <div className="card p-4">
+                <p className="text-sm text-gray-500">Total Birds Counted</p>
+                <p className="text-2xl font-bold text-gray-900">{totalBirds.toLocaleString()}</p>
+              </div>
+              <div className="card p-4">
+                <p className="text-sm text-gray-500">Refuges Reporting</p>
+                <p className="text-2xl font-bold text-gray-900">{refugeCount}</p>
+              </div>
+              <div className="card p-4 col-span-2 lg:col-span-1">
+                <p className="text-sm text-gray-500">Latest Survey</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {latestDate ? latestDate.toLocaleDateString() : 'N/A'}
+                </p>
+              </div>
+            </div>
+
+            {/* Current Counts */}
+            {currentCounts.length > 0 ? (
+              <div className="mb-8">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">Latest Refuge Counts</h2>
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {currentCounts.map((item, i) => (
+                    <button
+                      key={`${item.refugeId}-${item.species}-${i}`}
+                      onClick={() => handleRefugeClick(item.refugeId, item.refugeName)}
+                      className={`card p-5 text-left hover:shadow-md transition-shadow w-full ${
+                        selectedRefuge?.id === item.refugeId ? 'ring-2 ring-forest-500' : ''
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-semibold text-gray-900 truncate pr-2">{item.refugeName}</h3>
+                        <span className="text-xs bg-gray-100 text-gray-600 rounded px-2 py-0.5 flex-shrink-0">
+                          {item.state}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-600 mb-1">{item.speciesName}</p>
+                      <p className="text-3xl font-bold text-forest-700">{item.count.toLocaleString()}</p>
+                      <div className="flex items-center justify-between mt-3">
+                        <span className="text-xs text-gray-500">
+                          {new Date(item.surveyDate).toLocaleDateString()}
+                        </span>
+                        {item.flyway && (
+                          <span className={`text-xs rounded px-2 py-0.5 ${FLYWAY_COLORS[item.flyway] || 'bg-gray-100 text-gray-600'}`}>
+                            {item.flyway}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-12 mb-8">
+                <Bird className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500">No migration data available for these filters.</p>
+              </div>
+            )}
+
+            {/* Refuge Detail Panel */}
+            {selectedRefuge && (
+              <div className="card p-6 mb-8">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold text-gray-900">
+                    {selectedRefuge.name} — Count History
+                  </h2>
+                  <button
+                    onClick={() => setSelectedRefuge(null)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                {refugeDetailLoading ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="w-6 h-6 animate-spin text-forest-600" />
+                  </div>
+                ) : refugeDetail.length > 0 ? (
+                  <>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <LineChart data={refugeChartData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis
+                          dataKey="surveyDate"
+                          tickFormatter={(d) => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                        />
+                        <YAxis tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
+                        <Tooltip
+                          labelFormatter={(d) => new Date(d as string).toLocaleDateString()}
+                          formatter={(value: number) => [value.toLocaleString(), 'Count']}
+                        />
+                        <Line type="monotone" dataKey="count" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                    <div className="mt-4 overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="text-left p-3 font-medium text-gray-600">Date</th>
+                            <th className="text-left p-3 font-medium text-gray-600">Species</th>
+                            <th className="text-right p-3 font-medium text-gray-600">Count</th>
+                            <th className="text-left p-3 font-medium text-gray-600">Type</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {refugeDetail.map((row, i) => (
+                            <tr key={i}>
+                              <td className="p-3">{new Date(row.surveyDate).toLocaleDateString()}</td>
+                              <td className="p-3">{row.speciesName}</td>
+                              <td className="p-3 text-right font-medium">{row.count.toLocaleString()}</td>
+                              <td className="p-3 text-gray-500">{row.surveyType}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-gray-500 text-center py-4">No count data available for this refuge.</p>
+                )}
+              </div>
+            )}
+
+            {/* Historical Trends Chart */}
+            {chartData.length > 0 && (
+              <div className="card p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">Historical Trends</h2>
+                <ResponsiveContainer width="100%" height={400}>
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="year" />
+                    <YAxis tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
+                    <Tooltip formatter={(value: number) => value.toLocaleString()} />
+                    <Legend />
+                    {stateKeys.map((state, i) => (
+                      <Line
+                        key={state}
+                        type="monotone"
+                        dataKey={state}
+                        stroke={STATE_LINE_COLORS[i % STATE_LINE_COLORS.length]}
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                        name={state}
+                        connectNulls
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mt-3">
+                  Historical data from Midwinter Waterfowl Inventory (2006-2016).
+                </p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}

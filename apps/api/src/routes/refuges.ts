@@ -232,6 +232,7 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
 
     return {
       currentCounts: results.map(r => ({
+        refugeId: r.location_id,
         refugeName: r.refuge_name,
         state: r.state_code,
         species: r.species_slug,

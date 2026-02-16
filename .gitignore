@@ -59,3 +59,4 @@ httpcache/
 # claude
 plans/
 claude.md
+SESSION_TEMPLATE.md

@@ -246,6 +246,75 @@ class ApiClient {
     }>(`/api/species/${slug}/migration`, { params: { flyway } })
   }
 
+  // Refuges & Migration
+  async getMigrationDashboard(options?: {
+    flyway?: string
+    species?: string
+  }) {
+    return this.request<{
+      currentCounts: Array<{
+        refugeId: string
+        refugeName: string
+        state: string
+        species: string
+        speciesName: string
+        count: number
+        surveyDate: string
+        surveyType: string
+        centerPoint: { lat: number; lng: number } | null
+        flyway: string | null
+      }>
+      historicalTrends: Array<{
+        year: number
+        state_code: string
+        species_slug: string
+        total_count: number
+      }>
+    }>('/api/refuges/migration/dashboard', { params: options })
+  }
+
+  async getRefuges(options?: {
+    state?: string
+    flyway?: string
+  }) {
+    return this.request<{
+      refuges: Array<{
+        id: string
+        name: string
+        state: string
+        stateName: string
+        centerPoint: unknown
+        acreage: number | null
+        websiteUrl: string | null
+        flyway: string | null
+        surveyUrl: string | null
+      }>
+      count: number
+    }>('/api/refuges', { params: options })
+  }
+
+  async getRefugeCounts(refugeId: string, options?: {
+    species?: string
+    startDate?: string
+    endDate?: string
+    limit?: number
+  }) {
+    return this.request<{
+      refuge: { id: string; name: string }
+      counts: Array<{
+        surveyDate: string
+        count: number
+        surveyType: string
+        speciesSlug: string
+        speciesName: string
+        sourceUrl: string | null
+        observers: string | null
+        notes: string | null
+      }>
+      total: number
+    }>(`/api/refuges/${refugeId}/counts`, { params: options })
+  }
+
   // Outfitters
   async getOutfitters(options?: {
     q?: string

@@ -13,7 +13,8 @@
       "Bash(pnpm build:api:*)",
       "Bash(timeout:*)",
       "Bash(curl:*)",
-      "Bash(python huntstack_scrapers_inspect_docs.py:*)"
+      "Bash(python huntstack_scrapers_inspect_docs.py:*)",
+      "Bash(pnpm add:*)"
     ]
   }
 }

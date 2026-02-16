@@ -5,6 +5,7 @@ import { SearchPage } from './pages/SearchPage'
 import { MapPage } from './pages/MapPage'
 import { RegulationsPage } from './pages/RegulationsPage'
 import { OutfittersPage } from './pages/OutfittersPage'
+import { MigrationPage } from './pages/MigrationPage'
 import { ChatPage } from './pages/ChatPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
@@ -15,6 +16,7 @@ function App() {
         <Route index element={<HomePage />} />
         <Route path="search" element={<SearchPage />} />
         <Route path="map" element={<MapPage />} />
+        <Route path="migration" element={<MigrationPage />} />
         <Route path="regulations" element={<RegulationsPage />} />
         <Route path="regulations/:state" element={<RegulationsPage />} />
         <Route path="outfitters" element={<OutfittersPage />} />

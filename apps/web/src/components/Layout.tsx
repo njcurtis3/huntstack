@@ -1,10 +1,11 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import { 
-  Home, 
-  Search, 
-  Map, 
-  FileText, 
-  Users, 
+  Home,
+  Search,
+  Map,
+  Bird,
+  FileText,
+  Users,
   MessageSquare,
   Menu,
   X
@@ -15,6 +16,7 @@ const navigation = [
   { name: 'Home', href: '/', icon: Home },
   { name: 'Search', href: '/search', icon: Search },
   { name: 'Map', href: '/map', icon: Map },
+  { name: 'Migration', href: '/migration', icon: Bird },
   { name: 'Regulations', href: '/regulations', icon: FileText },
   { name: 'Outfitters', href: '/outfitters', icon: Users },
   { name: 'Ask AI', href: '/chat', icon: MessageSquare },
@@ -125,6 +127,7 @@ export function Layout() {
               <ul className="space-y-2 text-sm">
                 <li><Link to="/search" className="hover:text-white">Find Hunts</Link></li>
                 <li><Link to="/map" className="hover:text-white">Explore Map</Link></li>
+                <li><Link to="/migration" className="hover:text-white">Migration</Link></li>
                 <li><Link to="/regulations" className="hover:text-white">Regulations</Link></li>
                 <li><Link to="/chat" className="hover:text-white">Ask AI</Link></li>
               </ul>
