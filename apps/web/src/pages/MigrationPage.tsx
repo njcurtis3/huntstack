@@ -200,7 +200,7 @@ export function MigrationPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 mb-3">
             <Bird className="w-8 h-8" />
-            <h1 className="text-3xl font-bold">Migration Intelligence</h1>
+            <h1 className="text-3xl font-bold">Migration</h1>
             <span className="text-xs bg-forest-600 rounded-full px-3 py-1 font-medium">Beta</span>
           </div>
           <p className="text-forest-200 max-w-2xl">
@@ -211,6 +211,11 @@ export function MigrationPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Limited data notice */}
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3 mb-6 text-sm text-yellow-800">
+          Refuge count data is currently limited to select states and sources. We're actively working to expand coverage across more refuges and flyways.
+        </div>
+
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
           <select

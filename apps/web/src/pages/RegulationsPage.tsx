@@ -1,7 +1,26 @@
-import { useState, useEffect } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { Link, useParams, useNavigate } from 'react-router-dom'
 import { ChevronRight, FileText, AlertCircle, ExternalLink, Loader2 } from 'lucide-react'
+import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
 import { api } from '../lib/api'
+
+const GEO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json'
+
+const STATE_NAME_TO_CODE: Record<string, string> = {
+  'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR',
+  'California': 'CA', 'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE',
+  'Florida': 'FL', 'Georgia': 'GA', 'Hawaii': 'HI', 'Idaho': 'ID',
+  'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA', 'Kansas': 'KS',
+  'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+  'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS',
+  'Missouri': 'MO', 'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV',
+  'New Hampshire': 'NH', 'New Jersey': 'NJ', 'New Mexico': 'NM', 'New York': 'NY',
+  'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH', 'Oklahoma': 'OK',
+  'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+  'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT',
+  'Vermont': 'VT', 'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV',
+  'Wisconsin': 'WI', 'Wyoming': 'WY', 'District of Columbia': 'DC',
+}
 
 type StateInfo = {
   code: string
@@ -286,43 +305,172 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
   )
 }
 
+type StateRegCounts = Record<string, { regulations: number; seasons: number; licenses: number }>
+
 export function RegulationsPage() {
   const { state } = useParams()
+  const navigate = useNavigate()
   const [statesList, setStatesList] = useState<StateInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [selectedState, setSelectedState] = useState('')
+  const [regCounts, setRegCounts] = useState<StateRegCounts>({})
 
   useEffect(() => {
     if (!state) {
       api.getStates()
-        .then(data => setStatesList(data.states as StateInfo[]))
+        .then(async (data) => {
+          const states = data.states as StateInfo[]
+          setStatesList(states)
+          // Fetch regulation counts for each state in parallel
+          const counts: StateRegCounts = {}
+          await Promise.all(states.map(async (s) => {
+            try {
+              const [regData, seasonsData, licensesData] = await Promise.all([
+                api.getStateRegulations(s.code),
+                api.getStateSeasons(s.code),
+                api.getStateLicenses(s.code),
+              ])
+              counts[s.code] = {
+                regulations: (regData.regulations as unknown[]).length,
+                seasons: (seasonsData.seasons as unknown[]).length,
+                licenses: (licensesData.licenses as unknown[]).length,
+              }
+            } catch {
+              counts[s.code] = { regulations: 0, seasons: 0, licenses: 0 }
+            }
+          }))
+          setRegCounts(counts)
+        })
         .catch(() => {})
         .finally(() => setLoading(false))
     }
   }, [state])
 
+  const statesWithData = useMemo(() => {
+    return new Set(statesList.map(s => s.code))
+  }, [statesList])
+
+  const handleMapStateClick = useCallback((stateCode: string) => {
+    setSelectedState(prev => prev === stateCode ? '' : stateCode)
+  }, [])
+
+  const filtered = useMemo(() => {
+    let list = statesList
+    if (selectedState) {
+      list = list.filter(s => s.code === selectedState)
+    }
+    if (search) {
+      list = list.filter(s =>
+        s.name.toLowerCase().includes(search.toLowerCase()) ||
+        s.code.toLowerCase().includes(search.toLowerCase())
+      )
+    }
+    return list
+  }, [statesList, selectedState, search])
+
   if (state) {
     return <StateDetailView stateCode={state} />
   }
 
-  const filtered = search
-    ? statesList.filter(s =>
-        s.name.toLowerCase().includes(search.toLowerCase()) ||
-        s.code.toLowerCase().includes(search.toLowerCase())
-      )
-    : statesList
-
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Hunting Regulations by State</h1>
-        <p className="text-gray-600 mt-2">
-          Select a state to view current hunting regulations, seasons, and license requirements.
-        </p>
+    <div>
+      {/* Header */}
+      <div className="bg-gradient-to-br from-forest-900 to-forest-800 text-white py-12">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-3 mb-3">
+            <FileText className="w-8 h-8" />
+            <h1 className="text-3xl font-bold">Hunting Regulations by State</h1>
+          </div>
+          <p className="text-forest-200 max-w-2xl">
+            Select a state to view current hunting regulations, seasons, and license requirements.
+          </p>
+        </div>
       </div>
 
-      {/* Search */}
-      <div className="mb-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Limited data notice */}
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3 mb-6 text-sm text-yellow-800">
+          Regulation data is currently limited to select states. We're actively working to expand coverage across all 50 states.
+        </div>
+
+        {/* US State Map */}
+        <div className="card p-4 mb-8">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-medium text-gray-600">
+              Select a state {selectedState && (
+                <button
+                  onClick={() => setSelectedState('')}
+                  className="ml-2 text-xs text-forest-600 hover:text-forest-800 underline"
+                >
+                  Clear selection
+                </button>
+              )}
+            </h2>
+            <div className="flex items-center gap-4 text-xs text-gray-500">
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded-sm bg-forest-200 inline-block" /> Has data
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded-sm bg-forest-600 inline-block" /> Selected
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-3 h-3 rounded-sm bg-gray-100 inline-block border border-gray-200" /> No data
+              </span>
+            </div>
+          </div>
+          <ComposableMap
+            projection="geoAlbersUsa"
+            projectionConfig={{ scale: 1000 }}
+            width={980}
+            height={500}
+            style={{ width: '100%', height: 'auto' }}
+          >
+            <Geographies geography={GEO_URL}>
+              {({ geographies }) =>
+                geographies.map(geo => {
+                  const stateName = geo.properties.name as string
+                  const stateCode = STATE_NAME_TO_CODE[stateName]
+                  if (!stateCode) return null
+                  const hasData = statesWithData.has(stateCode)
+                  const isSelected = selectedState === stateCode
+                  return (
+                    <Geography
+                      key={geo.rsmKey}
+                      geography={geo}
+                      onClick={() => hasData && handleMapStateClick(stateCode)}
+                      style={{
+                        default: {
+                          fill: isSelected ? '#16a34a' : hasData ? '#bbf7d0' : '#f3f4f6',
+                          stroke: '#9ca3af',
+                          strokeWidth: 0.5,
+                          outline: 'none',
+                          cursor: hasData ? 'pointer' : 'default',
+                        },
+                        hover: {
+                          fill: isSelected ? '#15803d' : hasData ? '#86efac' : '#f3f4f6',
+                          stroke: hasData ? '#16a34a' : '#9ca3af',
+                          strokeWidth: hasData ? 1.5 : 0.5,
+                          outline: 'none',
+                          cursor: hasData ? 'pointer' : 'default',
+                        },
+                        pressed: {
+                          fill: isSelected ? '#166534' : hasData ? '#4ade80' : '#f3f4f6',
+                          stroke: '#16a34a',
+                          strokeWidth: 1.5,
+                          outline: 'none',
+                        },
+                      }}
+                    />
+                  )
+                })
+              }
+            </Geographies>
+          </ComposableMap>
+        </div>
+
+        {/* Search */}
+        <div className="mb-8">
         <input
           type="text"
           placeholder="Search states..."
@@ -344,18 +492,27 @@ export function RegulationsPage() {
               <Link
                 key={s.code}
                 to={`/regulations/${s.code.toLowerCase()}`}
-                className="card p-4 hover:shadow-md transition-shadow flex items-center justify-between"
+                className="card p-4 hover:shadow-md transition-shadow"
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-forest-100 rounded-lg flex items-center justify-center">
-                    <FileText className="w-6 h-6 text-forest-600" />
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-forest-100 rounded-lg flex items-center justify-center">
+                      <FileText className="w-5 h-5 text-forest-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900">{s.name}</h3>
+                      <p className="text-xs text-gray-500">{s.agencyName || 'Wildlife Agency'}</p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{s.name}</h3>
-                    <p className="text-sm text-gray-500">{s.agencyName || 'Wildlife Agency'}</p>
-                  </div>
+                  <ChevronRight className="w-5 h-5 text-gray-400" />
                 </div>
-                <ChevronRight className="w-5 h-5 text-gray-400" />
+                {regCounts[s.code] && (
+                  <div className="flex gap-3 text-xs text-gray-500 border-t border-gray-100 pt-2">
+                    <span>Regulations: <strong className="text-gray-700">{regCounts[s.code].regulations}</strong></span>
+                    <span>Seasons: <strong className="text-gray-700">{regCounts[s.code].seasons}</strong></span>
+                    <span>Licenses: <strong className="text-gray-700">{regCounts[s.code].licenses}</strong></span>
+                  </div>
+                )}
               </Link>
             ))}
           </div>
@@ -370,16 +527,10 @@ export function RegulationsPage() {
             </div>
           )}
 
-          {/* More states coming soon */}
-          {statesList.length > 0 && (
-            <div className="mt-8 text-center py-8 bg-gray-50 rounded-xl">
-              <p className="text-gray-600">
-                More states coming soon. We're actively adding regulations for all 50 states.
-              </p>
-            </div>
-          )}
+
         </>
       )}
+      </div>
     </div>
   )
 }

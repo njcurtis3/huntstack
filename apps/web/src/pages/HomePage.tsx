@@ -107,9 +107,6 @@ export function HomePage() {
                 to={`/search?species=${encodeURIComponent(species.name)}`}
                 className="card p-4 text-center hover:shadow-md transition-shadow"
               >
-                <div className="w-16 h-16 bg-earth-100 rounded-full mx-auto mb-3 flex items-center justify-center">
-                  <span className="text-2xl">🦌</span>
-                </div>
                 <h3 className="font-medium text-gray-900 text-sm">{species.name}</h3>
                 <p className="text-xs text-gray-500 mt-1">{species.count}</p>
               </Link>

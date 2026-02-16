@@ -34,10 +34,8 @@ export function Layout() {
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
             <Link to="/" className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-forest-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-lg">H</span>
-              </div>
-              <span className="font-bold text-xl text-gray-900">HuntStack</span>
+              <img src="/duck-image-1.png" alt="HuntStack" className="w-8 h-8" />
+              <span className="font-bold text-xl text-gray-900">huntstack</span>
             </Link>
 
             {/* Desktop Navigation */}
