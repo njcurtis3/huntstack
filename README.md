@@ -1,18 +1,17 @@
-# huntstack 
-🦆🦌
+# huntstack
 
-> Pre-hunt intelligence
+🦆
 
-**huntstack** aggregates hunting regulations, season dates, license requirements, public land maps, and outfitter listings across all 50 states. Features AI-powered natural language search using RAG (Retrieval-Augmented Generation).
+> HuntStack tells you WHERE to hunt. OnX helps you get there.
 
-## Features
+**huntstack** is a pre-hunt intelligence platform for waterfowl hunters. It replaces the fragmented workflow of Googling across state websites, reading PDFs, and checking Facebook groups with structured, searchable data and an AI-powered assistant.
 
-- **Big Game Hunting** - Regulations, seasons, and draw information for elk, deer, and more
-- **Migratory Bird Tracking** - Real-time migration data and flyway information
-- **Regulations Database** - Current hunting regulations from all 50 states
-- **Interactive Maps** - Public lands, hunting units, and access points
-- **Outfitter Directory** - Verified guides and outfitters
-- **AI Assistant** - Ask questions in natural language
+## V1 Features (Waterfowl Focus)
+
+- **Regulation & License Intelligence** - Structured seasons, bag limits, license requirements with prices — queryable via LLM instead of reading PDFs
+- **Migration Intelligence** - Weekly refuge bird counts, historical trends, flyway progression from FWS/state survey data
+- **AI Chat** - Natural language queries backed by structured data + RAG (e.g., "What do I need to hunt snow geese in New Mexico?")
+- **State Coverage** - TX, AR, NM, LA, KS, OK (Central + Mississippi Flyways) + MO (Loess Bluffs)
 
 ## Tech Stack
 
@@ -32,16 +31,23 @@
 ```
 huntstack/
 ├── apps/
-│   ├── web/                 # React frontend
+│   ├── web/                 # React + Vite frontend
 │   ├── api/                 # Fastify backend
-│   ├── scrapers-node/       # Node.js scrapers
+│   │   └── src/routes/      # API endpoints (species, refuges, regulations, search, chat)
+│   ├── scrapers-node/       # Node.js scrapers (Cheerio, Playwright)
 │   └── scrapers-python/     # Python/Scrapy scrapers
+│       └── huntstack_scrapers/
+│           ├── spiders/     # Scrapy spiders (state_regulations, refuge_counts)
+│           ├── parsers/     # Modular PDF/HTML parsers (AGFC, LDWF, Loess Bluffs, FWS)
+│           └── scripts/     # Maintenance scripts
+│               ├── seed/    # Data seeding & patching
+│               ├── audit/   # Data validation & checks
+│               └── cleanup/ # Re-chunking, re-embedding, cleanup
 ├── packages/
 │   ├── db/                  # Drizzle schema & migrations
-│   ├── shared/              # Shared utilities
+│   ├── shared/              # Shared utilities & Zod schemas
 │   └── types/               # Shared TypeScript types
-├── scripts/                 # Utility scripts
-└── docs/                    # Documentation
+└── scripts/                 # Database init scripts
 ```
 
 ## Getting Started
@@ -69,7 +75,8 @@ cp .env.example .env
 # Edit .env with your credentials
 
 # Set up database (requires Supabase project)
-pnpm db:push
+# Run scripts/init-supabase.sql in Supabase SQL Editor
+# Do NOT use pnpm db:push — it will drop the pgvector embedding column
 
 # Start development servers
 pnpm dev
@@ -86,11 +93,20 @@ pnpm dev:web    # Frontend at http://localhost:3000
 pnpm dev:api    # API at http://localhost:4000
 
 # Database commands
-pnpm db:generate  # Generate migrations
-pnpm db:push      # Push schema to database
+pnpm db:generate  # Generate Drizzle migrations
 pnpm db:studio    # Open Drizzle Studio
+# WARNING: Do NOT use pnpm db:push — it drops the pgvector embedding column
 
-# Run scrapers
+# Python scrapers (from apps/scrapers-python/)
+python -m scrapy crawl state_regulations   # Crawl state wildlife agency sites
+python -m scrapy crawl refuge_counts       # Scrape refuge bird count data
+
+# Maintenance scripts
+python -m huntstack_scrapers.scripts.audit.db          # Full database audit
+python -m huntstack_scrapers.scripts.audit.check_state  # Check document/chunk status
+python -m huntstack_scrapers.scripts.cleanup.rechunk    # Re-chunk and re-embed documents
+
+# Node.js scrapers
 pnpm scrape       # Start Node.js scraper worker
 ```
 
@@ -111,42 +127,19 @@ When the API is running, Swagger docs are available at:
    ```
 3. Copy your project URL and keys to `.env`
 
-### MapTiler
-
-1. Sign up at [maptiler.com](https://www.maptiler.com/)
-2. Create an API key
-3. Add to `.env` as `VITE_MAPTILER_KEY`
-
 ### Together.ai hosted models
 
 1. Get API keys from together.ai
 2. Add to `.env`
 
-## Deployment
+## Data Sources
 
-### Railway (MVP)
+Active V1 sources:
 
-```bash
-# Install Railway CLI
-npm install -g @railway/cli
-
-# Login and deploy
-railway login
-railway init
-railway up
-```
-
-### AWS (Production)
-
-See [docs/deployment-aws.md](docs/deployment-aws.md) for production deployment guide.
-
-## Acknowledgments
-
-Data sources include:
-- U.S. Fish & Wildlife Service
-- State wildlife agencies (CPW, MFWP, TPWD, etc.)
-- eBird (Cornell Lab of Ornithology)
-- USGS, BLM, USFS
+- **State wildlife agencies**: TPWD (TX), AGFC (AR), NMDGF (NM), LDWF (LA), KDWP (KS), ODWC (OK)
+- **U.S. Fish & Wildlife Service**: Refuge bird count surveys (Washita NWR, Salt Plains NWR)
+- **Loess Bluffs NWR (MO)**: Weekly waterfowl survey PDFs
+- **USFWS Migratory Bird Harvest Information Program**: MWI annual data (2006-2016)
 
 ## License
 
