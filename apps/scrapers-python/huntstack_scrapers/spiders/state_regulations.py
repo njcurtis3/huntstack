@@ -316,6 +316,9 @@ class NewMexicoRegulationsSpider(StateRegulationsSpider):
         "https://wildlife.dgf.nm.gov/hunting/maps/",
         "https://wildlife.dgf.nm.gov/hunting/information-by-animal/migratory-bird/",
         "https://wildlife.dgf.nm.gov/hunting/harvest-reporting-information/",
+        # License/fee pages for structured extraction
+        "https://wildlife.dgf.nm.gov/hunting/licenses-and-permits/",
+        "https://wildlife.dgf.nm.gov/hunting/licenses-and-permits/license-requirements-fees/",
     ]
 
 
@@ -386,6 +389,8 @@ class OklahomaRegulationsSpider(StateRegulationsSpider):
         "https://www.wildlifedepartment.com/hunting/regs/migratory-game-bird-regulations",
         "https://www.wildlifedepartment.com/hunting/resources/waterfowl",
         "https://www.wildlifedepartment.com/hunting/seasons",
+        # License fee table for structured extraction
+        "https://www.wildlifedepartment.com/licensing/regs/license-fees",
     ]
 
 

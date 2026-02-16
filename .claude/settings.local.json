@@ -12,7 +12,8 @@
       "WebFetch(domain:migbirdapps.fws.gov)",
       "Bash(pnpm build:api:*)",
       "Bash(timeout:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(python huntstack_scrapers_inspect_docs.py:*)"
     ]
   }
 }

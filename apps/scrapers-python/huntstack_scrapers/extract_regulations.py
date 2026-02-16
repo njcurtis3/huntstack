@@ -108,7 +108,7 @@ If the document has NO waterfowl content, output: {"categories": [], "is_waterfo
 
 def classify_document(doc: dict, model: str) -> list[str]:
     """Classify a document to determine what waterfowl data it contains."""
-    content = doc["content"][:3000]  # First 3K chars for classification
+    content = doc["content"][:6000]  # First 6K chars for classification (NM pages have nav-heavy headers)
     prompt = f"Document title: {doc['title']}\n\nDocument content:\n{content}"
 
     try:
@@ -203,7 +203,7 @@ If no regulations are found, output: {"regulations": []}"""
 
 def extract_seasons(doc: dict, state_code: str, model: str, year: int = 2024) -> list[dict]:
     """Extract season data from a document."""
-    prompt = f"State: {state_code}\nSeason year: {year}-{year+1} (fall {year} through spring {year+1})\nDocument title: {doc['title']}\nSource URL: {doc.get('source_url', 'unknown')}\n\nDocument content:\n{doc['content'][:8000]}"
+    prompt = f"State: {state_code}\nSeason year: {year}-{year+1} (fall {year} through spring {year+1})\nDocument title: {doc['title']}\nSource URL: {doc.get('source_url', 'unknown')}\n\nDocument content:\n{doc['content'][:16000]}"
 
     try:
         result = parse_json_response(call_llm(prompt, SEASONS_SYSTEM, model))
@@ -217,7 +217,7 @@ def extract_seasons(doc: dict, state_code: str, model: str, year: int = 2024) ->
 
 def extract_licenses(doc: dict, state_code: str, model: str) -> list[dict]:
     """Extract license data from a document."""
-    prompt = f"State: {state_code}\nDocument title: {doc['title']}\nSource URL: {doc.get('source_url', 'unknown')}\n\nDocument content:\n{doc['content'][:8000]}"
+    prompt = f"State: {state_code}\nDocument title: {doc['title']}\nSource URL: {doc.get('source_url', 'unknown')}\n\nDocument content:\n{doc['content'][:16000]}"
 
     try:
         result = parse_json_response(call_llm(prompt, LICENSES_SYSTEM, model))
@@ -231,7 +231,7 @@ def extract_licenses(doc: dict, state_code: str, model: str) -> list[dict]:
 
 def extract_regulations(doc: dict, state_code: str, model: str) -> list[dict]:
     """Extract regulation data from a document."""
-    prompt = f"State: {state_code}\nDocument title: {doc['title']}\nSource URL: {doc.get('source_url', 'unknown')}\n\nDocument content:\n{doc['content'][:8000]}"
+    prompt = f"State: {state_code}\nDocument title: {doc['title']}\nSource URL: {doc.get('source_url', 'unknown')}\n\nDocument content:\n{doc['content'][:16000]}"
 
     try:
         result = parse_json_response(call_llm(prompt, REGULATIONS_SYSTEM, model))
@@ -293,15 +293,18 @@ def validate_license(lic: dict) -> bool:
 # ============================================
 
 def load_documents(conn, state_code: str) -> list[dict]:
-    """Load documents for a specific state from the DB."""
+    """Load documents for a specific state from the DB, deduplicated by source_url."""
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT d.id, d.title, d.content, d.source_url, d.document_type, s.id as state_id
+            SELECT DISTINCT ON (d.source_url)
+                d.id, d.title, d.content, d.source_url, d.document_type, s.id as state_id
             FROM documents d
             JOIN states s ON d.state_id = s.id
             WHERE s.code = %s
             AND length(d.content) > 200
-            ORDER BY d.created_at
+            AND d.title NOT ILIKE '%%pfas%%'
+            AND d.title NOT ILIKE '%%commercial fish%%'
+            ORDER BY d.source_url, d.created_at DESC
         """, (state_code,))
         columns = [desc[0] for desc in cur.description]
         return [dict(zip(columns, row)) for row in cur.fetchall()]
@@ -326,8 +329,18 @@ def resolve_species_id(species_name: str, species_map: dict) -> str | None:
 
 
 def upsert_seasons(conn, state_id: str, seasons: list[dict], species_map: dict, year: int, source_url: str | None):
-    """Delete existing seasons for this state/year and insert new ones."""
+    """Delete existing seasons for this state/year and insert new ones.
+    Only deletes if we have valid replacements (seasons with dates)."""
+    # Pre-check: count how many seasons have valid dates
+    valid_count = sum(1 for s in seasons if s.get("start_date") and s.get("end_date"))
     with conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM seasons WHERE state_id = %s AND year = %s", (state_id, year))
+        existing = cur.fetchone()[0]
+
+        if valid_count == 0 and existing > 0:
+            log.warning(f"  Keeping {existing} existing seasons (no valid replacements extracted)")
+            return
+
         cur.execute("DELETE FROM seasons WHERE state_id = %s AND year = %s", (state_id, year))
         deleted = cur.rowcount
         if deleted:
@@ -473,23 +486,22 @@ def process_state(conn, state_code: str, model: str, dry_run: bool, year: int):
 
         log.info(f"  Categories: {categories}")
 
-        if "seasons" in categories:
-            seasons = extract_seasons(doc, state_code, model, year=year)
-            valid = [s for s in seasons if validate_season(s)]
-            if len(valid) < len(seasons):
-                log.warning(f"  {len(seasons) - len(valid)} seasons failed validation")
-            all_seasons.extend(valid)
+        # Extract all types for any waterfowl-relevant doc (classifier sometimes
+        # misses "seasons" when dates are embedded in regulation text)
+        seasons = extract_seasons(doc, state_code, model, year=year)
+        valid = [s for s in seasons if validate_season(s)]
+        if len(valid) < len(seasons):
+            log.warning(f"  {len(seasons) - len(valid)} seasons failed validation")
+        all_seasons.extend(valid)
 
-        if "licenses" in categories:
-            licenses = extract_licenses(doc, state_code, model)
-            valid = [l for l in licenses if validate_license(l)]
-            if len(valid) < len(licenses):
-                log.warning(f"  {len(licenses) - len(valid)} licenses failed validation")
-            all_licenses.extend(valid)
+        licenses = extract_licenses(doc, state_code, model)
+        valid = [l for l in licenses if validate_license(l)]
+        if len(valid) < len(licenses):
+            log.warning(f"  {len(licenses) - len(valid)} licenses failed validation")
+        all_licenses.extend(valid)
 
-        if "regulations" in categories:
-            regs = extract_regulations(doc, state_code, model)
-            all_regulations.extend([r for r in regs if r.get("title") and r.get("content")])
+        regs = extract_regulations(doc, state_code, model)
+        all_regulations.extend([r for r in regs if r.get("title") and r.get("content")])
 
     # Deduplicate by name
     seen_seasons = set()
@@ -538,6 +550,14 @@ def process_state(conn, state_code: str, model: str, dry_run: bool, year: int):
                 log.info(f"  [{r.get('category')}] {r['title']}")
         return
 
+    # Reconnect before writing (long extraction can cause Supabase connection timeout)
+    db_url = os.getenv("DATABASE_URL")
+    try:
+        conn.close()
+    except Exception:
+        pass
+    conn = psycopg2.connect(db_url)
+
     # Write to DB
     if deduped_seasons:
         upsert_seasons(conn, str(state_id), deduped_seasons, species_map, year, None)
@@ -545,6 +565,8 @@ def process_state(conn, state_code: str, model: str, dry_run: bool, year: int):
         upsert_licenses(conn, str(state_id), deduped_licenses)
     if deduped_regs:
         upsert_regulations(conn, str(state_id), deduped_regs, species_map, year)
+
+    conn.close()
 
 
 def main():
