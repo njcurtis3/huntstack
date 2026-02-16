@@ -2,8 +2,6 @@
 
 🦆
 
-> HuntStack tells you WHERE to hunt. OnX helps you get there.
-
 **huntstack** is a pre-hunt intelligence platform for waterfowl hunters. It replaces the fragmented workflow of Googling across state websites, reading PDFs, and checking Facebook groups with structured, searchable data and an AI-powered assistant.
 
 ## V1 Features (Waterfowl Focus)
