@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Link, useParams, useNavigate } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { ChevronRight, FileText, AlertCircle, ExternalLink, Loader2 } from 'lucide-react'
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
 import { api } from '../lib/api'
@@ -102,7 +102,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex items-center justify-center min-h-[400px]">
-        <Loader2 className="w-8 h-8 animate-spin text-forest-600" />
+        <Loader2 className="w-8 h-8 animate-spin text-accent-500" />
       </div>
     )
   }
@@ -110,10 +110,10 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
   if (error) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg p-6 text-center">
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-md p-6 text-center">
           <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-2" />
           <p className="text-red-800 dark:text-red-200">{error}</p>
-          <Link to="/regulations" className="text-red-600 dark:text-red-400 underline mt-2 inline-block">Back to states</Link>
+          <Link to="/regulations" className="text-accent-500 hover:underline mt-2 inline-block">Back to states</Link>
         </div>
       </div>
     )
@@ -134,28 +134,28 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Breadcrumb */}
-      <nav className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-6">
-        <Link to="/regulations" className="hover:text-gray-700 dark:hover:text-gray-300">Regulations</Link>
+      <nav className="flex items-center gap-2 text-sm mb-6" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+        <Link to="/regulations" className="hover:text-accent-500">Regulations</Link>
         <ChevronRight className="w-4 h-4" />
-        <span className="text-gray-900 dark:text-gray-100">{stateName}</span>
+        <span style={{ color: `rgb(var(--color-text-primary))` }}>{stateName}</span>
       </nav>
 
       <div className="flex items-start justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+          <h1 className="text-3xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>
             {stateName} Hunting Regulations
           </h1>
           {stateInfo?.agencyName && (
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
+            <p className="mt-2" style={{ color: `rgb(var(--color-text-secondary))` }}>
               Source: {stateInfo.agencyUrl ? (
-                <a href={stateInfo.agencyUrl} target="_blank" rel="noopener noreferrer" className="text-forest-600 dark:text-forest-400 hover:underline inline-flex items-center gap-1">
+                <a href={stateInfo.agencyUrl} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:underline inline-flex items-center gap-1">
                   {stateInfo.agencyName} <ExternalLink className="w-3 h-3" />
                 </a>
               ) : stateInfo.agencyName}
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg px-4 py-2">
+        <div className="flex items-center gap-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md px-4 py-2">
           <AlertCircle className="w-5 h-5 text-yellow-600" />
           <span className="text-sm text-yellow-800 dark:text-yellow-200">
             Always verify with official state sources
@@ -170,10 +170,10 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap ${
+              className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap border transition-colors ${
                 selectedCategory === cat
-                  ? 'bg-forest-100 dark:bg-forest-950 text-forest-700 dark:text-forest-300'
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                  ? 'bg-accent-50 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400 border-accent-300 dark:border-accent-700'
+                  : 'bg-earth-50 dark:bg-earth-800 text-earth-600 dark:text-earth-300 border-earth-200 dark:border-earth-700 hover:bg-earth-100 dark:hover:bg-earth-700'
               }`}
             >
               {cat === 'all' ? 'All' : cat.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')}
@@ -185,27 +185,27 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
       {/* Regulations */}
       {filteredRegs.length > 0 && (
         <div className="space-y-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Regulations</h2>
+          <h2 className="text-xl font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>Regulations</h2>
           {filteredRegs.map((reg) => (
             <div key={reg.id} className="card">
-              <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <div className="p-6 flex items-center justify-between" style={{ borderBottom: `1px solid rgb(var(--color-border-primary))` }}>
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{reg.title}</h3>
-                  <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded px-2 py-0.5 mt-1 inline-block">
+                  <h3 className="text-lg font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>{reg.title}</h3>
+                  <span className="text-xs bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300 rounded px-2 py-0.5 mt-1 inline-block">
                     {reg.category}
                   </span>
                 </div>
                 {reg.sourceUrl && (
-                  <a href={reg.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-forest-600 dark:text-forest-400 hover:underline text-sm flex items-center gap-1">
+                  <a href={reg.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:underline text-sm flex items-center gap-1">
                     Source <ExternalLink className="w-3 h-3" />
                   </a>
                 )}
               </div>
               <div className="p-6">
                 {reg.summary ? (
-                  <p className="text-gray-700 dark:text-gray-300 mb-4">{reg.summary}</p>
+                  <p style={{ color: `rgb(var(--color-text-secondary))` }} className="mb-4">{reg.summary}</p>
                 ) : (
-                  <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{reg.content}</p>
+                  <p style={{ color: `rgb(var(--color-text-secondary))` }} className="whitespace-pre-wrap">{reg.content}</p>
                 )}
               </div>
             </div>
@@ -216,32 +216,32 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
       {/* Seasons */}
       {selectedCategory === 'all' && seasonsList.length > 0 && (
         <div className="space-y-6 mb-8">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Seasons</h2>
+          <h2 className="text-xl font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>Seasons</h2>
           <div className="card overflow-hidden">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 dark:bg-gray-800">
+              <thead style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}>
                 <tr>
-                  <th className="text-left p-4 font-medium text-gray-600 dark:text-gray-400">Season</th>
-                  <th className="text-left p-4 font-medium text-gray-600 dark:text-gray-400">Type</th>
-                  <th className="text-left p-4 font-medium text-gray-600 dark:text-gray-400">Dates</th>
-                  <th className="text-left p-4 font-medium text-gray-600 dark:text-gray-400">Bag Limit</th>
-                  <th className="text-left p-4 font-medium text-gray-600 dark:text-gray-400">Restrictions</th>
+                  <th className="text-left p-4 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Season</th>
+                  <th className="text-left p-4 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Type</th>
+                  <th className="text-left p-4 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Dates</th>
+                  <th className="text-left p-4 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Bag Limit</th>
+                  <th className="text-left p-4 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Restrictions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              <tbody className="divide-y" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
                 {seasonsList.map((season) => {
                   const bagLimit = season.bagLimit as { daily?: number; season?: number } | null
                   return (
                     <tr key={season.id}>
-                      <td className="p-4 font-medium text-gray-900 dark:text-gray-100">{season.name}</td>
-                      <td className="p-4 text-gray-600 dark:text-gray-400 capitalize">{season.seasonType || '-'}</td>
-                      <td className="p-4 text-gray-600 dark:text-gray-400">
+                      <td className="p-4 font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>{season.name}</td>
+                      <td className="p-4 capitalize" style={{ color: `rgb(var(--color-text-secondary))` }}>{season.seasonType || '-'}</td>
+                      <td className="p-4" style={{ color: `rgb(var(--color-text-secondary))` }}>
                         {new Date(season.startDate).toLocaleDateString()} - {new Date(season.endDate).toLocaleDateString()}
                       </td>
-                      <td className="p-4 text-gray-600 dark:text-gray-400">
+                      <td className="p-4" style={{ color: `rgb(var(--color-text-secondary))` }}>
                         {bagLimit ? `${bagLimit.daily ?? '-'}/day, ${bagLimit.season ?? '-'}/season` : '-'}
                       </td>
-                      <td className="p-4 text-gray-600 dark:text-gray-400">{season.restrictions || '-'}</td>
+                      <td className="p-4" style={{ color: `rgb(var(--color-text-secondary))` }}>{season.restrictions || '-'}</td>
                     </tr>
                   )
                 })}
@@ -254,29 +254,29 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
       {/* Licenses */}
       {(selectedCategory === 'all' || selectedCategory === 'licenses') && licensesList.length > 0 && (
         <div className="space-y-6">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">License Requirements</h2>
+          <h2 className="text-xl font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>License Requirements</h2>
           <div className="grid md:grid-cols-2 gap-4">
             {licensesList.map((license) => (
               <div key={license.id} className="card p-6">
                 <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-semibold text-gray-900 dark:text-gray-100">{license.name}</h3>
-                  <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded px-2 py-0.5">
+                  <h3 className="font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>{license.name}</h3>
+                  <span className="text-xs bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300 rounded px-2 py-0.5">
                     {license.licenseType}
                   </span>
                 </div>
                 {license.description && (
-                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">{license.description}</p>
+                  <p className="text-sm mb-3" style={{ color: `rgb(var(--color-text-secondary))` }}>{license.description}</p>
                 )}
                 <div className="flex gap-4 text-sm">
                   {license.priceResident != null && (
                     <div>
-                      <span className="text-gray-500 dark:text-gray-400">Resident:</span>{' '}
+                      <span style={{ color: `rgb(var(--color-text-tertiary))` }}>Resident:</span>{' '}
                       <span className="font-medium">${license.priceResident.toFixed(2)}</span>
                     </div>
                   )}
                   {license.priceNonResident != null && (
                     <div>
-                      <span className="text-gray-500 dark:text-gray-400">Non-resident:</span>{' '}
+                      <span style={{ color: `rgb(var(--color-text-tertiary))` }}>Non-resident:</span>{' '}
                       <span className="font-medium">${license.priceNonResident.toFixed(2)}</span>
                     </div>
                   )}
@@ -285,7 +285,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
                   <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">Resident only</p>
                 )}
                 {license.purchaseUrl && (
-                  <a href={license.purchaseUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-forest-600 dark:text-forest-400 hover:underline mt-3 inline-flex items-center gap-1">
+                  <a href={license.purchaseUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-accent-500 hover:underline mt-3 inline-flex items-center gap-1">
                     Purchase <ExternalLink className="w-3 h-3" />
                   </a>
                 )}
@@ -297,10 +297,10 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
 
       {/* Empty state */}
       {filteredRegs.length === 0 && seasonsList.length === 0 && licensesList.length === 0 && (
-        <div className="text-center py-12 bg-gray-50 dark:bg-gray-800 rounded-xl">
-          <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-          <p className="text-gray-600 dark:text-gray-400">No regulation data available for {stateName} yet.</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Data is being added state-by-state.</p>
+        <div className="text-center py-12 rounded-md" style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+          <FileText className="w-12 h-12 mx-auto mb-3" style={{ color: `rgb(var(--color-text-tertiary))` }} />
+          <p style={{ color: `rgb(var(--color-text-secondary))` }}>No regulation data available for {stateName} yet.</p>
+          <p className="text-sm mt-1" style={{ color: `rgb(var(--color-text-tertiary))` }}>Data is being added state-by-state.</p>
         </div>
       )}
     </div>
@@ -311,7 +311,6 @@ type StateRegCounts = Record<string, { regulations: number; seasons: number; lic
 
 export function RegulationsPage() {
   const { state } = useParams()
-  const navigate = useNavigate()
   const [statesList, setStatesList] = useState<StateInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -381,13 +380,13 @@ export function RegulationsPage() {
   return (
     <div>
       {/* Header */}
-      <div className="bg-gradient-to-br from-forest-900 to-forest-800 text-white py-12">
+      <div className="bg-earth-900 dark:bg-[#0d1117] text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 mb-3">
             <FileText className="w-8 h-8" />
             <h1 className="text-3xl font-bold">Hunting Regulations by State</h1>
           </div>
-          <p className="text-forest-200 max-w-2xl">
+          <p className="text-earth-300 max-w-2xl">
             Select a state to view current hunting regulations, seasons, and license requirements.
           </p>
         </div>
@@ -395,32 +394,32 @@ export function RegulationsPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Limited data notice */}
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg px-4 py-3 mb-6 text-sm text-yellow-800 dark:text-yellow-200">
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md px-4 py-3 mb-6 text-sm text-yellow-800 dark:text-yellow-200">
           Regulation data is currently limited to select states. We're actively working to expand coverage across all 50 states.
         </div>
 
         {/* US State Map */}
         <div className="card p-4 mb-8">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-medium text-gray-600 dark:text-gray-400">
+            <h2 className="text-sm font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>
               Select a state {selectedState && (
                 <button
                   onClick={() => setSelectedState('')}
-                  className="ml-2 text-xs text-forest-600 dark:text-forest-400 hover:text-forest-800 dark:hover:text-forest-300 underline"
+                  className="ml-2 text-xs text-accent-500 hover:text-accent-600 dark:hover:text-accent-400 underline"
                 >
                   Clear selection
                 </button>
               )}
             </h2>
-            <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+            <div className="flex items-center gap-4 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
               <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-sm bg-forest-200 inline-block" /> Has data
+                <span className="w-3 h-3 rounded-sm bg-forest-200 dark:bg-forest-800 inline-block" /> Has data
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-sm bg-forest-600 inline-block" /> Selected
+                <span className="w-3 h-3 rounded-sm bg-accent-500 inline-block" /> Selected
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-sm bg-gray-100 dark:bg-gray-700 inline-block border border-gray-200 dark:border-gray-600" /> No data
+                <span className="w-3 h-3 rounded-sm inline-block border" style={{ backgroundColor: `rgb(var(--color-bg-secondary))`, borderColor: `rgb(var(--color-border-primary))` }} /> No data
               </span>
             </div>
           </div>
@@ -460,7 +459,7 @@ export function RegulationsPage() {
                           cursor: hasData ? 'pointer' : 'default',
                         },
                         pressed: {
-                          fill: isSelected ? '#166534' : hasData ? '#4ade80' : mapColors.empty,
+                          fill: isSelected ? mapColors.selectedHover : hasData ? mapColors.hasDataHover : mapColors.empty,
                           stroke: mapColors.selected,
                           strokeWidth: 1.5,
                           outline: 'none',
@@ -487,7 +486,7 @@ export function RegulationsPage() {
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-forest-600" />
+          <Loader2 className="w-8 h-8 animate-spin text-accent-500" />
         </div>
       ) : (
         <>
@@ -497,25 +496,25 @@ export function RegulationsPage() {
               <Link
                 key={s.code}
                 to={`/regulations/${s.code.toLowerCase()}`}
-                className="card p-4 hover:shadow-md transition-shadow"
+                className="card p-4 hover:border-accent-400 dark:hover:border-accent-500 transition-colors"
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-forest-100 dark:bg-forest-950 rounded-lg flex items-center justify-center">
-                      <FileText className="w-5 h-5 text-forest-600 dark:text-forest-400" />
+                    <div className="w-10 h-10 bg-accent-50 dark:bg-accent-900/30 rounded-md flex items-center justify-center">
+                      <FileText className="w-5 h-5 text-accent-500" />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-900 dark:text-gray-100">{s.name}</h3>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">{s.agencyName || 'Wildlife Agency'}</p>
+                      <h3 className="font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>{s.name}</h3>
+                      <p className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>{s.agencyName || 'Wildlife Agency'}</p>
                     </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-gray-400" />
+                  <ChevronRight className="w-5 h-5" style={{ color: `rgb(var(--color-text-tertiary))` }} />
                 </div>
                 {regCounts[s.code] && (
-                  <div className="flex gap-3 text-xs text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700 pt-2">
-                    <span>Regulations: <strong className="text-gray-700 dark:text-gray-300">{regCounts[s.code].regulations}</strong></span>
-                    <span>Seasons: <strong className="text-gray-700 dark:text-gray-300">{regCounts[s.code].seasons}</strong></span>
-                    <span>Licenses: <strong className="text-gray-700 dark:text-gray-300">{regCounts[s.code].licenses}</strong></span>
+                  <div className="flex gap-3 text-xs pt-2" style={{ color: `rgb(var(--color-text-tertiary))`, borderTop: `1px solid rgb(var(--color-border-primary))` }}>
+                    <span>Regulations: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].regulations}</strong></span>
+                    <span>Seasons: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].seasons}</strong></span>
+                    <span>Licenses: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].licenses}</strong></span>
                   </div>
                 )}
               </Link>
@@ -523,12 +522,12 @@ export function RegulationsPage() {
           </div>
 
           {filtered.length === 0 && statesList.length > 0 && (
-            <p className="text-center text-gray-500 dark:text-gray-400 py-8">No states match "{search}"</p>
+            <p className="text-center py-8" style={{ color: `rgb(var(--color-text-secondary))` }}>No states match "{search}"</p>
           )}
 
           {statesList.length === 0 && (
-            <div className="text-center py-8 bg-gray-50 dark:bg-gray-800 rounded-xl">
-              <p className="text-gray-600 dark:text-gray-400">No states loaded yet. Run the seed script to populate initial data.</p>
+            <div className="text-center py-8 rounded-md" style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+              <p style={{ color: `rgb(var(--color-text-secondary))` }}>No states loaded yet. Run the seed script to populate initial data.</p>
             </div>
           )}
 

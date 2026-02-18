@@ -5,46 +5,86 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom base styles */
+/* GitHub Primer design tokens */
 @layer base {
   :root {
-    /* Surfaces */
-    --color-bg-primary: 249 250 251;       /* gray-50 */
-    --color-bg-secondary: 255 255 255;     /* white */
-    --color-bg-tertiary: 243 244 246;      /* gray-100 */
-    --color-bg-elevated: 255 255 255;      /* white - cards */
+    /* Canvas (backgrounds) */
+    --color-bg-primary: 255 255 255;        /* #ffffff - canvas-default */
+    --color-bg-secondary: 246 248 250;      /* #f6f8fa - canvas-subtle */
+    --color-bg-tertiary: 246 248 250;       /* #f6f8fa - canvas-inset */
+    --color-bg-elevated: 255 255 255;       /* #ffffff - cards/overlays */
 
-    /* Text */
-    --color-text-primary: 17 24 39;        /* gray-900 */
-    --color-text-secondary: 75 85 99;      /* gray-600 */
-    --color-text-tertiary: 107 114 128;    /* gray-500 */
+    /* Foreground (text) */
+    --color-text-primary: 31 35 40;         /* #1f2328 - fg-default */
+    --color-text-secondary: 101 109 118;    /* #656d76 - fg-muted */
+    --color-text-tertiary: 110 119 129;     /* #6e7781 - fg-subtle */
 
     /* Borders */
-    --color-border-primary: 229 231 235;   /* gray-200 */
-    --color-border-input: 209 213 219;     /* gray-300 */
+    --color-border-primary: 208 215 222;    /* #d0d7de - border-default */
+    --color-border-input: 208 215 222;      /* #d0d7de */
 
     /* Interactive */
-    --color-hover-bg: 243 244 246;         /* gray-100 */
+    --color-hover-bg: 208 215 222;          /* #d0d7de - subtle hover */
+
+    /* Accent (blue) */
+    --color-accent: 9 105 218;              /* #0969da */
+
+    /* Success (green) */
+    --color-success: 31 136 61;             /* #1f883d */
+    --color-success-hover: 26 127 55;       /* #1a7f37 */
+
+    /* Danger */
+    --color-danger: 209 36 47;              /* #d1242f */
+
+    /* Default button */
+    --color-btn-bg: 246 248 250;            /* #f6f8fa */
+    --color-btn-text: 36 41 47;             /* #24292f */
+    --color-btn-hover-bg: 234 238 242;      /* #eaeef2 */
+    --color-btn-border: 208 215 222;        /* #d0d7de */
+
+    /* Header */
+    --color-header-bg: 246 248 250;         /* #f6f8fa */
+    --color-header-text: 31 35 40;          /* #1f2328 */
   }
 
   .dark {
-    /* Surfaces */
-    --color-bg-primary: 17 24 39;          /* gray-900 */
-    --color-bg-secondary: 31 41 55;        /* gray-800 */
-    --color-bg-tertiary: 55 65 81;         /* gray-700 */
-    --color-bg-elevated: 31 41 55;         /* gray-800 */
+    /* Canvas */
+    --color-bg-primary: 13 17 23;           /* #0d1117 - canvas-default */
+    --color-bg-secondary: 22 27 34;         /* #161b22 - canvas-subtle */
+    --color-bg-tertiary: 33 38 45;          /* #21262d */
+    --color-bg-elevated: 22 27 34;          /* #161b22 - canvas-overlay */
 
-    /* Text */
-    --color-text-primary: 243 244 246;     /* gray-100 */
-    --color-text-secondary: 209 213 219;   /* gray-300 */
-    --color-text-tertiary: 156 163 175;    /* gray-400 */
+    /* Foreground */
+    --color-text-primary: 230 237 243;      /* #e6edf3 - fg-default */
+    --color-text-secondary: 125 133 144;    /* #7d8590 - fg-muted */
+    --color-text-tertiary: 110 118 129;     /* #6e7681 - fg-subtle */
 
     /* Borders */
-    --color-border-primary: 55 65 81;      /* gray-700 */
-    --color-border-input: 75 85 99;        /* gray-600 */
+    --color-border-primary: 48 54 61;       /* #30363d - border-default */
+    --color-border-input: 48 54 61;         /* #30363d */
 
     /* Interactive */
-    --color-hover-bg: 55 65 81;            /* gray-700 */
+    --color-hover-bg: 48 54 61;             /* #30363d */
+
+    /* Accent (blue) */
+    --color-accent: 47 129 247;             /* #2f81f7 */
+
+    /* Success (green) */
+    --color-success: 35 134 54;             /* #238636 */
+    --color-success-hover: 46 160 67;       /* #2ea043 */
+
+    /* Danger */
+    --color-danger: 248 81 73;              /* #f85149 */
+
+    /* Default button */
+    --color-btn-bg: 33 38 45;              /* #21262d */
+    --color-btn-text: 201 209 217;          /* #c9d1d9 */
+    --color-btn-hover-bg: 48 54 61;         /* #30363d */
+    --color-btn-border: 48 54 61;           /* #30363d */
+
+    /* Header */
+    --color-header-bg: 22 27 34;            /* #161b22 */
+    --color-header-text: 230 237 243;       /* #e6edf3 */
   }
 
   html {
@@ -65,42 +105,53 @@
   }
 }
 
-/* Custom component styles */
+/* GitHub-style component classes */
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-md font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     --tw-ring-offset-color: rgb(var(--color-bg-primary));
   }
 
   .btn-primary {
-    @apply btn bg-forest-600 text-white hover:bg-forest-700 focus:ring-forest-500;
+    @apply btn text-white focus:ring-forest-500;
+    background-color: rgb(var(--color-success));
+    border: 1px solid rgba(27, 31, 36, 0.15);
+  }
+  .btn-primary:hover {
+    background-color: rgb(var(--color-success-hover));
   }
 
   .btn-secondary {
-    @apply btn bg-earth-600 text-white hover:bg-earth-700 focus:ring-earth-500;
+    @apply btn focus:ring-earth-400;
+    background-color: rgb(var(--color-btn-bg));
+    color: rgb(var(--color-btn-text));
+    border: 1px solid rgb(var(--color-btn-border));
+  }
+  .btn-secondary:hover {
+    background-color: rgb(var(--color-btn-hover-bg));
   }
 
   .btn-outline {
-    @apply btn border-2 focus:ring-gray-500;
-    border-color: rgb(var(--color-border-input));
+    @apply btn focus:ring-earth-400;
+    background-color: transparent;
+    border: 1px solid rgb(var(--color-btn-border));
     color: rgb(var(--color-text-secondary));
   }
   .btn-outline:hover {
-    background-color: rgb(var(--color-hover-bg));
+    background-color: rgb(var(--color-hover-bg) / 0.3);
   }
 
   .input {
-    @apply block w-full px-4 py-2 rounded-lg shadow-sm focus:ring-2 focus:ring-forest-500 focus:border-forest-500;
-    background-color: rgb(var(--color-bg-secondary));
+    @apply block w-full px-3 py-1.5 rounded-md text-sm shadow-sm focus:ring-2 focus:ring-accent-500 focus:border-accent-500;
+    background-color: rgb(var(--color-bg-primary));
     border: 1px solid rgb(var(--color-border-input));
     color: rgb(var(--color-text-primary));
   }
 
   .card {
-    @apply rounded-xl overflow-hidden;
+    @apply rounded-md overflow-hidden;
     background-color: rgb(var(--color-bg-elevated));
     border: 1px solid rgb(var(--color-border-primary));
-    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   }
 }
 

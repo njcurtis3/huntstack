@@ -36,14 +36,22 @@ export function Layout() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header */}
-      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
+      {/* Header — GitHub-style */}
+      <header
+        className="sticky top-0 z-50 border-b"
+        style={{
+          backgroundColor: `rgb(var(--color-header-bg))`,
+          borderColor: `rgb(var(--color-border-primary))`,
+        }}
+      >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
             <Link to="/" className="flex items-center gap-2">
               <img src="/duck-image-1.png" alt="HuntStack" className="w-8 h-8" />
-              <span className="font-bold text-xl text-gray-900 dark:text-gray-100">huntstack</span>
+              <span className="font-semibold text-xl" style={{ color: `rgb(var(--color-text-primary))` }}>
+                huntstack
+              </span>
             </Link>
 
             {/* Desktop Navigation */}
@@ -55,10 +63,10 @@ export function Layout() {
                   <Link
                     key={item.name}
                     to={item.href}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                       isActive
-                        ? 'bg-forest-50 dark:bg-forest-950 text-forest-700 dark:text-forest-300'
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100'
+                        ? 'bg-accent-50 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400'
+                        : 'text-earth-600 dark:text-earth-400 hover:bg-earth-100 dark:hover:bg-earth-800 hover:text-earth-900 dark:hover:text-earth-100'
                     }`}
                   >
                     <item.icon className="w-4 h-4" />
@@ -69,10 +77,10 @@ export function Layout() {
             </nav>
 
             {/* Auth Buttons + Theme Toggle */}
-            <div className="hidden md:flex items-center gap-3">
+            <div className="hidden md:flex items-center gap-2">
               <button
                 onClick={toggleTheme}
-                className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="p-2 rounded-md text-earth-500 dark:text-earth-400 hover:bg-earth-100 dark:hover:bg-earth-800 transition-colors"
                 aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
               >
                 {resolvedTheme === 'dark' ? (
@@ -89,7 +97,7 @@ export function Layout() {
             <div className="md:hidden flex items-center gap-2">
               <button
                 onClick={toggleTheme}
-                className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                className="p-2 rounded-md text-earth-500 dark:text-earth-400 hover:bg-earth-100 dark:hover:bg-earth-800 transition-colors"
                 aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
               >
                 {resolvedTheme === 'dark' ? (
@@ -99,7 +107,7 @@ export function Layout() {
                 )}
               </button>
               <button
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                className="p-2 rounded-md hover:bg-earth-100 dark:hover:bg-earth-800"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               >
                 {mobileMenuOpen ? (
@@ -114,7 +122,13 @@ export function Layout() {
 
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
-          <div className="md:hidden border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+          <div
+            className="md:hidden border-t"
+            style={{
+              backgroundColor: `rgb(var(--color-bg-elevated))`,
+              borderColor: `rgb(var(--color-border-primary))`,
+            }}
+          >
             <nav className="px-4 py-3 space-y-1">
               {navigation.map((item) => {
                 const isActive = location.pathname === item.href
@@ -123,10 +137,10 @@ export function Layout() {
                     key={item.name}
                     to={item.href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium ${
+                    className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
                       isActive
-                        ? 'bg-forest-50 dark:bg-forest-950 text-forest-700 dark:text-forest-300'
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                        ? 'bg-accent-50 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400'
+                        : 'text-earth-600 dark:text-earth-400 hover:bg-earth-100 dark:hover:bg-earth-800'
                     }`}
                   >
                     <item.icon className="w-5 h-5" />
@@ -135,7 +149,7 @@ export function Layout() {
                 )
               })}
             </nav>
-            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex gap-3">
+            <div className="px-4 py-3 border-t border-earth-200 dark:border-earth-700 flex gap-3">
               <button className="btn-outline text-sm flex-1">Sign In</button>
               <button className="btn-primary text-sm flex-1">Sign Up</button>
             </div>
@@ -148,47 +162,47 @@ export function Layout() {
         <Outlet />
       </main>
 
-      {/* Footer */}
-      <footer className="bg-gray-900 text-gray-400 py-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      {/* Footer — GitHub-style */}
+      <footer className="border-t" style={{ backgroundColor: `rgb(var(--color-bg-secondary))`, borderColor: `rgb(var(--color-border-primary))` }}>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             <div>
-              <h3 className="text-white font-semibold mb-4">Hunters</h3>
+              <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Hunters</h3>
               <ul className="space-y-2 text-sm">
-                <li><Link to="/search" className="hover:text-white">Find Hunts</Link></li>
-                <li><Link to="/map" className="hover:text-white">Explore Map</Link></li>
-                <li><Link to="/migration" className="hover:text-white">Migration</Link></li>
-                <li><Link to="/regulations" className="hover:text-white">Regulations</Link></li>
-                <li><Link to="/chat" className="hover:text-white">Ask AI</Link></li>
+                <li><Link to="/search" className="text-accent-500 hover:underline">Find Hunts</Link></li>
+                <li><Link to="/map" className="text-accent-500 hover:underline">Explore Map</Link></li>
+                <li><Link to="/migration" className="text-accent-500 hover:underline">Migration</Link></li>
+                <li><Link to="/regulations" className="text-accent-500 hover:underline">Regulations</Link></li>
+                <li><Link to="/chat" className="text-accent-500 hover:underline">Ask AI</Link></li>
               </ul>
             </div>
             <div>
-              <h3 className="text-white font-semibold mb-4">Outfitters</h3>
+              <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Outfitters</h3>
               <ul className="space-y-2 text-sm">
-                <li><a href="#" className="hover:text-white">List Your Business</a></li>
-                <li><a href="#" className="hover:text-white">Reg Alerts</a></li>
-                <li><a href="#" className="hover:text-white">Dashboard</a></li>
+                <li><a href="#" className="text-accent-500 hover:underline">List Your Business</a></li>
+                <li><a href="#" className="text-accent-500 hover:underline">Reg Alerts</a></li>
+                <li><a href="#" className="text-accent-500 hover:underline">Dashboard</a></li>
               </ul>
             </div>
             <div>
-              <h3 className="text-white font-semibold mb-4">Resources</h3>
+              <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Resources</h3>
               <ul className="space-y-2 text-sm">
-                <li><a href="#" className="hover:text-white">Blog</a></li>
-                <li><a href="#" className="hover:text-white">Data Sources</a></li>
-                <li><a href="#" className="hover:text-white">API</a></li>
+                <li><a href="#" className="text-accent-500 hover:underline">Blog</a></li>
+                <li><a href="#" className="text-accent-500 hover:underline">Data Sources</a></li>
+                <li><a href="#" className="text-accent-500 hover:underline">API</a></li>
               </ul>
             </div>
             <div>
-              <h3 className="text-white font-semibold mb-4">Company</h3>
+              <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Company</h3>
               <ul className="space-y-2 text-sm">
-                <li><a href="#" className="hover:text-white">About</a></li>
-                <li><a href="#" className="hover:text-white">Contact</a></li>
-                <li><a href="#" className="hover:text-white">Privacy</a></li>
-                <li><a href="#" className="hover:text-white">Terms</a></li>
+                <li><a href="#" className="text-accent-500 hover:underline">About</a></li>
+                <li><a href="#" className="text-accent-500 hover:underline">Contact</a></li>
+                <li><a href="#" className="text-accent-500 hover:underline">Privacy</a></li>
+                <li><a href="#" className="text-accent-500 hover:underline">Terms</a></li>
               </ul>
             </div>
           </div>
-          <div className="mt-8 pt-8 border-t border-gray-800 text-sm text-center">
+          <div className="mt-8 pt-6 border-t text-sm text-center" style={{ borderColor: `rgb(var(--color-border-primary))`, color: `rgb(var(--color-text-tertiary))` }}>
             <p>&copy; {new Date().getFullYear()} HuntStack. All rights reserved.</p>
             <p className="mt-2 text-xs">
               Data sourced from USFWS, state wildlife agencies, and other public sources.

@@ -95,14 +95,14 @@ export function ChatPage() {
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col">
       {/* Header */}
-      <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-4">
+      <div className="border-b px-4 py-4" style={{ backgroundColor: `rgb(var(--color-bg-elevated))`, borderColor: `rgb(var(--color-border-primary))` }}>
         <div className="max-w-3xl mx-auto flex items-center gap-3">
-          <div className="w-10 h-10 bg-forest-100 dark:bg-forest-950 rounded-full flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-forest-600 dark:text-forest-400" />
+          <div className="w-10 h-10 bg-accent-50 dark:bg-accent-900/30 rounded-full flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-accent-500" />
           </div>
           <div>
-            <h1 className="font-semibold text-gray-900 dark:text-gray-100">HuntStack AI Assistant</h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Ask anything about hunting regulations, seasons, and locations</p>
+            <h1 className="font-semibold text-sm" style={{ color: `rgb(var(--color-text-primary))` }}>HuntStack AI Assistant</h1>
+            <p className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>Ask anything about hunting regulations, seasons, and locations</p>
           </div>
         </div>
       </div>
@@ -111,27 +111,27 @@ export function ChatPage() {
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-3xl mx-auto px-4 py-6">
           {messages.length === 0 ? (
-            // Empty state with suggestions
             <div className="text-center py-12">
-              <div className="w-16 h-16 bg-forest-100 dark:bg-forest-950 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Bot className="w-8 h-8 text-forest-600 dark:text-forest-400" />
+              <div className="w-16 h-16 bg-accent-50 dark:bg-accent-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Bot className="w-8 h-8 text-accent-500" />
               </div>
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              <h2 className="text-xl font-semibold mb-2" style={{ color: `rgb(var(--color-text-primary))` }}>
                 How can I help you today?
               </h2>
-              <p className="text-gray-600 dark:text-gray-400 mb-8 max-w-md mx-auto">
+              <p className="mb-8 max-w-md mx-auto" style={{ color: `rgb(var(--color-text-secondary))` }}>
                 Ask me about hunting regulations, seasons, license requirements,
                 or help finding the perfect hunting location.
               </p>
 
               <div className="space-y-2">
-                <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">Try asking:</p>
+                <p className="text-xs font-medium mb-3" style={{ color: `rgb(var(--color-text-tertiary))` }}>Try asking:</p>
                 <div className="flex flex-wrap justify-center gap-2">
                   {suggestedQuestions.map((question) => (
                     <button
                       key={question}
                       onClick={() => handleSuggestedQuestion(question)}
-                      className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
+                      className="card px-3 py-1.5 text-sm hover:border-accent-400 dark:hover:border-accent-500 transition-colors"
+                      style={{ color: `rgb(var(--color-text-secondary))` }}
                     >
                       {question}
                     </button>
@@ -140,45 +140,47 @@ export function ChatPage() {
               </div>
             </div>
           ) : (
-            // Message list
             <div className="space-y-6">
               {messages.map((message) => (
                 <div
                   key={message.id}
-                  className={`flex gap-4 ${message.role === 'user' ? 'justify-end' : ''}`}
+                  className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : ''}`}
                 >
                   {message.role === 'assistant' && (
-                    <div className="w-8 h-8 bg-forest-100 dark:bg-forest-950 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Bot className="w-4 h-4 text-forest-600 dark:text-forest-400" />
+                    <div className="w-8 h-8 bg-accent-50 dark:bg-accent-900/30 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Bot className="w-4 h-4 text-accent-500" />
                     </div>
                   )}
 
-                  <div className={`max-w-[80%] ${message.role === 'user' ? '' : ''}`}>
+                  <div className="max-w-[80%]">
                     <div
-                      className={`rounded-2xl px-4 py-3 ${
+                      className={`rounded-lg px-4 py-3 ${
                         message.role === 'user'
-                          ? 'bg-forest-600 text-white'
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100'
+                          ? 'bg-accent-500 text-white'
+                          : ''
                       }`}
+                      style={message.role === 'assistant' ? {
+                        backgroundColor: `rgb(var(--color-bg-secondary))`,
+                        color: `rgb(var(--color-text-primary))`,
+                      } : undefined}
                     >
-                      <p className="whitespace-pre-wrap">{message.content}</p>
+                      <p className="whitespace-pre-wrap text-sm">{message.content}</p>
                     </div>
 
-                    {/* Sources */}
                     {message.sources && message.sources.length > 0 && (
                       <div className="mt-2 space-y-1">
-                        <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Sources:</p>
+                        <p className="text-xs font-medium" style={{ color: `rgb(var(--color-text-tertiary))` }}>Sources:</p>
                         {message.sources.map((source, i) => (
-                          <div key={i} className="text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded px-2 py-1">
+                          <div key={i} className="text-xs rounded px-2 py-1" style={{ backgroundColor: `rgb(var(--color-bg-secondary))`, color: `rgb(var(--color-text-secondary))` }}>
                             {source.url ? (
-                              <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-forest-600 dark:text-forest-400 hover:underline inline-flex items-center gap-1">
+                              <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:underline inline-flex items-center gap-1">
                                 {source.title} <ExternalLink className="w-3 h-3" />
                               </a>
                             ) : (
                               <span>{source.title}</span>
                             )}
                             {source.snippet && (
-                              <span className="text-gray-400 dark:text-gray-500 ml-1">- {source.snippet}</span>
+                              <span className="ml-1" style={{ color: `rgb(var(--color-text-tertiary))` }}>- {source.snippet}</span>
                             )}
                           </div>
                         ))}
@@ -187,20 +189,20 @@ export function ChatPage() {
                   </div>
 
                   {message.role === 'user' && (
-                    <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center flex-shrink-0">
-                      <User className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-earth-200 dark:bg-earth-700">
+                      <User className="w-4 h-4 text-earth-600 dark:text-earth-300" />
                     </div>
                   )}
                 </div>
               ))}
 
               {isLoading && (
-                <div className="flex gap-4">
-                  <div className="w-8 h-8 bg-forest-100 dark:bg-forest-950 rounded-full flex items-center justify-center flex-shrink-0">
-                    <Bot className="w-4 h-4 text-forest-600 dark:text-forest-400" />
+                <div className="flex gap-3">
+                  <div className="w-8 h-8 bg-accent-50 dark:bg-accent-900/30 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Bot className="w-4 h-4 text-accent-500" />
                   </div>
-                  <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl px-4 py-3">
-                    <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
+                  <div className="rounded-lg px-4 py-3" style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+                    <Loader2 className="w-5 h-5 animate-spin" style={{ color: `rgb(var(--color-text-tertiary))` }} />
                   </div>
                 </div>
               )}
@@ -212,9 +214,9 @@ export function ChatPage() {
       </div>
 
       {/* Input Area */}
-      <div className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 px-4 py-4">
+      <div className="border-t px-4 py-4" style={{ backgroundColor: `rgb(var(--color-bg-elevated))`, borderColor: `rgb(var(--color-border-primary))` }}>
         <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
-          <div className="flex gap-4">
+          <div className="flex gap-3">
             <input
               type="text"
               value={input}
@@ -231,7 +233,7 @@ export function ChatPage() {
               <Send className="w-5 h-5" />
             </button>
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
+          <p className="text-xs mt-2 text-center" style={{ color: `rgb(var(--color-text-tertiary))` }}>
             AI responses are for informational purposes. Always verify regulations with official sources.
           </p>
         </form>

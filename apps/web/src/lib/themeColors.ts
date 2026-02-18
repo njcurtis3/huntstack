@@ -1,22 +1,26 @@
+/**
+ * GitHub Primer-inspired colors for SVG maps and Recharts.
+ */
+
 export function getMapColors(resolvedTheme: 'light' | 'dark') {
   const isDark = resolvedTheme === 'dark'
   return {
-    empty: isDark ? '#1f2937' : '#f3f4f6',
-    stroke: isDark ? '#4b5563' : '#9ca3af',
-    hasData: isDark ? '#166534' : '#bbf7d0',
-    hasDataHover: isDark ? '#15803d' : '#86efac',
-    selected: '#16a34a',
-    selectedHover: '#15803d',
+    empty: isDark ? '#161b22' : '#f6f8fa',
+    stroke: isDark ? '#30363d' : '#d0d7de',
+    hasData: isDark ? '#238636' : '#dafbe1',
+    hasDataHover: isDark ? '#2ea043' : '#aceebb',
+    selected: isDark ? '#1f6feb' : '#0969da',
+    selectedHover: isDark ? '#2f81f7' : '#0550ae',
   }
 }
 
 export function getChartColors(resolvedTheme: 'light' | 'dark') {
   const isDark = resolvedTheme === 'dark'
   return {
-    grid: isDark ? '#374151' : '#e5e7eb',
-    axis: isDark ? '#9ca3af' : '#6b7280',
-    tooltipBg: isDark ? '#1f2937' : '#ffffff',
-    tooltipBorder: isDark ? '#374151' : '#e5e7eb',
-    tooltipText: isDark ? '#f3f4f6' : '#1f2937',
+    grid: isDark ? '#21262d' : '#d0d7de',
+    axis: isDark ? '#7d8590' : '#656d76',
+    tooltipBg: isDark ? '#161b22' : '#ffffff',
+    tooltipBorder: isDark ? '#30363d' : '#d0d7de',
+    tooltipText: isDark ? '#e6edf3' : '#1f2328',
   }
 }

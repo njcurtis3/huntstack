@@ -76,13 +76,13 @@ const FLYWAY_OPTIONS = [
 ]
 
 const FLYWAY_COLORS: Record<string, string> = {
-  central: 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
-  mississippi: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300',
+  central: 'bg-accent-100 dark:bg-accent-900/30 text-accent-700 dark:text-accent-300',
+  mississippi: 'bg-forest-100 dark:bg-forest-900/30 text-forest-700 dark:text-forest-300',
   pacific: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
   atlantic: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300',
 }
 
-const STATE_LINE_COLORS = ['#16a34a', '#2563eb', '#dc2626', '#f59e0b', '#8b5cf6', '#ec4899', '#0891b2']
+const STATE_LINE_COLORS = ['#1f883d', '#0969da', '#cf222e', '#bf8700', '#8250df', '#bf3989', '#0550ae']
 
 export function MigrationPage() {
   const [selectedFlyway, setSelectedFlyway] = useState('')
@@ -202,14 +202,14 @@ export function MigrationPage() {
   return (
     <div>
       {/* Header */}
-      <div className="bg-gradient-to-br from-forest-900 to-forest-800 text-white py-12">
+      <div className="bg-earth-900 dark:bg-[#0d1117] text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 mb-3">
             <Bird className="w-8 h-8" />
             <h1 className="text-3xl font-bold">Migration</h1>
-            <span className="text-xs bg-forest-600 rounded-full px-3 py-1 font-medium">Beta</span>
+            <span className="text-xs bg-accent-600 dark:bg-accent-700 rounded-full px-3 py-1 font-medium">Beta</span>
           </div>
-          <p className="text-forest-200 max-w-2xl">
+          <p className="text-earth-300 max-w-2xl">
             Track waterfowl movement across refuges and flyways. See the latest survey counts,
             spot migration trends, and plan your hunts around real bird activity.
           </p>
@@ -218,7 +218,7 @@ export function MigrationPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Limited data notice */}
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg px-4 py-3 mb-6 text-sm text-yellow-800 dark:text-yellow-200">
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md px-4 py-3 mb-6 text-sm text-yellow-800 dark:text-yellow-200">
           Refuge count data is currently limited to select states and sources. We're actively working to expand coverage across more refuges and flyways.
         </div>
 
@@ -258,25 +258,25 @@ export function MigrationPage() {
         {/* US State Map */}
         <div className="card p-4 mb-8">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-medium text-gray-600 dark:text-gray-400">
+            <h2 className="text-sm font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>
               Select a state {selectedState && (
                 <button
                   onClick={() => setSelectedState('')}
-                  className="ml-2 text-xs text-forest-600 dark:text-forest-400 hover:text-forest-800 dark:hover:text-forest-300 underline"
+                  className="ml-2 text-xs text-accent-500 hover:text-accent-600 dark:hover:text-accent-400 underline"
                 >
                   Clear selection
                 </button>
               )}
             </h2>
-            <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+            <div className="flex items-center gap-4 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
               <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-sm bg-forest-200 inline-block" /> Has data
+                <span className="w-3 h-3 rounded-sm bg-forest-200 dark:bg-forest-800 inline-block" /> Has data
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-sm bg-forest-600 inline-block" /> Selected
+                <span className="w-3 h-3 rounded-sm bg-accent-500 inline-block" /> Selected
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-sm bg-gray-100 dark:bg-gray-700 inline-block border border-gray-200 dark:border-gray-600" /> No data
+                <span className="w-3 h-3 rounded-sm inline-block border" style={{ backgroundColor: `rgb(var(--color-bg-secondary))`, borderColor: `rgb(var(--color-border-primary))` }} /> No data
               </span>
             </div>
           </div>
@@ -316,7 +316,7 @@ export function MigrationPage() {
                           cursor: hasData ? 'pointer' : 'default',
                         },
                         pressed: {
-                          fill: isSelected ? '#166534' : hasData ? '#4ade80' : mapColors.empty,
+                          fill: isSelected ? mapColors.selectedHover : hasData ? mapColors.hasDataHover : mapColors.empty,
                           stroke: mapColors.selected,
                           strokeWidth: 1.5,
                           outline: 'none',
@@ -333,13 +333,13 @@ export function MigrationPage() {
         {/* Loading */}
         {loading && (
           <div className="flex justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-forest-600" />
+            <Loader2 className="w-8 h-8 animate-spin text-accent-500" />
           </div>
         )}
 
         {/* Error */}
         {error && !loading && (
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-lg p-4 flex items-start gap-3">
+          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md p-4 flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
             <div>
               <p className="font-medium text-yellow-800 dark:text-yellow-200">Failed to load migration data</p>
@@ -354,16 +354,16 @@ export function MigrationPage() {
             {/* Summary Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
               <div className="card p-4">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Total Birds Counted</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{totalBirds.toLocaleString()}</p>
+                <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>Total Birds Counted</p>
+                <p className="text-2xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>{totalBirds.toLocaleString()}</p>
               </div>
               <div className="card p-4">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Refuges Reporting</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{refugeCount}</p>
+                <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>Refuges Reporting</p>
+                <p className="text-2xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>{refugeCount}</p>
               </div>
               <div className="card p-4 col-span-2 lg:col-span-1">
-                <p className="text-sm text-gray-500 dark:text-gray-400">Latest Survey</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+                <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>Latest Survey</p>
+                <p className="text-2xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>
                   {latestDate ? latestDate.toLocaleDateString() : 'N/A'}
                 </p>
               </div>
@@ -372,30 +372,30 @@ export function MigrationPage() {
             {/* Current Counts */}
             {filteredCounts.length > 0 ? (
               <div className="mb-8">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Latest Refuge Counts</h2>
+                <h2 className="text-xl font-semibold mb-4" style={{ color: `rgb(var(--color-text-primary))` }}>Latest Refuge Counts</h2>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {filteredCounts.map((item, i) => (
                     <button
                       key={`${item.refugeId}-${item.species}-${i}`}
                       onClick={() => handleRefugeClick(item.refugeId, item.refugeName)}
-                      className={`card p-5 text-left hover:shadow-md transition-shadow w-full ${
-                        selectedRefuge?.id === item.refugeId ? 'ring-2 ring-forest-500' : ''
+                      className={`card p-5 text-left hover:border-accent-400 dark:hover:border-accent-500 transition-colors w-full ${
+                        selectedRefuge?.id === item.refugeId ? 'ring-2 ring-accent-500' : ''
                       }`}
                     >
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-semibold text-gray-900 dark:text-gray-100 truncate pr-2">{item.refugeName}</h3>
-                        <span className="text-xs bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded px-2 py-0.5 flex-shrink-0">
+                        <h3 className="font-semibold truncate pr-2" style={{ color: `rgb(var(--color-text-primary))` }}>{item.refugeName}</h3>
+                        <span className="text-xs bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300 rounded px-2 py-0.5 flex-shrink-0">
                           {item.state}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">{item.speciesName}</p>
-                      <p className="text-3xl font-bold text-forest-700 dark:text-forest-400">{item.count.toLocaleString()}</p>
+                      <p className="text-sm mb-1" style={{ color: `rgb(var(--color-text-secondary))` }}>{item.speciesName}</p>
+                      <p className="text-3xl font-bold text-forest-600 dark:text-forest-400">{item.count.toLocaleString()}</p>
                       <div className="flex items-center justify-between mt-3">
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                        <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                           {new Date(item.surveyDate).toLocaleDateString()}
                         </span>
                         {item.flyway && (
-                          <span className={`text-xs rounded px-2 py-0.5 ${FLYWAY_COLORS[item.flyway] || 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>
+                          <span className={`text-xs rounded px-2 py-0.5 ${FLYWAY_COLORS[item.flyway] || 'bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300'}`}>
                             {item.flyway}
                           </span>
                         )}
@@ -406,8 +406,8 @@ export function MigrationPage() {
               </div>
             ) : (
               <div className="text-center py-12 mb-8">
-                <Bird className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-                <p className="text-gray-500 dark:text-gray-400">No migration data available for these filters.</p>
+                <Bird className="w-12 h-12 mx-auto mb-3" style={{ color: `rgb(var(--color-text-tertiary))` }} />
+                <p style={{ color: `rgb(var(--color-text-secondary))` }}>No migration data available for these filters.</p>
               </div>
             )}
 
@@ -415,19 +415,19 @@ export function MigrationPage() {
             {selectedRefuge && (
               <div className="card p-6 mb-8">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+                  <h2 className="text-xl font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
                     {selectedRefuge.name} — Count History
                   </h2>
                   <button
                     onClick={() => setSelectedRefuge(null)}
-                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    className="text-earth-400 hover:text-earth-600 dark:hover:text-earth-300"
                   >
                     <X className="w-5 h-5" />
                   </button>
                 </div>
                 {refugeDetailLoading ? (
                   <div className="flex justify-center py-8">
-                    <Loader2 className="w-6 h-6 animate-spin text-forest-600" />
+                    <Loader2 className="w-6 h-6 animate-spin text-accent-500" />
                   </div>
                 ) : refugeDetail.length > 0 ? (
                   <>
@@ -448,26 +448,26 @@ export function MigrationPage() {
                           formatter={(value) => [(value as number).toLocaleString(), 'Count']}
                           contentStyle={{ backgroundColor: chartColors.tooltipBg, border: `1px solid ${chartColors.tooltipBorder}`, color: chartColors.tooltipText }}
                         />
-                        <Line type="monotone" dataKey="count" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} />
+                        <Line type="monotone" dataKey="count" stroke="#1f883d" strokeWidth={2} dot={{ r: 3 }} />
                       </LineChart>
                     </ResponsiveContainer>
                     <div className="mt-4 overflow-x-auto">
                       <table className="w-full text-sm">
-                        <thead className="bg-gray-50 dark:bg-gray-800">
+                        <thead style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}>
                           <tr>
-                            <th className="text-left p-3 font-medium text-gray-600 dark:text-gray-400">Date</th>
-                            <th className="text-left p-3 font-medium text-gray-600 dark:text-gray-400">Species</th>
-                            <th className="text-right p-3 font-medium text-gray-600 dark:text-gray-400">Count</th>
-                            <th className="text-left p-3 font-medium text-gray-600 dark:text-gray-400">Type</th>
+                            <th className="text-left p-3 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Date</th>
+                            <th className="text-left p-3 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Species</th>
+                            <th className="text-right p-3 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Count</th>
+                            <th className="text-left p-3 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Type</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                        <tbody className="divide-y" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
                           {refugeDetail.map((row, i) => (
                             <tr key={i}>
                               <td className="p-3">{new Date(row.surveyDate).toLocaleDateString()}</td>
                               <td className="p-3">{row.speciesName}</td>
                               <td className="p-3 text-right font-medium">{row.count.toLocaleString()}</td>
-                              <td className="p-3 text-gray-500 dark:text-gray-400">{row.surveyType}</td>
+                              <td className="p-3" style={{ color: `rgb(var(--color-text-tertiary))` }}>{row.surveyType}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -475,7 +475,7 @@ export function MigrationPage() {
                     </div>
                   </>
                 ) : (
-                  <p className="text-gray-500 dark:text-gray-400 text-center py-4">No count data available for this refuge.</p>
+                  <p className="text-center py-4" style={{ color: `rgb(var(--color-text-secondary))` }}>No count data available for this refuge.</p>
                 )}
               </div>
             )}
@@ -483,7 +483,7 @@ export function MigrationPage() {
             {/* Historical Trends Chart */}
             {chartData.length > 0 && (
               <div className="card p-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">Historical Trends</h2>
+                <h2 className="text-xl font-semibold mb-4" style={{ color: `rgb(var(--color-text-primary))` }}>Historical Trends</h2>
                 <ResponsiveContainer width="100%" height={400}>
                   <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
@@ -511,7 +511,7 @@ export function MigrationPage() {
                     ))}
                   </LineChart>
                 </ResponsiveContainer>
-                <p className="text-xs text-gray-400 mt-3">
+                <p className="text-xs mt-3" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                   Historical data from Midwinter Waterfowl Inventory (2006-2016).
                 </p>
               </div>
