@@ -19,7 +19,7 @@ export function MapPage() {
     })
 
     map.current.addControl(new maplibregl.NavigationControl(), 'top-right')
-    
+
     map.current.on('load', () => {
       setMapLoaded(true)
       // TODO: Add public lands layers, hunting units, etc.
@@ -33,11 +33,11 @@ export function MapPage() {
   return (
     <div className="h-[calc(100vh-4rem)] flex">
       {/* Sidebar */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="font-semibold text-gray-900">Map Layers</h2>
+      <div className="w-80 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+        <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="font-semibold text-gray-900 dark:text-gray-100">Map Layers</h2>
         </div>
-        
+
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* Layer toggles */}
           <div className="space-y-3">
@@ -67,11 +67,11 @@ export function MapPage() {
             </label>
           </div>
 
-          <hr className="border-gray-200" />
+          <hr className="border-gray-200 dark:border-gray-700" />
 
           {/* Search location */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Search Location
             </label>
             <input
@@ -83,7 +83,7 @@ export function MapPage() {
 
           {/* Legend */}
           <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Legend</h3>
+            <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Legend</h3>
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 bg-green-500 rounded" />
@@ -109,13 +109,13 @@ export function MapPage() {
       {/* Map Container */}
       <div className="flex-1 relative">
         <div ref={mapContainer} className="absolute inset-0" />
-        
+
         {!mapLoaded && (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-900">
             <div className="text-center">
               <div className="w-8 h-8 border-4 border-forest-600 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-              <p className="text-gray-600">Loading map...</p>
-              <p className="text-sm text-gray-500 mt-2">
+              <p className="text-gray-600 dark:text-gray-400">Loading map...</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
                 Note: Add your MapTiler API key to enable the map
               </p>
             </div>
@@ -124,13 +124,13 @@ export function MapPage() {
 
         {/* Map Controls Overlay */}
         <div className="absolute top-4 left-4 space-y-2">
-          <button className="w-10 h-10 bg-white rounded-lg shadow-md flex items-center justify-center hover:bg-gray-50">
-            <Layers className="w-5 h-5 text-gray-700" />
+          <button className="w-10 h-10 bg-white dark:bg-gray-800 rounded-lg shadow-md flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-700">
+            <Layers className="w-5 h-5 text-gray-700 dark:text-gray-300" />
           </button>
         </div>
 
-        <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-md p-2">
-          <p className="text-xs text-gray-500">
+        <div className="absolute bottom-4 left-4 bg-white dark:bg-gray-800 rounded-lg shadow-md p-2">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             Click on the map to see location details
           </p>
         </div>

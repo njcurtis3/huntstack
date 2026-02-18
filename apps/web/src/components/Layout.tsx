@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { 
+import {
   Home,
   Search,
   Map,
@@ -8,9 +8,12 @@ import {
   Users,
   MessageSquare,
   Menu,
-  X
+  X,
+  Sun,
+  Moon
 } from 'lucide-react'
 import { useState } from 'react'
+import { useThemeStore } from '../stores/themeStore'
 
 const navigation = [
   { name: 'Home', href: '/', icon: Home },
@@ -25,23 +28,28 @@ const navigation = [
 export function Layout() {
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const { resolvedTheme, setTheme } = useThemeStore()
+
+  const toggleTheme = () => {
+    setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
             <Link to="/" className="flex items-center gap-2">
               <img src="/duck-image-1.png" alt="HuntStack" className="w-8 h-8" />
-              <span className="font-bold text-xl text-gray-900">huntstack</span>
+              <span className="font-bold text-xl text-gray-900 dark:text-gray-100">huntstack</span>
             </Link>
 
             {/* Desktop Navigation */}
             <nav className="hidden md:flex items-center gap-1">
               {navigation.map((item) => {
-                const isActive = location.pathname === item.href || 
+                const isActive = location.pathname === item.href ||
                   (item.href !== '/' && location.pathname.startsWith(item.href))
                 return (
                   <Link
@@ -49,8 +57,8 @@ export function Layout() {
                     to={item.href}
                     className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                       isActive
-                        ? 'bg-forest-50 text-forest-700'
-                        : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                        ? 'bg-forest-50 dark:bg-forest-950 text-forest-700 dark:text-forest-300'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100'
                     }`}
                   >
                     <item.icon className="w-4 h-4" />
@@ -60,29 +68,53 @@ export function Layout() {
               })}
             </nav>
 
-            {/* Auth Buttons */}
+            {/* Auth Buttons + Theme Toggle */}
             <div className="hidden md:flex items-center gap-3">
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+              >
+                {resolvedTheme === 'dark' ? (
+                  <Sun className="w-5 h-5 text-yellow-400" />
+                ) : (
+                  <Moon className="w-5 h-5" />
+                )}
+              </button>
               <button className="btn-outline text-sm">Sign In</button>
               <button className="btn-primary text-sm">Sign Up</button>
             </div>
 
             {/* Mobile menu button */}
-            <button
-              className="md:hidden p-2 rounded-lg hover:bg-gray-100"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            >
-              {mobileMenuOpen ? (
-                <X className="w-6 h-6" />
-              ) : (
-                <Menu className="w-6 h-6" />
-              )}
-            </button>
+            <div className="md:hidden flex items-center gap-2">
+              <button
+                onClick={toggleTheme}
+                className="p-2 rounded-lg text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
+              >
+                {resolvedTheme === 'dark' ? (
+                  <Sun className="w-5 h-5 text-yellow-400" />
+                ) : (
+                  <Moon className="w-5 h-5" />
+                )}
+              </button>
+              <button
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              >
+                {mobileMenuOpen ? (
+                  <X className="w-6 h-6" />
+                ) : (
+                  <Menu className="w-6 h-6" />
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
-          <div className="md:hidden border-t border-gray-200 bg-white">
+          <div className="md:hidden border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
             <nav className="px-4 py-3 space-y-1">
               {navigation.map((item) => {
                 const isActive = location.pathname === item.href
@@ -93,8 +125,8 @@ export function Layout() {
                     onClick={() => setMobileMenuOpen(false)}
                     className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium ${
                       isActive
-                        ? 'bg-forest-50 text-forest-700'
-                        : 'text-gray-600 hover:bg-gray-100'
+                        ? 'bg-forest-50 dark:bg-forest-950 text-forest-700 dark:text-forest-300'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                     }`}
                   >
                     <item.icon className="w-5 h-5" />
@@ -103,7 +135,7 @@ export function Layout() {
                 )
               })}
             </nav>
-            <div className="px-4 py-3 border-t border-gray-200 flex gap-3">
+            <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex gap-3">
               <button className="btn-outline text-sm flex-1">Sign In</button>
               <button className="btn-primary text-sm flex-1">Sign Up</button>
             </div>
@@ -159,7 +191,7 @@ export function Layout() {
           <div className="mt-8 pt-8 border-t border-gray-800 text-sm text-center">
             <p>&copy; {new Date().getFullYear()} HuntStack. All rights reserved.</p>
             <p className="mt-2 text-xs">
-              Data sourced from USFWS, state wildlife agencies, and other public sources. 
+              Data sourced from USFWS, state wildlife agencies, and other public sources.
               Always verify regulations with official sources before hunting.
             </p>
           </div>

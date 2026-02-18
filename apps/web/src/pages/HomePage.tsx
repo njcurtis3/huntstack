@@ -65,11 +65,11 @@ export function HomePage() {
       </section>
 
       {/* Features Grid */}
-      <section className="py-20 bg-white">
+      <section className="py-20 bg-white dark:bg-gray-900">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold text-gray-900">Plan Your Hunt</h2>
-            <p className="mt-4 text-lg text-gray-600 max-w-2xl mx-auto">
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Plan Your Hunt</h2>
+            <p className="mt-4 text-lg text-gray-600 dark:text-gray-400 max-w-2xl mx-auto">
               Search. Maps. Regulations. AI Assistant. For all 50 US states
             </p>
           </div>
@@ -80,11 +80,11 @@ export function HomePage() {
                 to={feature.href}
                 className="card p-6 hover:shadow-lg transition-shadow group"
               >
-                <div className="w-12 h-12 bg-forest-100 rounded-lg flex items-center justify-center mb-4 group-hover:bg-forest-200 transition-colors">
-                  <feature.icon className="w-6 h-6 text-forest-600" />
+                <div className="w-12 h-12 bg-forest-100 dark:bg-forest-950 rounded-lg flex items-center justify-center mb-4 group-hover:bg-forest-200 dark:group-hover:bg-forest-900 transition-colors">
+                  <feature.icon className="w-6 h-6 text-forest-600 dark:text-forest-400" />
                 </div>
-                <h3 className="font-semibold text-gray-900 mb-2">{feature.title}</h3>
-                <p className="text-sm text-gray-600">{feature.description}</p>
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">{feature.title}</h3>
+                <p className="text-sm text-gray-600 dark:text-gray-400">{feature.description}</p>
               </Link>
             ))}
           </div>
@@ -92,11 +92,11 @@ export function HomePage() {
       </section>
 
       {/* Popular Species */}
-      <section className="py-20 bg-gray-50">
+      <section className="py-20 bg-gray-50 dark:bg-gray-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold text-gray-900">Popular Species</h2>
-            <p className="mt-4 text-lg text-gray-600">
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Popular Species</h2>
+            <p className="mt-4 text-lg text-gray-600 dark:text-gray-400">
               Browse regulations and seasons for the most popular game.
             </p>
           </div>
@@ -107,8 +107,8 @@ export function HomePage() {
                 to={`/search?species=${encodeURIComponent(species.name)}`}
                 className="card p-4 text-center hover:shadow-md transition-shadow"
               >
-                <h3 className="font-medium text-gray-900 text-sm">{species.name}</h3>
-                <p className="text-xs text-gray-500 mt-1">{species.count}</p>
+                <h3 className="font-medium text-gray-900 dark:text-gray-100 text-sm">{species.name}</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{species.count}</p>
               </Link>
             ))}
           </div>
@@ -120,7 +120,7 @@ export function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl font-bold mb-4">Are You an Outfitter?</h2>
           <p className="text-earth-200 text-lg max-w-2xl mx-auto mb-8">
-            List your business on HuntStack to reach thousands of hunters. 
+            List your business on HuntStack to reach thousands of hunters.
             Get regulation alerts, manage your profile, and grow your client base.
           </p>
           <button className="btn bg-white text-earth-900 hover:bg-earth-50 px-6 py-3">

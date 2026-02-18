@@ -6,8 +6,8 @@ export function NotFoundPage() {
     <div className="min-h-[60vh] flex items-center justify-center px-4">
       <div className="text-center">
         <p className="text-6xl mb-4">🦌</p>
-        <h1 className="text-4xl font-bold text-gray-900 mb-4">Page Not Found</h1>
-        <p className="text-gray-600 mb-8 max-w-md mx-auto">
+        <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100 mb-4">Page Not Found</h1>
+        <p className="text-gray-600 dark:text-gray-400 mb-8 max-w-md mx-auto">
           Looks like this trail went cold. The page you're looking for doesn't exist or has been moved.
         </p>
         <div className="flex justify-center gap-4">

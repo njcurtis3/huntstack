@@ -14,7 +14,8 @@
       "Bash(timeout:*)",
       "Bash(curl:*)",
       "Bash(python huntstack_scrapers_inspect_docs.py:*)",
-      "Bash(pnpm add:*)"
+      "Bash(pnpm add:*)",
+      "Bash(powershell -ExecutionPolicy Bypass -Command \"cd ''c:\\\\Users\\\\natha\\\\Desktop\\\\repos\\\\huntstack\\\\apps\\\\web''; npx tsc --noEmit 2>&1 | Select-Object -First 40\")"
     ]
   }
 }

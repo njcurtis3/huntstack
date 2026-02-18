@@ -95,14 +95,14 @@ export function ChatPage() {
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-4 py-4">
+      <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-4">
         <div className="max-w-3xl mx-auto flex items-center gap-3">
-          <div className="w-10 h-10 bg-forest-100 rounded-full flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-forest-600" />
+          <div className="w-10 h-10 bg-forest-100 dark:bg-forest-950 rounded-full flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-forest-600 dark:text-forest-400" />
           </div>
           <div>
-            <h1 className="font-semibold text-gray-900">HuntStack AI Assistant</h1>
-            <p className="text-sm text-gray-500">Ask anything about hunting regulations, seasons, and locations</p>
+            <h1 className="font-semibold text-gray-900 dark:text-gray-100">HuntStack AI Assistant</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Ask anything about hunting regulations, seasons, and locations</p>
           </div>
         </div>
       </div>
@@ -113,25 +113,25 @@ export function ChatPage() {
           {messages.length === 0 ? (
             // Empty state with suggestions
             <div className="text-center py-12">
-              <div className="w-16 h-16 bg-forest-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Bot className="w-8 h-8 text-forest-600" />
+              <div className="w-16 h-16 bg-forest-100 dark:bg-forest-950 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Bot className="w-8 h-8 text-forest-600 dark:text-forest-400" />
               </div>
-              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
                 How can I help you today?
               </h2>
-              <p className="text-gray-600 mb-8 max-w-md mx-auto">
+              <p className="text-gray-600 dark:text-gray-400 mb-8 max-w-md mx-auto">
                 Ask me about hunting regulations, seasons, license requirements,
                 or help finding the perfect hunting location.
               </p>
 
               <div className="space-y-2">
-                <p className="text-sm font-medium text-gray-500 mb-3">Try asking:</p>
+                <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">Try asking:</p>
                 <div className="flex flex-wrap justify-center gap-2">
                   {suggestedQuestions.map((question) => (
                     <button
                       key={question}
                       onClick={() => handleSuggestedQuestion(question)}
-                      className="px-4 py-2 bg-white border border-gray-200 rounded-full text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                      className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
                     >
                       {question}
                     </button>
@@ -148,8 +148,8 @@ export function ChatPage() {
                   className={`flex gap-4 ${message.role === 'user' ? 'justify-end' : ''}`}
                 >
                   {message.role === 'assistant' && (
-                    <div className="w-8 h-8 bg-forest-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <Bot className="w-4 h-4 text-forest-600" />
+                    <div className="w-8 h-8 bg-forest-100 dark:bg-forest-950 rounded-full flex items-center justify-center flex-shrink-0">
+                      <Bot className="w-4 h-4 text-forest-600 dark:text-forest-400" />
                     </div>
                   )}
 
@@ -158,7 +158,7 @@ export function ChatPage() {
                       className={`rounded-2xl px-4 py-3 ${
                         message.role === 'user'
                           ? 'bg-forest-600 text-white'
-                          : 'bg-gray-100 text-gray-900'
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100'
                       }`}
                     >
                       <p className="whitespace-pre-wrap">{message.content}</p>
@@ -167,18 +167,18 @@ export function ChatPage() {
                     {/* Sources */}
                     {message.sources && message.sources.length > 0 && (
                       <div className="mt-2 space-y-1">
-                        <p className="text-xs text-gray-500 font-medium">Sources:</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Sources:</p>
                         {message.sources.map((source, i) => (
-                          <div key={i} className="text-xs text-gray-600 bg-gray-50 rounded px-2 py-1">
+                          <div key={i} className="text-xs text-gray-600 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded px-2 py-1">
                             {source.url ? (
-                              <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-forest-600 hover:underline inline-flex items-center gap-1">
+                              <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-forest-600 dark:text-forest-400 hover:underline inline-flex items-center gap-1">
                                 {source.title} <ExternalLink className="w-3 h-3" />
                               </a>
                             ) : (
                               <span>{source.title}</span>
                             )}
                             {source.snippet && (
-                              <span className="text-gray-400 ml-1">- {source.snippet}</span>
+                              <span className="text-gray-400 dark:text-gray-500 ml-1">- {source.snippet}</span>
                             )}
                           </div>
                         ))}
@@ -187,8 +187,8 @@ export function ChatPage() {
                   </div>
 
                   {message.role === 'user' && (
-                    <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center flex-shrink-0">
-                      <User className="w-4 h-4 text-gray-600" />
+                    <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center flex-shrink-0">
+                      <User className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                     </div>
                   )}
                 </div>
@@ -196,10 +196,10 @@ export function ChatPage() {
 
               {isLoading && (
                 <div className="flex gap-4">
-                  <div className="w-8 h-8 bg-forest-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <Bot className="w-4 h-4 text-forest-600" />
+                  <div className="w-8 h-8 bg-forest-100 dark:bg-forest-950 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Bot className="w-4 h-4 text-forest-600 dark:text-forest-400" />
                   </div>
-                  <div className="bg-gray-100 rounded-2xl px-4 py-3">
+                  <div className="bg-gray-100 dark:bg-gray-800 rounded-2xl px-4 py-3">
                     <Loader2 className="w-5 h-5 text-gray-400 animate-spin" />
                   </div>
                 </div>
@@ -212,7 +212,7 @@ export function ChatPage() {
       </div>
 
       {/* Input Area */}
-      <div className="bg-white border-t border-gray-200 px-4 py-4">
+      <div className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 px-4 py-4">
         <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
           <div className="flex gap-4">
             <input
@@ -231,7 +231,7 @@ export function ChatPage() {
               <Send className="w-5 h-5" />
             </button>
           </div>
-          <p className="text-xs text-gray-500 mt-2 text-center">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
             AI responses are for informational purposes. Always verify regulations with official sources.
           </p>
         </form>
