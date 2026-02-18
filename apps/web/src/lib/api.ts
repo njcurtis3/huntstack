@@ -263,6 +263,11 @@ class ApiClient {
         surveyType: string
         centerPoint: { lat: number; lng: number } | null
         flyway: string | null
+        previousCount: number | null
+        previousDate: string | null
+        delta: number | null
+        deltaPercent: number | null
+        trend: 'increasing' | 'decreasing' | 'stable' | 'new'
       }>
       historicalTrends: Array<{
         year: number
@@ -310,6 +315,11 @@ class ApiClient {
         sourceUrl: string | null
         observers: string | null
         notes: string | null
+        previousCount: number | null
+        previousDate: string | null
+        delta: number | null
+        deltaPercent: number | null
+        trend: 'increasing' | 'decreasing' | 'stable' | 'new'
       }>
       total: number
     }>(`/api/refuges/${refugeId}/counts`, { params: options })

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Loader2, AlertCircle, Bird, X } from 'lucide-react'
+import { Loader2, AlertCircle, Bird, X, TrendingUp, TrendingDown, Minus, Sparkles } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer,
@@ -42,6 +42,11 @@ type CurrentCount = {
   surveyType: string
   centerPoint: { lat: number; lng: number } | null
   flyway: string | null
+  previousCount: number | null
+  previousDate: string | null
+  delta: number | null
+  deltaPercent: number | null
+  trend: 'increasing' | 'decreasing' | 'stable' | 'new'
 }
 
 type HistoricalTrend = {
@@ -65,6 +70,11 @@ type RefugeCount = {
   sourceUrl: string | null
   observers: string | null
   notes: string | null
+  previousCount: number | null
+  previousDate: string | null
+  delta: number | null
+  deltaPercent: number | null
+  trend: 'increasing' | 'decreasing' | 'stable' | 'new'
 }
 
 const FLYWAY_OPTIONS = [
@@ -83,6 +93,53 @@ const FLYWAY_COLORS: Record<string, string> = {
 }
 
 const STATE_LINE_COLORS = ['#1f883d', '#0969da', '#cf222e', '#bf8700', '#8250df', '#bf3989', '#0550ae']
+
+function DeltaBadge({ trend, delta, deltaPercent }: {
+  trend: 'increasing' | 'decreasing' | 'stable' | 'new'
+  delta: number | null
+  deltaPercent: number | null
+}) {
+  if (trend === 'new') {
+    return (
+      <span className="flex items-center gap-1 text-xs text-accent-500 dark:text-accent-400">
+        <Sparkles className="w-3 h-3" />
+        First survey
+      </span>
+    )
+  }
+
+  const formattedDelta = delta !== null
+    ? `${delta >= 0 ? '+' : ''}${delta.toLocaleString()}`
+    : null
+  const formattedPct = deltaPercent !== null
+    ? ` (${deltaPercent >= 0 ? '+' : ''}${deltaPercent.toFixed(1)}%)`
+    : ''
+
+  if (trend === 'stable') {
+    return (
+      <span className="flex items-center gap-1 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+        <Minus className="w-3 h-3" />
+        {formattedDelta}{formattedPct}
+      </span>
+    )
+  }
+
+  if (trend === 'increasing') {
+    return (
+      <span className="flex items-center gap-1 text-xs text-forest-600 dark:text-forest-400">
+        <TrendingUp className="w-3 h-3" />
+        {formattedDelta}{formattedPct}
+      </span>
+    )
+  }
+
+  return (
+    <span className="flex items-center gap-1 text-xs" style={{ color: '#cf222e' }}>
+      <TrendingDown className="w-3 h-3" />
+      {formattedDelta}{formattedPct}
+    </span>
+  )
+}
 
 export function MigrationPage() {
   const [selectedFlyway, setSelectedFlyway] = useState('')
@@ -352,7 +409,7 @@ export function MigrationPage() {
         {!loading && !error && (
           <>
             {/* Summary Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
               <div className="card p-4">
                 <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>Total Birds Counted</p>
                 <p className="text-2xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>{totalBirds.toLocaleString()}</p>
@@ -361,10 +418,20 @@ export function MigrationPage() {
                 <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>Refuges Reporting</p>
                 <p className="text-2xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>{refugeCount}</p>
               </div>
-              <div className="card p-4 col-span-2 lg:col-span-1">
+              <div className="card p-4">
                 <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>Latest Survey</p>
                 <p className="text-2xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>
                   {latestDate ? latestDate.toLocaleDateString() : 'N/A'}
+                </p>
+              </div>
+              <div className="card p-4">
+                <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>Trending Up</p>
+                <p className="text-2xl font-bold text-forest-600 dark:text-forest-400 flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5" />
+                  {filteredCounts.filter(c => c.trend === 'increasing').length}
+                  <span className="text-sm font-normal" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                    / {filteredCounts.filter(c => c.trend !== 'new').length}
+                  </span>
                 </p>
               </div>
             </div>
@@ -390,6 +457,9 @@ export function MigrationPage() {
                       </div>
                       <p className="text-sm mb-1" style={{ color: `rgb(var(--color-text-secondary))` }}>{item.speciesName}</p>
                       <p className="text-3xl font-bold text-forest-600 dark:text-forest-400">{item.count.toLocaleString()}</p>
+                      <div className="mt-1">
+                        <DeltaBadge trend={item.trend} delta={item.delta} deltaPercent={item.deltaPercent} />
+                      </div>
                       <div className="flex items-center justify-between mt-3">
                         <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                           {new Date(item.surveyDate).toLocaleDateString()}
@@ -458,6 +528,7 @@ export function MigrationPage() {
                             <th className="text-left p-3 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Date</th>
                             <th className="text-left p-3 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Species</th>
                             <th className="text-right p-3 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Count</th>
+                            <th className="text-right p-3 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Change</th>
                             <th className="text-left p-3 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Type</th>
                           </tr>
                         </thead>
@@ -467,6 +538,11 @@ export function MigrationPage() {
                               <td className="p-3">{new Date(row.surveyDate).toLocaleDateString()}</td>
                               <td className="p-3">{row.speciesName}</td>
                               <td className="p-3 text-right font-medium">{row.count.toLocaleString()}</td>
+                              <td className="p-3 text-right">
+                                <div className="flex justify-end">
+                                  <DeltaBadge trend={row.trend} delta={row.delta} deltaPercent={row.deltaPercent} />
+                                </div>
+                              </td>
                               <td className="p-3" style={{ color: `rgb(var(--color-text-tertiary))` }}>{row.surveyType}</td>
                             </tr>
                           ))}

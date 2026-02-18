@@ -148,13 +148,44 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
       .orderBy(desc(refugeCounts.surveyDate))
       .limit(query.limit || 100)
 
+    // Compute survey-to-survey deltas (rows are ordered DESC, so next row = previous survey)
+    const countsWithDelta = rows.map((row, i) => {
+      const prevRow = rows[i + 1]
+      const sameSpecies = prevRow && prevRow.speciesSlug === row.speciesSlug
+      const previousCount = sameSpecies ? (prevRow.count as number) : null
+      const previousDate = sameSpecies ? prevRow.surveyDate : null
+
+      let delta: number | null = null
+      let deltaPercent: number | null = null
+      let trend: 'increasing' | 'decreasing' | 'stable' | 'new'
+
+      if (previousCount === null) {
+        trend = 'new'
+      } else {
+        delta = (row.count as number) - previousCount
+        deltaPercent = previousCount !== 0
+          ? Math.round((((row.count as number) - previousCount) / previousCount) * 1000) / 10
+          : null
+        const absPct = deltaPercent !== null ? Math.abs(deltaPercent) : null
+        if (absPct !== null && absPct < 5) {
+          trend = 'stable'
+        } else if (delta > 0) {
+          trend = 'increasing'
+        } else {
+          trend = 'decreasing'
+        }
+      }
+
+      return { ...row, previousCount, previousDate, delta, deltaPercent, trend }
+    })
+
     return {
       refuge: {
         id: loc[0].id,
         name: loc[0].name,
       },
-      counts: rows,
-      total: rows.length,
+      counts: countsWithDelta,
+      total: countsWithDelta.length,
     }
   })
 
@@ -181,26 +212,34 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
     }
     const db = getDb()
 
-    // Get latest counts by refuge (most recent survey per refuge+species)
+    // Get latest counts with previous survey for delta computation
     const latestCounts = await db.execute(sql`
-      SELECT DISTINCT ON (rc.location_id, rc.species_id)
-        rc.location_id,
-        l.name as refuge_name,
-        s.code as state_code,
-        sp.slug as species_slug,
-        sp.name as species_name,
-        rc.count,
-        rc.survey_date,
-        rc.survey_type,
-        l.center_point,
-        l.metadata as location_metadata
-      FROM refuge_counts rc
-      JOIN locations l ON rc.location_id = l.id
-      JOIN states s ON l.state_id = s.id
-      JOIN species sp ON rc.species_id = sp.id
-      WHERE l.name NOT LIKE '%% - Statewide MWI'
-        ${speciesSlug ? sql`AND sp.slug = ${speciesSlug}` : sql``}
-      ORDER BY rc.location_id, rc.species_id, rc.survey_date DESC
+      WITH ranked AS (
+        SELECT
+          rc.location_id, rc.species_id, rc.count, rc.survey_date, rc.survey_type,
+          l.name as refuge_name, s.code as state_code,
+          sp.slug as species_slug, sp.name as species_name,
+          l.center_point, l.metadata as location_metadata,
+          ROW_NUMBER() OVER (
+            PARTITION BY rc.location_id, rc.species_id
+            ORDER BY rc.survey_date DESC
+          ) as rn
+        FROM refuge_counts rc
+        JOIN locations l ON rc.location_id = l.id
+        JOIN states s ON l.state_id = s.id
+        JOIN species sp ON rc.species_id = sp.id
+        WHERE l.name NOT LIKE '%% - Statewide MWI'
+          ${speciesSlug ? sql`AND sp.slug = ${speciesSlug}` : sql``}
+      )
+      SELECT
+        c.location_id, c.refuge_name, c.state_code, c.species_slug, c.species_name,
+        c.count, c.survey_date, c.survey_type, c.center_point, c.location_metadata,
+        p.count as previous_count, p.survey_date as previous_date
+      FROM ranked c
+      LEFT JOIN ranked p
+        ON c.location_id = p.location_id AND c.species_id = p.species_id AND p.rn = 2
+      WHERE c.rn = 1
+      ORDER BY c.state_code, c.refuge_name
     `)
 
     let results = latestCounts as unknown as Array<Record<string, unknown>>
@@ -231,18 +270,50 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
     `)
 
     return {
-      currentCounts: results.map(r => ({
-        refugeId: r.location_id,
-        refugeName: r.refuge_name,
-        state: r.state_code,
-        species: r.species_slug,
-        speciesName: r.species_name,
-        count: r.count,
-        surveyDate: r.survey_date,
-        surveyType: r.survey_type,
-        centerPoint: r.center_point,
-        flyway: (r.location_metadata as Record<string, unknown> | null)?.flyway || null,
-      })),
+      currentCounts: results.map(r => {
+        const currentCount = r.count as number
+        const previousCount = r.previous_count as number | null
+        const previousDate = r.previous_date as string | null
+
+        let delta: number | null = null
+        let deltaPercent: number | null = null
+        let trend: 'increasing' | 'decreasing' | 'stable' | 'new'
+
+        if (previousCount === null || previousCount === undefined) {
+          trend = 'new'
+        } else {
+          delta = currentCount - previousCount
+          deltaPercent = previousCount !== 0
+            ? Math.round(((currentCount - previousCount) / previousCount) * 1000) / 10
+            : null
+          const absPct = deltaPercent !== null ? Math.abs(deltaPercent) : null
+          if (absPct !== null && absPct < 5) {
+            trend = 'stable'
+          } else if (delta > 0) {
+            trend = 'increasing'
+          } else {
+            trend = 'decreasing'
+          }
+        }
+
+        return {
+          refugeId: r.location_id,
+          refugeName: r.refuge_name,
+          state: r.state_code,
+          species: r.species_slug,
+          speciesName: r.species_name,
+          count: currentCount,
+          surveyDate: r.survey_date,
+          surveyType: r.survey_type,
+          centerPoint: r.center_point,
+          flyway: (r.location_metadata as Record<string, unknown> | null)?.flyway || null,
+          previousCount,
+          previousDate,
+          delta,
+          deltaPercent,
+          trend,
+        }
+      }),
       historicalTrends: historicalTrends as unknown as Array<Record<string, unknown>>,
     }
   })
