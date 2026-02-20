@@ -51,6 +51,7 @@ const SPECIES_ALIASES: Record<string, string> = {
 // Broad category keywords that indicate waterfowl interest
 const WATERFOWL_KEYWORDS = ['duck', 'ducks', 'goose', 'geese', 'waterfowl', 'teal']
 const MIGRATION_KEYWORDS = ['migration', 'migrating', 'flying', 'counts', 'refuge', 'survey', 'birds moving', 'what\'s flying']
+const LOCATION_KEYWORDS = ['where to hunt', 'where should i hunt', 'public land', 'public hunting', 'wma', 'wildlife management area', 'national forest', 'blm', 'wildlife refuge', 'hunting area', 'hunting location', 'place to hunt', 'spots to hunt']
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -59,6 +60,7 @@ interface ExtractedEntities {
   speciesSlugs: string[]
   isWaterfowl: boolean
   isMigrationQuery: boolean
+  isLocationQuery: boolean
 }
 
 interface StructuredContext {
@@ -66,6 +68,7 @@ interface StructuredContext {
   licenses: Array<Record<string, unknown>>
   regulations: Array<Record<string, unknown>>
   refugeCounts: Array<Record<string, unknown>>
+  locations: Array<Record<string, unknown>>
   sources: Array<{ title: string; url?: string; snippet: string }>
 }
 
@@ -215,12 +218,14 @@ function extractEntities(query: string): ExtractedEntities {
   // Check for broad category keywords
   const isWaterfowl = WATERFOWL_KEYWORDS.some(kw => lower.includes(kw)) || speciesSlugs.size > 0
   const isMigrationQuery = MIGRATION_KEYWORDS.some(kw => lower.includes(kw))
+  const isLocationQuery = LOCATION_KEYWORDS.some(kw => lower.includes(kw))
 
   return {
     stateCodes: [...stateCodes],
     speciesSlugs: [...speciesSlugs],
     isWaterfowl,
     isMigrationQuery,
+    isLocationQuery,
   }
 }
 
@@ -295,10 +300,11 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     licenses: [],
     regulations: [],
     refugeCounts: [],
+    locations: [],
     sources: [],
   }
 
-  const { stateCodes, speciesSlugs, isWaterfowl, isMigrationQuery } = entities
+  const { stateCodes, speciesSlugs, isWaterfowl, isMigrationQuery, isLocationQuery } = entities
 
   // No entities detected — skip structured queries
   if (stateCodes.length === 0 && speciesSlugs.length === 0 && !isWaterfowl && !isMigrationQuery) {
@@ -458,6 +464,49 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
       })())
     }
 
+    // ── Locations (public hunting areas) ────────────────────────────────
+    if (isLocationQuery || stateCodes.length > 0) {
+      queries.push((async () => {
+        const conditions = [
+          sql`l.name NOT LIKE '%% - Statewide MWI'`,
+        ]
+
+        if (stateCodes.length > 0) {
+          conditions.push(sql`st.code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})`)
+        }
+
+        const rows = await db.execute(sql`
+          SELECT
+            l.name,
+            l.location_type,
+            l.description,
+            l.acreage,
+            l.website_url,
+            l.restrictions,
+            l.center_point,
+            l.metadata,
+            st.code AS state_code,
+            st.name AS state_name
+          FROM locations l
+          JOIN states st ON l.state_id = st.id
+          WHERE ${sql.join(conditions, sql` AND `)}
+          ORDER BY l.location_type, l.name
+          LIMIT 15
+        `)
+        result.locations = rows as unknown as Array<Record<string, unknown>>
+
+        for (const row of result.locations) {
+          if (row.website_url) {
+            result.sources.push({
+              title: `${row.name} (${row.state_code})`,
+              url: row.website_url as string,
+              snippet: `${row.location_type}: ${row.name} in ${row.state_name}`,
+            })
+          }
+        }
+      })())
+    }
+
     await Promise.all(queries)
   } catch (error) {
     console.error('retrieveStructuredContext error:', error)
@@ -518,6 +567,20 @@ function formatStructuredContext(ctx: StructuredContext): string {
       lines.push(`- ${refuge} (${stateCode}, ${surveyDate}): ${speciesList}`)
     }
     sections.push(`## Recent Bird Survey Counts\n${lines.join('\n')}`)
+  }
+
+  // Locations
+  if (ctx.locations.length > 0) {
+    const lines = ctx.locations.map(l => {
+      const type = (l.location_type as string || '').replace(/_/g, ' ')
+      const acres = l.acreage ? `, ${Number(l.acreage).toLocaleString()} acres` : ''
+      const desc = l.description ? ` — ${(l.description as string).substring(0, 100)}` : ''
+      const flyway = (l.metadata as Record<string, unknown> | null)?.flyway
+      const flywayStr = flyway ? `, ${flyway} flyway` : ''
+      const restrictions = l.restrictions ? `, restrictions: ${(l.restrictions as string).substring(0, 80)}` : ''
+      return `- ${l.name} (${l.state_code}, ${type}${acres}${flywayStr})${desc}${restrictions}`
+    })
+    sections.push(`## Public Hunting Locations\n${lines.join('\n')}`)
   }
 
   // Regulations (summaries only — full text is in vector chunks)
