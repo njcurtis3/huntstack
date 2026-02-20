@@ -364,6 +364,85 @@ class ApiClient {
   async getChatHistory(conversationId: string) {
     return this.request(`/api/chat/history/${conversationId}`)
   }
+
+  // Weather
+  async getRefugeForecast(refugeId: string) {
+    return this.request<{
+      refuge: { id: string; name: string; state: string }
+      forecast: Array<{
+        name: string
+        startTime: string
+        endTime: string
+        isDaytime: boolean
+        temperature: number
+        temperatureUnit: string
+        windSpeed: string
+        windDirection: string
+        shortForecast: string
+        detailedForecast: string
+        precipitationChance: number | null
+        humidity: number
+        dewpoint: number
+      }>
+    }>(`/api/weather/forecast/${refugeId}`)
+  }
+
+  async getWeatherAlerts(states?: string) {
+    return this.request<{
+      alerts: Array<{
+        id: string
+        event: string
+        headline: string | null
+        description: string
+        severity: string
+        urgency: string
+        effective: string
+        expires: string
+        areaDesc: string
+        senderName: string
+      }>
+      states: string[]
+      fetchedAt: string
+    }>('/api/weather/alerts', {
+      params: states ? { states } : undefined,
+    })
+  }
+
+  async getHuntingConditions(refugeId: string) {
+    return this.request<{
+      refuge: { id: string; name: string; state: string }
+      conditions: {
+        temperature: number
+        temperatureUnit: string
+        windSpeed: string
+        windDirection: string
+        windCategory: 'calm' | 'light' | 'moderate' | 'strong' | 'dangerous'
+        precipitationChance: number | null
+        humidity: number
+        conditions: string
+        huntingRating: 'excellent' | 'good' | 'fair' | 'poor'
+        huntingNotes: string[]
+        forecast: Array<{
+          name: string
+          startTime: string
+          temperature: number
+          temperatureUnit: string
+          windSpeed: string
+          windDirection: string
+          shortForecast: string
+          precipitationChance: number | null
+        }>
+        alerts: Array<{
+          id: string
+          event: string
+          headline: string | null
+          severity: string
+          expires: string
+          areaDesc: string
+        }>
+      }
+    }>(`/api/weather/hunting-conditions/${refugeId}`)
+  }
 }
 
 export const api = new ApiClient(API_URL)

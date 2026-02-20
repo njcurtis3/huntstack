@@ -52,6 +52,7 @@ const SPECIES_ALIASES: Record<string, string> = {
 const WATERFOWL_KEYWORDS = ['duck', 'ducks', 'goose', 'geese', 'waterfowl', 'teal']
 const MIGRATION_KEYWORDS = ['migration', 'migrating', 'flying', 'counts', 'refuge', 'survey', 'birds moving', 'what\'s flying']
 const LOCATION_KEYWORDS = ['where to hunt', 'where should i hunt', 'public land', 'public hunting', 'wma', 'wildlife management area', 'national forest', 'blm', 'wildlife refuge', 'hunting area', 'hunting location', 'place to hunt', 'spots to hunt']
+const WEATHER_KEYWORDS = ['weather', 'forecast', 'temperature', 'wind', 'cold front', 'rain', 'snow', 'freeze', 'conditions', 'hunting conditions', 'front']
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -61,6 +62,7 @@ interface ExtractedEntities {
   isWaterfowl: boolean
   isMigrationQuery: boolean
   isLocationQuery: boolean
+  isWeatherQuery: boolean
 }
 
 interface StructuredContext {
@@ -69,6 +71,7 @@ interface StructuredContext {
   regulations: Array<Record<string, unknown>>
   refugeCounts: Array<Record<string, unknown>>
   locations: Array<Record<string, unknown>>
+  weather: Array<Record<string, unknown>>
   sources: Array<{ title: string; url?: string; snippet: string }>
 }
 
@@ -219,6 +222,7 @@ function extractEntities(query: string): ExtractedEntities {
   const isWaterfowl = WATERFOWL_KEYWORDS.some(kw => lower.includes(kw)) || speciesSlugs.size > 0
   const isMigrationQuery = MIGRATION_KEYWORDS.some(kw => lower.includes(kw))
   const isLocationQuery = LOCATION_KEYWORDS.some(kw => lower.includes(kw))
+  const isWeatherQuery = WEATHER_KEYWORDS.some(kw => lower.includes(kw))
 
   return {
     stateCodes: [...stateCodes],
@@ -226,6 +230,7 @@ function extractEntities(query: string): ExtractedEntities {
     isWaterfowl,
     isMigrationQuery,
     isLocationQuery,
+    isWeatherQuery,
   }
 }
 
@@ -301,13 +306,14 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     regulations: [],
     refugeCounts: [],
     locations: [],
+    weather: [],
     sources: [],
   }
 
-  const { stateCodes, speciesSlugs, isWaterfowl, isMigrationQuery, isLocationQuery } = entities
+  const { stateCodes, speciesSlugs, isWaterfowl, isMigrationQuery, isLocationQuery, isWeatherQuery } = entities
 
   // No entities detected — skip structured queries
-  if (stateCodes.length === 0 && speciesSlugs.length === 0 && !isWaterfowl && !isMigrationQuery) {
+  if (stateCodes.length === 0 && speciesSlugs.length === 0 && !isWaterfowl && !isMigrationQuery && !isLocationQuery && !isWeatherQuery) {
     return result
   }
 
@@ -507,6 +513,60 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
       })())
     }
 
+    // ── Weather conditions ────────────────────────────────────────────────
+    if (isWeatherQuery || isMigrationQuery) {
+      queries.push((async () => {
+        try {
+          const stateFilter = stateCodes.length > 0
+            ? sql`st.code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})`
+            : sql`TRUE`
+
+          const refuges = await db.execute(sql`
+            SELECT l.id, l.name, l.center_point, st.code as state_code
+            FROM locations l
+            JOIN states st ON l.state_id = st.id
+            WHERE l.location_type = 'wildlife_refuge'
+              AND l.center_point IS NOT NULL
+              AND l.name NOT LIKE '%% - Statewide MWI'
+              AND ${stateFilter}
+            LIMIT 3
+          `)
+
+          const { getHuntingConditions } = await import('../lib/weather.js')
+
+          const weatherResults = await Promise.all(
+            (refuges as unknown as Array<Record<string, unknown>>).map(async (r) => {
+              const cp = r.center_point as { lat: number; lng: number } | null
+              if (!cp) return null
+              try {
+                const conditions = await getHuntingConditions(cp.lat, cp.lng, r.state_code as string)
+                if (!conditions) return null
+                return {
+                  refuge_name: r.name,
+                  state_code: r.state_code,
+                  temperature: conditions.temperature,
+                  temperatureUnit: conditions.temperatureUnit,
+                  windSpeed: conditions.windSpeed,
+                  windDirection: conditions.windDirection,
+                  windCategory: conditions.windCategory,
+                  conditions: conditions.conditions,
+                  precipitationChance: conditions.precipitationChance,
+                  huntingRating: conditions.huntingRating,
+                  huntingNotes: conditions.huntingNotes,
+                }
+              } catch {
+                return null
+              }
+            })
+          )
+
+          result.weather = weatherResults.filter(Boolean) as Array<Record<string, unknown>>
+        } catch (error) {
+          console.error('Weather retrieval error:', error)
+        }
+      })())
+    }
+
     await Promise.all(queries)
   } catch (error) {
     console.error('retrieveStructuredContext error:', error)
@@ -590,6 +650,18 @@ function formatStructuredContext(ctx: StructuredContext): string {
       return `- ${r.state_code} [${r.category}] ${r.title}${summary ? ': ' + summary : ''}`
     })
     sections.push(`## Relevant Regulations\n${lines.join('\n')}`)
+  }
+
+  // Weather Conditions
+  if (ctx.weather.length > 0) {
+    const lines = ctx.weather.map(w => {
+      const notes = (w.huntingNotes as string[])?.join('; ') || ''
+      return `- ${w.refuge_name} (${w.state_code}): ${w.temperature}°${w.temperatureUnit}, ` +
+        `wind ${w.windSpeed} ${w.windDirection} (${w.windCategory}), ` +
+        `${w.conditions}, precip: ${w.precipitationChance ?? 'N/A'}%, ` +
+        `hunting rating: ${w.huntingRating}${notes ? '. ' + notes : ''}`
+    })
+    sections.push(`## Current Weather Conditions\n${lines.join('\n')}`)
   }
 
   return sections.join('\n\n')

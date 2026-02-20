@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Loader2, AlertCircle, Bird, X, TrendingUp, TrendingDown, Minus, Sparkles } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -156,6 +156,18 @@ export function MigrationPage() {
   const [refugeDetail, setRefugeDetail] = useState<RefugeCount[]>([])
   const [refugeDetailLoading, setRefugeDetailLoading] = useState(false)
 
+  const [weatherAlerts, setWeatherAlerts] = useState<Array<{
+    id: string; event: string; headline: string | null
+    severity: string; areaDesc: string; expires: string
+  }>>([])
+  const [alertsDismissed, setAlertsDismissed] = useState<Set<string>>(new Set())
+  const [refugeWeather, setRefugeWeather] = useState<Map<string, {
+    temperature: number; temperatureUnit: string
+    windSpeed: string; windDirection: string
+    conditions: string; huntingRating: 'excellent' | 'good' | 'fair' | 'poor'
+  }>>(new Map())
+  const weatherRequestedRef = useRef<Set<string>>(new Set())
+
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme)
   const mapColors = getMapColors(resolvedTheme)
   const chartColors = getChartColors(resolvedTheme)
@@ -219,6 +231,28 @@ export function MigrationPage() {
     return [...statesWithData].sort()
   }, [statesWithData])
 
+  // Fetch weather alerts for states with data
+  useEffect(() => {
+    let cancelled = false
+    async function fetchAlerts() {
+      try {
+        const statesParam = stateOptions.length > 0
+          ? stateOptions.join(',')
+          : 'TX,NM,AR,LA,KS,OK'
+        const data = await api.getWeatherAlerts(statesParam)
+        if (cancelled) return
+        const relevant = data.alerts.filter(a =>
+          ['Severe', 'Extreme', 'Moderate'].includes(a.severity)
+        )
+        setWeatherAlerts(relevant.slice(0, 5))
+      } catch {
+        // Silently fail — weather alerts are enhancement only
+      }
+    }
+    fetchAlerts()
+    return () => { cancelled = true }
+  }, [stateOptions])
+
   // Map click handler — toggle state selection
   const handleMapStateClick = useCallback((stateCode: string) => {
     setSelectedState(prev => prev === stateCode ? '' : stateCode)
@@ -229,6 +263,48 @@ export function MigrationPage() {
     if (!selectedState) return currentCounts
     return currentCounts.filter(c => c.state === selectedState)
   }, [currentCounts, selectedState])
+
+  // Fetch weather for visible refuges (staggered, uses ref to avoid re-render loop)
+  useEffect(() => {
+    let cancelled = false
+    const uniqueRefuges = [...new Set(filteredCounts.map(c => c.refugeId))]
+    const toFetch = uniqueRefuges
+      .filter(id => !weatherRequestedRef.current.has(id))
+      .slice(0, 6)
+
+    if (toFetch.length === 0) return
+
+    // Mark as requested immediately to prevent duplicate fetches
+    toFetch.forEach(id => weatherRequestedRef.current.add(id))
+
+    async function fetchWeather() {
+      for (const refugeId of toFetch) {
+        if (cancelled) return
+        try {
+          const data = await api.getHuntingConditions(refugeId)
+          if (cancelled) return
+          setRefugeWeather(prev => {
+            const next = new Map(prev)
+            next.set(refugeId, {
+              temperature: data.conditions.temperature,
+              temperatureUnit: data.conditions.temperatureUnit,
+              windSpeed: data.conditions.windSpeed,
+              windDirection: data.conditions.windDirection,
+              conditions: data.conditions.conditions,
+              huntingRating: data.conditions.huntingRating,
+            })
+            return next
+          })
+        } catch {
+          // Silently skip — remove from requested so it can retry on next filter change
+          weatherRequestedRef.current.delete(refugeId)
+        }
+        await new Promise(r => setTimeout(r, 200))
+      }
+    }
+    fetchWeather()
+    return () => { cancelled = true }
+  }, [filteredCounts])
 
   // Summary stats (based on filtered counts)
   const totalBirds = filteredCounts.reduce((sum, c) => sum + (c.count || 0), 0)
@@ -278,6 +354,39 @@ export function MigrationPage() {
         <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md px-4 py-3 mb-6 text-sm text-yellow-800 dark:text-yellow-200">
           Refuge count data is currently limited to select states and sources. We're actively working to expand coverage across more refuges and flyways.
         </div>
+
+        {/* Weather Alerts */}
+        {weatherAlerts.length > 0 && weatherAlerts.filter(a => !alertsDismissed.has(a.id)).length > 0 && (
+          <div className="mb-6 space-y-2">
+            {weatherAlerts
+              .filter(a => !alertsDismissed.has(a.id))
+              .map(alert => (
+                <div
+                  key={alert.id}
+                  className={`flex items-start gap-3 px-4 py-3 rounded-md text-sm border ${
+                    alert.severity === 'Extreme' || alert.severity === 'Severe'
+                      ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+                      : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200'
+                  }`}
+                >
+                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="font-medium">{alert.event}</span>
+                    {alert.headline && (
+                      <span className="ml-1">{alert.headline}</span>
+                    )}
+                    <span className="text-xs opacity-75 ml-2">{alert.areaDesc}</span>
+                  </div>
+                  <button
+                    onClick={() => setAlertsDismissed(prev => new Set([...prev, alert.id]))}
+                    className="flex-shrink-0 opacity-50 hover:opacity-100"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
@@ -460,6 +569,26 @@ export function MigrationPage() {
                       <div className="mt-1">
                         <DeltaBadge trend={item.trend} delta={item.delta} deltaPercent={item.deltaPercent} />
                       </div>
+                      {refugeWeather.has(item.refugeId) && (() => {
+                        const w = refugeWeather.get(item.refugeId)!
+                        const ratingColors: Record<string, string> = {
+                          excellent: 'text-forest-600 dark:text-forest-400',
+                          good: 'text-accent-600 dark:text-accent-400',
+                          fair: 'text-amber-600 dark:text-amber-400',
+                          poor: 'text-red-600 dark:text-red-400',
+                        }
+                        return (
+                          <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                            <span>{w.temperature}°{w.temperatureUnit === 'F' ? 'F' : w.temperatureUnit}</span>
+                            <span>·</span>
+                            <span>{w.windSpeed} {w.windDirection}</span>
+                            <span>·</span>
+                            <span className={ratingColors[w.huntingRating] || ''}>
+                              {w.huntingRating}
+                            </span>
+                          </div>
+                        )
+                      })()}
                       <div className="flex items-center justify-between mt-3">
                         <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                           {new Date(item.surveyDate).toLocaleDateString()}
