@@ -443,6 +443,53 @@ class ApiClient {
       }
     }>(`/api/weather/hunting-conditions/${refugeId}`)
   }
+
+  // Hunt Recommendations
+  async getHuntRecommendations(options?: {
+    species?: string
+    states?: string
+    date?: string
+    limit?: number
+  }) {
+    return this.request<{
+      recommendations: Array<{
+        rank: number
+        score: number
+        locationId: string
+        locationName: string
+        locationType: string
+        state: string
+        flyway: string | null
+        centerPoint: { lat: number; lng: number } | null
+        websiteUrl: string | null
+        species: string
+        speciesName: string
+        latestCount: number | null
+        surveyDate: string | null
+        trend: 'increasing' | 'decreasing' | 'stable' | 'new' | 'no_data'
+        delta: number | null
+        deltaPercent: number | null
+        seasonOpen: boolean
+        seasonName: string | null
+        seasonStart: string | null
+        seasonEnd: string | null
+        bagLimit: unknown
+        weatherRating: 'excellent' | 'good' | 'fair' | 'poor' | null
+        temperature: number | null
+        temperatureUnit: string | null
+        windSpeed: string | null
+        conditions: string | null
+        scoreBreakdown: {
+          trendScore: number
+          magnitudeScore: number
+          seasonScore: number
+          weatherScore: number
+        }
+      }>
+      queryParams: { species: string | null; states: string[]; date: string }
+      totalLocations: number
+    }>('/api/hunt/recommendations', { params: options })
+  }
 }
 
 export const api = new ApiClient(API_URL)

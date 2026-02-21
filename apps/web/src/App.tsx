@@ -7,6 +7,7 @@ import { RegulationsPage } from './pages/RegulationsPage'
 import { OutfittersPage } from './pages/OutfittersPage'
 import { MigrationPage } from './pages/MigrationPage'
 import { ChatPage } from './pages/ChatPage'
+import { WhereToHuntPage } from './pages/WhereToHuntPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
         <Route path="search" element={<SearchPage />} />
         <Route path="map" element={<MapPage />} />
         <Route path="migration" element={<MigrationPage />} />
+        <Route path="where-to-hunt" element={<WhereToHuntPage />} />
         <Route path="regulations" element={<RegulationsPage />} />
         <Route path="regulations/:state" element={<RegulationsPage />} />
         <Route path="outfitters" element={<OutfittersPage />} />

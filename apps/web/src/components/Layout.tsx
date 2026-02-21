@@ -10,7 +10,8 @@ import {
   Menu,
   X,
   Sun,
-  Moon
+  Moon,
+  Crosshair,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useThemeStore } from '../stores/themeStore'
@@ -20,6 +21,7 @@ const navigation = [
   { name: 'Search', href: '/search', icon: Search },
   { name: 'Map', href: '/map', icon: Map },
   { name: 'Migration', href: '/migration', icon: Bird },
+  { name: 'Where to Hunt', href: '/where-to-hunt', icon: Crosshair },
   { name: 'Regulations', href: '/regulations', icon: FileText },
   { name: 'Outfitters', href: '/outfitters', icon: Users },
   { name: 'Ask AI', href: '/chat', icon: MessageSquare },
@@ -169,7 +171,8 @@ export function Layout() {
             <div>
               <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Hunters</h3>
               <ul className="space-y-2 text-sm">
-                <li><Link to="/search" className="text-accent-500 hover:underline">Find Hunts</Link></li>
+                <li><Link to="/where-to-hunt" className="text-accent-500 hover:underline">Where to Hunt</Link></li>
+                <li><Link to="/search" className="text-accent-500 hover:underline">Search</Link></li>
                 <li><Link to="/map" className="text-accent-500 hover:underline">Explore Map</Link></li>
                 <li><Link to="/migration" className="text-accent-500 hover:underline">Migration</Link></li>
                 <li><Link to="/regulations" className="text-accent-500 hover:underline">Regulations</Link></li>
