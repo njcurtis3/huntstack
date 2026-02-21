@@ -18,6 +18,7 @@ import { speciesRoutes } from './routes/species.js'
 import { refugeRoutes } from './routes/refuges.js'
 import { weatherRoutes } from './routes/weather.js'
 import { huntRoutes } from './routes/hunt.js'
+import { migrationRoutes } from './routes/migration.js'
 
 const app = Fastify({
   logger: {
@@ -60,6 +61,7 @@ await app.register(swagger, {
       { name: 'refuges', description: 'Wildlife refuges and migration data' },
       { name: 'weather', description: 'NOAA weather forecasts and hunting conditions' },
       { name: 'hunt', description: 'Hunt recommendations and opportunity scoring' },
+      { name: 'migration', description: 'Migration push factors and intelligence' },
     ],
   },
 })
@@ -77,6 +79,7 @@ await app.register(chatRoutes, { prefix: '/api/chat' })
 await app.register(refugeRoutes, { prefix: '/api/refuges' })
 await app.register(weatherRoutes, { prefix: '/api/weather' })
 await app.register(huntRoutes, { prefix: '/api/hunt' })
+await app.register(migrationRoutes, { prefix: '/api/migration' })
 
 // Global error handler
 app.setErrorHandler((error, request, reply) => {

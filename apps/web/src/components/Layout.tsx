@@ -16,15 +16,24 @@ import {
 import { useState } from 'react'
 import { useThemeStore } from '../stores/themeStore'
 
-const navigation = [
-  { name: 'Home', href: '/', icon: Home },
-  { name: 'Search', href: '/search', icon: Search },
-  { name: 'Map', href: '/map', icon: Map },
+const primaryNav = [
   { name: 'Migration', href: '/migration', icon: Bird },
   { name: 'Where to Hunt', href: '/where-to-hunt', icon: Crosshair },
+]
+
+const secondaryNav = [
   { name: 'Regulations', href: '/regulations', icon: FileText },
-  { name: 'Outfitters', href: '/outfitters', icon: Users },
   { name: 'Ask AI', href: '/chat', icon: MessageSquare },
+  { name: 'Search', href: '/search', icon: Search },
+  { name: 'Outfitters', href: '/outfitters', icon: Users },
+  { name: 'Map', href: '/map', icon: Map },
+]
+
+// Combined for mobile (Home first, then primary, then secondary)
+const mobileNav = [
+  { name: 'Home', href: '/', icon: Home },
+  ...primaryNav,
+  ...secondaryNav,
 ]
 
 export function Layout() {
@@ -58,7 +67,31 @@ export function Layout() {
 
             {/* Desktop Navigation */}
             <nav className="hidden md:flex items-center gap-1">
-              {navigation.map((item) => {
+              {/* Primary nav — Migration + Where to Hunt */}
+              {primaryNav.map((item) => {
+                const isActive = location.pathname === item.href ||
+                  (item.href !== '/' && location.pathname.startsWith(item.href))
+                return (
+                  <Link
+                    key={item.name}
+                    to={item.href}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+                      isActive
+                        ? 'bg-accent-100 dark:bg-accent-900/40 text-accent-700 dark:text-accent-300'
+                        : 'text-earth-800 dark:text-earth-200 hover:bg-accent-50 dark:hover:bg-accent-900/20 hover:text-accent-700 dark:hover:text-accent-300'
+                    }`}
+                  >
+                    <item.icon className="w-4 h-4" />
+                    {item.name}
+                  </Link>
+                )
+              })}
+
+              {/* Divider */}
+              <div className="h-5 w-px mx-1" style={{ backgroundColor: `rgb(var(--color-border-primary))` }} />
+
+              {/* Secondary nav */}
+              {secondaryNav.map((item) => {
                 const isActive = location.pathname === item.href ||
                   (item.href !== '/' && location.pathname.startsWith(item.href))
                 return (
@@ -68,7 +101,7 @@ export function Layout() {
                     className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                       isActive
                         ? 'bg-accent-50 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400'
-                        : 'text-earth-600 dark:text-earth-400 hover:bg-earth-100 dark:hover:bg-earth-800 hover:text-earth-900 dark:hover:text-earth-100'
+                        : 'text-earth-500 dark:text-earth-400 hover:bg-earth-100 dark:hover:bg-earth-800 hover:text-earth-900 dark:hover:text-earth-100'
                     }`}
                   >
                     <item.icon className="w-4 h-4" />
@@ -132,8 +165,37 @@ export function Layout() {
             }}
           >
             <nav className="px-4 py-3 space-y-1">
-              {navigation.map((item) => {
-                const isActive = location.pathname === item.href
+              {/* Primary items */}
+              {mobileNav.slice(0, 3).map((item) => {
+                const isActive = location.pathname === item.href ||
+                  (item.href !== '/' && location.pathname.startsWith(item.href))
+                const isPrimary = item.href === '/migration' || item.href === '/where-to-hunt'
+                return (
+                  <Link
+                    key={item.name}
+                    to={item.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
+                      isActive
+                        ? 'bg-accent-100 dark:bg-accent-900/40 text-accent-700 dark:text-accent-300'
+                        : isPrimary
+                          ? 'text-earth-800 dark:text-earth-200 hover:bg-accent-50 dark:hover:bg-accent-900/20'
+                          : 'text-earth-600 dark:text-earth-400 hover:bg-earth-100 dark:hover:bg-earth-800'
+                    } ${isPrimary ? 'font-semibold' : ''}`}
+                  >
+                    <item.icon className="w-5 h-5" />
+                    {item.name}
+                  </Link>
+                )
+              })}
+
+              {/* Divider before secondary */}
+              <div className="my-1 border-t" style={{ borderColor: `rgb(var(--color-border-primary))` }} />
+
+              {/* Secondary items */}
+              {mobileNav.slice(3).map((item) => {
+                const isActive = location.pathname === item.href ||
+                  (item.href !== '/' && location.pathname.startsWith(item.href))
                 return (
                   <Link
                     key={item.name}
@@ -142,7 +204,7 @@ export function Layout() {
                     className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
                       isActive
                         ? 'bg-accent-50 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400'
-                        : 'text-earth-600 dark:text-earth-400 hover:bg-earth-100 dark:hover:bg-earth-800'
+                        : 'text-earth-500 dark:text-earth-400 hover:bg-earth-100 dark:hover:bg-earth-800'
                     }`}
                   >
                     <item.icon className="w-5 h-5" />

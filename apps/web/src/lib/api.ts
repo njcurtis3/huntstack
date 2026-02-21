@@ -444,6 +444,31 @@ class ApiClient {
     }>(`/api/weather/hunting-conditions/${refugeId}`)
   }
 
+  // Migration Intelligence
+  async getMigrationPushFactors(states?: string) {
+    return this.request<{
+      pushFactors: Array<{
+        stateCode: string
+        pushScore: number
+        coldFrontPresent: boolean
+        coldFrontIncoming: boolean
+        windDirection: string | null
+        windIsFromNorth: boolean
+        temperature: number | null
+        temperatureUnit: string | null
+        activeAlerts: Array<{
+          event: string
+          severity: string
+          headline: string | null
+        }>
+      }>
+      overallPushScore: number
+      fetchedAt: string
+    }>('/api/migration/push-factors', {
+      params: states ? { states } : undefined,
+    })
+  }
+
   // Hunt Recommendations
   async getHuntRecommendations(options?: {
     species?: string
