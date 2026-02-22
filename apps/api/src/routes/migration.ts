@@ -6,6 +6,26 @@ import { generateChatResponse, isConfigured } from '../lib/together.js'
 
 const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
 
+// Approximate state centroids (latitude) for N→S ordering
+// Used when a location doesn't have a precise center_point
+const STATE_LATITUDES: Record<string, number> = {
+  MO: 38.5,
+  KS: 38.7,
+  OK: 35.5,
+  AR: 34.8,
+  TX: 31.5,
+  NM: 34.5,
+  LA: 30.9,
+  ND: 47.5,
+  SD: 44.3,
+  NE: 41.5,
+  IA: 42.0,
+  MN: 46.4,
+  WI: 44.8,
+  IL: 40.6,
+  MS: 32.3,
+}
+
 // North/northwest winds are the primary waterfowl push signals
 const NORTH_DIRECTIONS = new Set(['N', 'NW', 'NNW', 'NNE', 'NE'])
 
@@ -353,6 +373,133 @@ Keep it under 150 words. Be direct and actionable.`
       summary: result.summary,
       generatedAt: result.generatedAt,
       cached: false,
+    }
+  })
+
+  // Flyway Progression — weekly count time-series grouped by state, ordered N→S
+  app.get('/flyway-progression', {
+    schema: {
+      tags: ['migration'],
+      summary: 'Weekly count progression by state, ordered N→S to visualize migration movement',
+      querystring: {
+        type: 'object',
+        properties: {
+          species: { type: 'string', description: 'Species slug filter' },
+          flyway: { type: 'string', description: 'Flyway filter (central, mississippi, etc.)' },
+          year: { type: 'number', description: 'Season year (uses current year if omitted)' },
+          seasons: { type: 'number', description: 'Number of recent seasons to include (default 1, max 3)' },
+        },
+      },
+    },
+  }, async (request) => {
+    const { species, flyway, year, seasons } = request.query as {
+      species?: string
+      flyway?: string
+      year?: number
+      seasons?: number
+    }
+
+    const db = getDb()
+
+    // Season window: Oct 1 of (year-1) through Mar 31 of year (duck season spans Nov-Jan)
+    const currentYear = new Date().getFullYear()
+    const seasonYear = year ?? (new Date().getMonth() >= 9 ? currentYear + 1 : currentYear)
+    const numSeasons = Math.min(3, Math.max(1, seasons ?? 1))
+
+    const startYear = seasonYear - numSeasons
+    const startDate = `${startYear}-09-01`
+    const endDate = `${seasonYear}-04-30`
+
+    const speciesFilter = species ? sql`AND sp.slug = ${species}` : sql``
+    const flywayFilter = flyway ? sql`AND l.metadata->>'flyway' ILIKE ${flyway}` : sql``
+
+    const rows = await db.execute(sql`
+      SELECT
+        s.code AS state_code,
+        s.name AS state_name,
+        DATE_TRUNC('week', rc.survey_date) AS week_start,
+        SUM(rc.count) AS total_count,
+        COALESCE(
+          AVG((l.center_point->>'lat')::numeric),
+          NULL
+        ) AS avg_lat
+      FROM refuge_counts rc
+      JOIN locations l ON rc.location_id = l.id
+      JOIN states s ON l.state_id = s.id
+      JOIN species sp ON rc.species_id = sp.id
+      WHERE l.name NOT LIKE '% - Statewide MWI'
+        AND rc.survey_date BETWEEN ${startDate}::date AND ${endDate}::date
+        ${speciesFilter}
+        ${flywayFilter}
+      GROUP BY s.code, s.name, DATE_TRUNC('week', rc.survey_date)
+      ORDER BY s.code, week_start
+    `)
+
+    type ProgressionRow = {
+      state_code: string
+      state_name: string
+      week_start: string
+      total_count: string | number
+      avg_lat: string | number | null
+    }
+
+    const rawRows = rows as unknown as ProgressionRow[]
+
+    // Build per-state series
+    const stateMap = new Map<string, {
+      stateCode: string
+      stateName: string
+      latitude: number
+      weeks: Array<{ weekStart: string; totalCount: number }>
+      peakWeek: string | null
+      peakCount: number
+    }>()
+
+    for (const row of rawRows) {
+      const count = Number(row.total_count)
+      const lat = row.avg_lat !== null
+        ? Number(row.avg_lat)
+        : (STATE_LATITUDES[row.state_code] ?? 35)
+
+      if (!stateMap.has(row.state_code)) {
+        stateMap.set(row.state_code, {
+          stateCode: row.state_code,
+          stateName: row.state_name,
+          latitude: lat,
+          weeks: [],
+          peakWeek: null,
+          peakCount: 0,
+        })
+      }
+
+      const entry = stateMap.get(row.state_code)!
+      const weekStr = new Date(row.week_start).toISOString().slice(0, 10)
+      entry.weeks.push({ weekStart: weekStr, totalCount: count })
+
+      if (count > entry.peakCount) {
+        entry.peakCount = count
+        entry.peakWeek = weekStr
+      }
+
+      // Prefer real lat over hardcoded centroid once we see data
+      if (row.avg_lat !== null) {
+        entry.latitude = lat
+      }
+    }
+
+    // Sort states N→S (descending latitude)
+    const states = [...stateMap.values()].sort((a, b) => b.latitude - a.latitude)
+
+    // Build a unified week axis (union of all weeks, sorted)
+    const allWeeks = [...new Set(rawRows.map(r => new Date(r.week_start).toISOString().slice(0, 10)))].sort()
+
+    return {
+      seasonYear,
+      seasonWindow: { start: startDate, end: endDate },
+      weeks: allWeeks,
+      states,
+      species: species ?? null,
+      flyway: flyway ?? null,
     }
   })
 }

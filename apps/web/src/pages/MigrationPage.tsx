@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer,
+  Tooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
 import { api } from '../lib/api'
@@ -547,6 +547,19 @@ export function MigrationPage() {
   } | null>(null)
   const [weeklySummaryLoading, setWeeklySummaryLoading] = useState(false)
 
+  const [flywayProgression, setFlywayProgression] = useState<{
+    seasonYear: number
+    weeks: string[]
+    states: Array<{
+      stateCode: string
+      stateName: string
+      latitude: number
+      weeks: Array<{ weekStart: string; totalCount: number }>
+      peakWeek: string | null
+      peakCount: number
+    }>
+  } | null>(null)
+
   const [refugeWeather, setRefugeWeather] = useState<Map<string, {
     temperature: number; temperatureUnit: string
     windSpeed: string; windDirection: string
@@ -632,6 +645,25 @@ export function MigrationPage() {
   useEffect(() => {
     fetchWeeklySummary()
   }, [fetchWeeklySummary])
+
+  // Fetch flyway progression — respects species + flyway filters
+  useEffect(() => {
+    let cancelled = false
+    async function fetchProgression() {
+      try {
+        const data = await api.getFlywayProgression({
+          species: selectedSpecies || undefined,
+          flyway: selectedFlyway || undefined,
+          seasons: 2,
+        })
+        if (!cancelled) setFlywayProgression(data)
+      } catch {
+        // Optional enhancement — silently fail
+      }
+    }
+    fetchProgression()
+    return () => { cancelled = true }
+  }, [selectedSpecies, selectedFlyway])
 
   // Fetch weather alerts + push factors together once states are known
   useEffect(() => {
@@ -764,6 +796,22 @@ export function MigrationPage() {
   }, [historicalTrends])
 
   const refugeChartData = useMemo(() => [...refugeDetail].reverse(), [refugeDetail])
+
+  // Flyway progression chart — one entry per week, state codes as keys
+  const progressionChartData = useMemo(() => {
+    if (!flywayProgression || flywayProgression.weeks.length === 0) return []
+    return flywayProgression.weeks.map(week => {
+      const entry: Record<string, unknown> = {
+        week,
+        label: new Date(week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      }
+      for (const state of flywayProgression.states) {
+        const match = state.weeks.find(w => w.weekStart === week)
+        entry[state.stateCode] = match ? match.totalCount : null
+      }
+      return entry
+    })
+  }, [flywayProgression])
 
   return (
     <div>
@@ -1232,6 +1280,106 @@ export function MigrationPage() {
                   <p className="text-center py-4" style={{ color: `rgb(var(--color-text-secondary))` }}>
                     No count data available for this refuge.
                   </p>
+                )}
+              </div>
+            )}
+
+            {/* Flyway Progression Chart */}
+            {flywayProgression && progressionChartData.length > 0 && flywayProgression.states.length > 0 && (
+              <div className="card p-6 mb-8">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h2 className="text-xl font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
+                      Flyway Progression
+                    </h2>
+                    <p className="text-sm mt-0.5" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                      Weekly counts by state — ordered north to south. Southward migration shows earlier peaks in northern states.
+                    </p>
+                  </div>
+                  <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                    {flywayProgression.seasonYear - 1}–{flywayProgression.seasonYear} season
+                  </span>
+                </div>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={progressionChartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
+                    <XAxis
+                      dataKey="label"
+                      stroke={chartColors.axis}
+                      tick={{ fontSize: 11 }}
+                      interval="preserveStartEnd"
+                    />
+                    <YAxis
+                      tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
+                      stroke={chartColors.axis}
+                    />
+                    <Tooltip
+                      labelFormatter={(label) => `Week of ${label}`}
+                      formatter={(value, name) => [(value as number)?.toLocaleString() ?? '—', name]}
+                      contentStyle={{ backgroundColor: chartColors.tooltipBg, border: `1px solid ${chartColors.tooltipBorder}`, color: chartColors.tooltipText }}
+                    />
+                    <Legend />
+                    {flywayProgression.states.map((state, i) => (
+                      <Line
+                        key={state.stateCode}
+                        type="monotone"
+                        dataKey={state.stateCode}
+                        name={`${state.stateCode} (↑${state.latitude.toFixed(0)}°N)`}
+                        stroke={STATE_LINE_COLORS[i % STATE_LINE_COLORS.length]}
+                        strokeWidth={2}
+                        dot={false}
+                        connectNulls={false}
+                      />
+                    ))}
+                    {/* Peak week reference lines for states with notable peaks */}
+                    {flywayProgression.states
+                      .filter(s => s.peakWeek && s.peakCount >= 1000)
+                      .map((s, i) => {
+                        const peakLabel = progressionChartData.find(d => d.week === s.peakWeek)?.label as string | undefined
+                        return peakLabel ? (
+                          <ReferenceLine
+                            key={`peak-${s.stateCode}`}
+                            x={peakLabel}
+                            stroke={STATE_LINE_COLORS[i % STATE_LINE_COLORS.length]}
+                            strokeDasharray="4 2"
+                            strokeOpacity={0.5}
+                          />
+                        ) : null
+                      })
+                    }
+                  </LineChart>
+                </ResponsiveContainer>
+                {/* Peak week summary */}
+                {flywayProgression.states.some(s => s.peakWeek) && (
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <p className="text-xs font-medium w-full" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                      Peak weeks this season:
+                    </p>
+                    {flywayProgression.states
+                      .filter(s => s.peakWeek && s.peakCount > 0)
+                      .map((s, i) => (
+                        <div
+                          key={s.stateCode}
+                          className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border"
+                          style={{ borderColor: `rgb(var(--color-border-primary))` }}
+                        >
+                          <span
+                            className="w-2 h-2 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: STATE_LINE_COLORS[i % STATE_LINE_COLORS.length] }}
+                          />
+                          <span className="font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
+                            {s.stateCode}
+                          </span>
+                          <span style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                            {s.peakWeek ? new Date(s.peakWeek).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
+                          </span>
+                          <span className="text-forest-600 dark:text-forest-400 font-medium">
+                            {s.peakCount.toLocaleString()}
+                          </span>
+                        </div>
+                      ))
+                    }
+                  </div>
                 )}
               </div>
             )}

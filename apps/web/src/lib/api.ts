@@ -457,6 +457,29 @@ class ApiClient {
     }>('/api/migration/weekly-summary', { params: options })
   }
 
+  async getFlywayProgression(options?: {
+    species?: string
+    flyway?: string
+    year?: number
+    seasons?: number
+  }) {
+    return this.request<{
+      seasonYear: number
+      seasonWindow: { start: string; end: string }
+      weeks: string[]
+      states: Array<{
+        stateCode: string
+        stateName: string
+        latitude: number
+        weeks: Array<{ weekStart: string; totalCount: number }>
+        peakWeek: string | null
+        peakCount: number
+      }>
+      species: string | null
+      flyway: string | null
+    }>('/api/migration/flyway-progression', { params: options })
+  }
+
   async getMigrationPushFactors(states?: string) {
     return this.request<{
       pushFactors: Array<{
