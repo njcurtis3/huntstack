@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   Loader2, AlertCircle, Bird, X, TrendingUp, TrendingDown, Minus, Sparkles,
-  Wind, Thermometer, Zap, AlertTriangle, ChevronDown, ChevronUp,
+  Wind, Thermometer, Zap, AlertTriangle, ChevronDown, ChevronUp, RefreshCw,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -135,6 +135,102 @@ function getAnomaly(count: number, deltaPercent: number | null, previousCount: n
   if (deltaPercent >= 30 && count >= 500) return 'spike'
   if (deltaPercent <= -40 && previousCount >= 500) return 'drop'
   return null
+}
+
+// ─── Migration Index Score ────────────────────────────────────────────────────
+// Composite 0–100 score: trend (25) + volume delta (25) + weather push (25) + anomaly (25)
+
+type MigrationIndexResult = {
+  score: number
+  label: 'Quiet' | 'Active' | 'Strong' | 'Peak Movement'
+  labelColor: string
+}
+
+function computeMigrationIndex(
+  counts: Array<{ trend: string; anomaly: AnomalyType; deltaPercent: number | null }>,
+  overallPushScore: number,
+): MigrationIndexResult {
+  if (counts.length === 0) return { score: 0, label: 'Quiet', labelColor: 'text-earth-500 dark:text-earth-400' }
+
+  const withData = counts.filter(c => c.trend !== 'new')
+
+  // Trend component: % of refuges increasing (0–25)
+  const increasing = withData.filter(c => c.trend === 'increasing').length
+  const trendScore = withData.length > 0 ? Math.round((increasing / withData.length) * 25) : 0
+
+  // Volume delta component: average positive deltaPercent capped at 25
+  const posDeltas = withData.filter(c => c.deltaPercent !== null && c.deltaPercent > 0)
+  const avgDelta = posDeltas.length > 0
+    ? posDeltas.reduce((s, c) => s + (c.deltaPercent ?? 0), 0) / posDeltas.length
+    : 0
+  const volumeScore = Math.min(25, Math.round((avgDelta / 60) * 25))
+
+  // Weather push component: pushScore 0–3 → 0–25
+  const weatherScore = Math.round((overallPushScore / 3) * 25)
+
+  // Anomaly component: spikes add, drops subtract
+  const spikes = counts.filter(c => c.anomaly === 'spike').length
+  const drops = counts.filter(c => c.anomaly === 'drop').length
+  const anomalyScore = Math.max(0, Math.min(25, 12 + spikes * 6 - drops * 4))
+
+  const total = Math.min(100, trendScore + volumeScore + weatherScore + anomalyScore)
+
+  let label: MigrationIndexResult['label']
+  let labelColor: string
+  if (total >= 76) { label = 'Peak Movement'; labelColor = 'text-red-600 dark:text-red-400' }
+  else if (total >= 51) { label = 'Strong'; labelColor = 'text-orange-600 dark:text-orange-400' }
+  else if (total >= 26) { label = 'Active'; labelColor = 'text-amber-600 dark:text-amber-400' }
+  else { label = 'Quiet'; labelColor = 'text-earth-500 dark:text-earth-400' }
+
+  return { score: total, label, labelColor }
+}
+
+// ─── Movement Direction Detection ─────────────────────────────────────────────
+
+type MovementDirection = {
+  label: string
+  sublabel: string
+  icon: string
+  color: string
+}
+
+function detectMovementDirection(
+  counts: Array<{ trend: string; flyway: string | null; anomaly: AnomalyType }>,
+  pushFactors: { coldFrontPresent: boolean; windIsFromNorth: boolean }[],
+): MovementDirection | null {
+  if (counts.length === 0) return null
+
+  const withTrend = counts.filter(c => c.trend !== 'new')
+  if (withTrend.length < 2) return null
+
+  const arriving = withTrend.filter(c => c.trend === 'increasing').length
+  const departing = withTrend.filter(c => c.trend === 'decreasing').length
+  const ratio = arriving / withTrend.length
+
+  const activePush = pushFactors.some(f => f.coldFrontPresent && f.windIsFromNorth)
+
+  if (ratio >= 0.6) {
+    return {
+      label: 'Southward movement',
+      sublabel: activePush ? 'Active push conditions' : `${arriving} of ${withTrend.length} locations gaining birds`,
+      icon: '↓',
+      color: 'text-forest-600 dark:text-forest-400',
+    }
+  }
+  if (ratio <= 0.4 && departing / withTrend.length >= 0.6) {
+    return {
+      label: 'Northward movement',
+      sublabel: `${departing} of ${withTrend.length} locations losing birds`,
+      icon: '↑',
+      color: 'text-accent-600 dark:text-accent-400',
+    }
+  }
+  return {
+    label: 'Mixed / stalled',
+    sublabel: activePush ? 'Push conditions present — watch for movement' : 'Birds holding across most areas',
+    icon: '↔',
+    color: 'text-earth-500 dark:text-earth-400',
+  }
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -444,6 +540,13 @@ export function MigrationPage() {
     overallPushScore: number
   } | null>(null)
 
+  const [weeklySummary, setWeeklySummary] = useState<{
+    summary: string
+    generatedAt: string
+    cached: boolean
+  } | null>(null)
+  const [weeklySummaryLoading, setWeeklySummaryLoading] = useState(false)
+
   const [refugeWeather, setRefugeWeather] = useState<Map<string, {
     temperature: number; temperatureUnit: string
     windSpeed: string; windDirection: string
@@ -509,6 +612,27 @@ export function MigrationPage() {
   const statesWithData = useMemo(() => new Set(currentCounts.map(c => c.state)), [currentCounts])
   const stateOptions = useMemo(() => [...statesWithData].sort(), [statesWithData])
 
+  // Fetch weekly LLM summary — respects flyway + species filters
+  const fetchWeeklySummary = useCallback(async (forceRefresh = false) => {
+    setWeeklySummaryLoading(true)
+    try {
+      const data = await api.getMigrationWeeklySummary({
+        flyway: selectedFlyway || undefined,
+        species: selectedSpecies || undefined,
+        refresh: forceRefresh || undefined,
+      })
+      setWeeklySummary(data)
+    } catch {
+      // Summary is optional — silently fail
+    } finally {
+      setWeeklySummaryLoading(false)
+    }
+  }, [selectedFlyway, selectedSpecies])
+
+  useEffect(() => {
+    fetchWeeklySummary()
+  }, [fetchWeeklySummary])
+
   // Fetch weather alerts + push factors together once states are known
   useEffect(() => {
     let cancelled = false
@@ -566,6 +690,17 @@ export function MigrationPage() {
       return b.count - a.count
     })
   }, [enrichedCounts])
+
+  // Session B computed values — all client-side from already-fetched data
+  const migrationIndex = useMemo(() =>
+    computeMigrationIndex(enrichedCounts, pushFactorsData?.overallPushScore ?? 0),
+    [enrichedCounts, pushFactorsData]
+  )
+
+  const movementDirection = useMemo(() =>
+    detectMovementDirection(enrichedCounts, pushFactorsData?.pushFactors ?? []),
+    [enrichedCounts, pushFactorsData]
+  )
 
   // Fetch weather for visible refuges (staggered)
   useEffect(() => {
@@ -652,6 +787,51 @@ export function MigrationPage() {
         <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md px-4 py-3 mb-6 text-sm text-yellow-800 dark:text-yellow-200">
           Refuge count data is currently limited to select states and sources. We're actively working to expand coverage across more refuges and flyways.
         </div>
+
+        {/* Weekly Intelligence Card */}
+        {(weeklySummary || weeklySummaryLoading) && (
+          <div className="card p-5 mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-accent-500" />
+                <h2 className="text-sm font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
+                  Weekly Intelligence
+                </h2>
+                {weeklySummary && (
+                  <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                    {weeklySummary.cached ? 'cached' : 'live'} · {new Date(weeklySummary.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => fetchWeeklySummary(true)}
+                disabled={weeklySummaryLoading}
+                className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                style={{ color: `rgb(var(--color-text-tertiary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}
+                title="Regenerate summary"
+              >
+                <RefreshCw className={`w-3 h-3 ${weeklySummaryLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+            {weeklySummaryLoading && !weeklySummary ? (
+              <div className="flex items-center gap-2 text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Generating intelligence report…
+              </div>
+            ) : weeklySummary ? (
+              <p className="text-sm leading-relaxed" style={{ color: `rgb(var(--color-text-secondary))` }}>
+                {weeklySummary.summary
+                  .replace(/\*\*([^*]+)\*\*/g, '$1')   // strip **bold**
+                  .replace(/\*([^*]+)\*/g, '$1')        // strip *italic*
+                  .replace(/^#+\s+/gm, '')              // strip # headings
+                  .replace(/^[-*]\s+/gm, '')            // strip bullet markers
+                  .trim()
+                }
+              </p>
+            ) : null}
+          </div>
+        )}
 
         {/* Weather Alerts — collapsible */}
         {weatherAlerts.length > 0 && <WeatherAlertsPanel alerts={weatherAlerts} />}
@@ -794,7 +974,7 @@ export function MigrationPage() {
         {!loading && !error && (
           <>
             {/* Summary Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               <div className="card p-4">
                 <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>Total Birds Counted</p>
                 <p className="text-2xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>{totalBirds.toLocaleString()}</p>
@@ -809,29 +989,57 @@ export function MigrationPage() {
                   {latestDate ? latestDate.toLocaleDateString() : 'N/A'}
                 </p>
               </div>
+              {/* Migration Index Score */}
               <div className="card p-4">
-                <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                  {anomalyCount > 0 ? 'Anomalies Detected' : 'Trending Up'}
-                </p>
-                {anomalyCount > 0 ? (
-                  <p className="text-2xl font-bold text-amber-600 dark:text-amber-400 flex items-center gap-2">
-                    <Zap className="w-5 h-5" />
-                    {anomalyCount}
-                    <span className="text-sm font-normal" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                      refuges
-                    </span>
+                <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>Migration Index</p>
+                <div className="flex items-end gap-2 mt-0.5">
+                  <p className={`text-2xl font-bold ${migrationIndex.labelColor}`}>
+                    {migrationIndex.score}
                   </p>
-                ) : (
-                  <p className="text-2xl font-bold text-forest-600 dark:text-forest-400 flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5" />
-                    {filteredCounts.filter(c => c.trend === 'increasing').length}
-                    <span className="text-sm font-normal" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                      / {filteredCounts.filter(c => c.trend !== 'new').length}
-                    </span>
+                  <p className={`text-sm font-medium mb-0.5 ${migrationIndex.labelColor}`}>
+                    {migrationIndex.label}
+                  </p>
+                </div>
+                {/* Score bar */}
+                <div className="mt-2 h-1.5 rounded-full bg-earth-200 dark:bg-earth-700 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      migrationIndex.score >= 76 ? 'bg-red-500' :
+                      migrationIndex.score >= 51 ? 'bg-orange-400' :
+                      migrationIndex.score >= 26 ? 'bg-amber-400' : 'bg-earth-400'
+                    }`}
+                    style={{ width: `${migrationIndex.score}%` }}
+                  />
+                </div>
+                {anomalyCount > 0 && (
+                  <p className="text-xs mt-1.5 text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <Zap className="w-3 h-3" />
+                    {anomalyCount} anomal{anomalyCount === 1 ? 'y' : 'ies'} detected
                   </p>
                 )}
               </div>
             </div>
+
+            {/* Movement Direction card */}
+            {movementDirection && (
+              <div className="mb-8">
+                <div
+                  className="card p-4 inline-flex flex-col"
+                  style={{ borderColor: `rgb(var(--color-border-primary))` }}
+                >
+                  <p className="text-xs font-medium mb-1" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                    Movement
+                  </p>
+                  <p className={`text-lg font-bold flex items-center gap-1.5 ${movementDirection.color}`}>
+                    <span className="text-xl">{movementDirection.icon}</span>
+                    {movementDirection.label}
+                  </p>
+                  <p className="text-xs mt-1" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                    {movementDirection.sublabel}
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Current Counts */}
             {sortedCounts.length > 0 ? (

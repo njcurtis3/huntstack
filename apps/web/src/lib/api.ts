@@ -445,6 +445,18 @@ class ApiClient {
   }
 
   // Migration Intelligence
+  async getMigrationWeeklySummary(options?: {
+    flyway?: string
+    species?: string
+    refresh?: boolean
+  }) {
+    return this.request<{
+      summary: string
+      generatedAt: string
+      cached: boolean
+    }>('/api/migration/weekly-summary', { params: options })
+  }
+
   async getMigrationPushFactors(states?: string) {
     return this.request<{
       pushFactors: Array<{
