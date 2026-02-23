@@ -5,13 +5,16 @@ Each source defines a URL, parser function path, and metadata.
 The refuge_counts spider reads this registry to determine what to scrape.
 
 Source types:
-  - "html": Single page with survey data (parser receives Scrapy Response)
+  - "html": Single page with survey data — parser returns ParseResult
+  - "html_multi": Wide-format table (species rows × date columns) — parser returns list[ParseResult]
   - "pdf_index": Index page with links to PDFs (spider follows links, downloads PDFs)
+  - "pdf_url_list": Try a list of candidate PDF URLs directly (for JS-rendered index pages)
 """
 
 from huntstack_scrapers.parsers.fws_html import parse_fws_refuge_page, parse_fws_story_page
 from huntstack_scrapers.parsers.loess_bluffs_pdf import parse_loess_bluffs_pdf, generate_loess_bluffs_urls
 from huntstack_scrapers.parsers.ldwf_pdf import parse_ldwf_pdf, generate_ldwf_urls
+from huntstack_scrapers.parsers.clarence_cannon_html import parse_clarence_cannon_html
 
 
 # Registry of all waterfowl count data sources.
@@ -54,6 +57,17 @@ WATERFOWL_SOURCES = [
         "survey_type": "weekly",
         "pdf_urls": generate_loess_bluffs_urls(),
         "pdf_parser": parse_loess_bluffs_pdf,
+    },
+
+    # === Clarence Cannon NWR — Mississippi Flyway (Annada, MO) ===
+    # Wide-format HTML table: species rows × weekly date columns (full season)
+    {
+        "name": "Clarence Cannon National Wildlife Refuge",
+        "state_code": "MO",
+        "url": "https://www.fws.gov/refuge/clarence-cannon/clarence-cannon-nwr-waterfowl-surveys",
+        "parser": parse_clarence_cannon_html,
+        "source_type": "html_multi",
+        "survey_type": "weekly",
     },
 
     # === Louisiana LDWF Aerial Surveys (monthly PDFs) ===

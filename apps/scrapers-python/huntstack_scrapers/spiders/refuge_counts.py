@@ -4,8 +4,9 @@ Spider to scrape waterfowl survey data from multiple sources.
 Uses the source registry (sources.py) and parser modules (parsers/)
 to handle different data formats (FWS HTML, state agency PDFs, etc.).
 
-Supports three source types:
-  - "html": Direct HTML page parsing (e.g., FWS refuge pages)
+Supports four source types:
+  - "html": Direct HTML page parsing — parser returns a single ParseResult
+  - "html_multi": Wide-format HTML table — parser returns list[ParseResult] (one per date column)
   - "pdf_index": Index page → follow PDF links → download + parse PDFs
   - "pdf_url_list": Try a list of candidate PDF URLs directly (for JS-rendered index pages)
 
@@ -72,6 +73,18 @@ class RefugeCountsSpider(scrapy.Spider):
                         "pdf_parser": source.get("pdf_parser"),
                     },
                 )
+            elif source_type == "html_multi":
+                yield scrapy.Request(
+                    source["url"],
+                    callback=self.parse_html_multi,
+                    meta={
+                        "source_name": source["name"],
+                        "state_code": source["state_code"],
+                        "parser": source["parser"],
+                        "source_type": source_type,
+                        "survey_type": source.get("survey_type", "weekly"),
+                    },
+                )
             else:
                 yield scrapy.Request(
                     source["url"],
@@ -104,6 +117,32 @@ class RefugeCountsSpider(scrapy.Spider):
         )
 
         yield self._make_item(response, result)
+
+    def parse_html_multi(self, response: Response) -> Generator[Any, None, None]:
+        """
+        Parse a wide-format HTML table where parser returns list[ParseResult].
+        Each result is one survey date column. Yields one item per date.
+        """
+        source_name = response.meta["source_name"]
+        parser_fn = response.meta["parser"]
+
+        self.logger.info(f"Parsing HTML (multi-date): {source_name} at {response.url}")
+
+        results: list = parser_fn(response)
+
+        if not results:
+            self.logger.warning(f"Parser returned no data for {source_name} at {response.url}")
+            return
+
+        self.logger.info(
+            f"Extracted {len(results)} survey dates from {source_name}"
+        )
+
+        for result in results:
+            self.logger.debug(
+                f"  {result.survey_date}: {len(result.species_counts)} species"
+            )
+            yield self._make_item(response, result)
 
     def parse_pdf_index(self, response: Response) -> Generator[Any, None, None]:
         """Parse an index page to find PDF links, download each directly, and parse."""
