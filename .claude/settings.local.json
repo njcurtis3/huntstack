@@ -17,7 +17,8 @@
       "Bash(pnpm add:*)",
       "Bash(powershell -ExecutionPolicy Bypass -Command \"cd ''c:\\\\Users\\\\natha\\\\Desktop\\\\repos\\\\huntstack\\\\apps\\\\web''; npx tsc --noEmit 2>&1 | Select-Object -First 40\")",
       "WebFetch(domain:api.weather.gov)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(python -m huntstack_scrapers.scrapers.fws_arcgis:*)"
     ]
   }
 }

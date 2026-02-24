@@ -1,0 +1,324 @@
+{
+  "_meta": {
+    "generated": "2026-02-24",
+    "last_updated": "2026-02-24",
+    "purpose": "Phase 1 audit — tracks migration status of each scraper source",
+    "statuses": ["done", "in_progress", "pending", "eliminated_by_api", "deferred"],
+    "phases_complete": ["Phase 1 (audit)", "Phase 5 (ArcGIS discovery)", "Phase 4 (LLM extractor)", "Phase 3 (Scrapling port)", "Phase 6 (run.py entry point)", "Phase 7 (cleanup)"],
+    "new_files": [
+      "huntstack_scrapers/extractors/__init__.py",
+      "huntstack_scrapers/extractors/llm.py       — LLM bird count extraction via Together.ai",
+      "huntstack_scrapers/extractors/pdf.py        — pdfplumber + LLM extraction wrapper",
+      "huntstack_scrapers/scrapers/__init__.py",
+      "huntstack_scrapers/scrapers/fws_arcgis.py  — ArcGIS REST discovery + fetch utilities",
+      "huntstack_scrapers/scrapers/refuge_counts.py   — Scrapling refuge_counts spider",
+      "huntstack_scrapers/scrapers/state_regulations.py — Scrapling state_regulations spider",
+      "huntstack_scrapers/scrapers/run.py              — unified CLI entry point (Phase 6)"
+    ],
+    "modified_files": [
+      "huntstack_scrapers/parsers/agfc_pdf.py  — replaced regex with LLM extraction",
+      "huntstack_scrapers/parsers/ldwf_pdf.py  — replaced regex with LLM extraction",
+      "requirements.txt                         — added scrapling[fetchers]>=0.4"
+    ],
+    "deleted_files": [
+      "huntstack_scrapers/spiders/refuge_counts.py    — old Scrapy spider (Phase 7)",
+      "huntstack_scrapers/spiders/state_regulations.py — old Scrapy spider (Phase 7)",
+      "apps/scrapers-node/                            — entire Node.js scraper package (Phase 7)"
+    ],
+    "next_phases": []
+  },
+
+  "sources": [
+
+    {
+      "source_name": "Washita NWR — FWS HTML (weekly)",
+      "state": "OK",
+      "data_type": "refuge_counts",
+      "current_file": "parsers/fws_html.py:parse_fws_refuge_page",
+      "spider": "spiders/refuge_counts.py (source_type=html)",
+      "target_url": "https://www.fws.gov/refuge/washita/latest-waterfowl-survey",
+      "format": "HTML — narrow 2-col table (species | count), one survey per page",
+      "fragility": "medium — CSS selector fallback to text extraction; date regex on unstructured text",
+      "hardcoded_patterns": ["DATE_PATTERNS in base.py", "extract_table_counts CSS: table > tr > td"],
+      "target_method": "Keep html source_type — evaluate LLM extraction in Phase 4",
+      "status": "done",
+      "notes": "Working. Produces weekly counts for Washita OK. Will port to Scrapling in Phase 3."
+    },
+
+    {
+      "source_name": "Salt Plains NWR — FWS Story HTML (weekly)",
+      "state": "OK",
+      "data_type": "refuge_counts",
+      "current_file": "parsers/fws_html.py:parse_fws_story_page",
+      "spider": "spiders/refuge_counts.py (source_type=html)",
+      "target_url": "https://www.fws.gov/story/weekly-waterfowl-survey",
+      "format": "HTML — FWS 'story' page, article body with text + optional table",
+      "fragility": "medium — depends on FWS not restructuring 'story' URL; text regex fallback",
+      "hardcoded_patterns": ["article *::text", "body *::text", "extract_counts_from_text regex"],
+      "target_method": "Port to Scrapling + LLM extraction (Phase 3 + 4)",
+      "status": "done",
+      "notes": "Working. FWS story pages are more stable than refuge subpages."
+    },
+
+    {
+      "source_name": "Arkansas AGFC Aerial Survey — Google Drive PDFs (biweekly)",
+      "state": "AR",
+      "data_type": "refuge_counts",
+      "current_file": "parsers/agfc_pdf.py:parse_agfc_pdf",
+      "spider": "spiders/refuge_counts.py (source_type=pdf_index)",
+      "target_url": "https://www.agfc.com/education/waterfowl-surveys-and-reports/",
+      "format": "PDF (Google Drive) — narrative text on page 1, regex-extracted species counts",
+      "fragility": "HIGH — text narrative varies between reports; mallard regex sums all regional mentions; 3 different regex patterns for date ranges",
+      "hardcoded_patterns": [
+        "AGFC_DATE_PATTERNS (3 patterns)",
+        "MALLARD_PATTERNS (3 patterns)",
+        "parse_agfc_pdf SPECIES_PATTERNS (5 patterns)",
+        "'a[href*=\"drive.google.com\"]::attr(href)' selector"
+      ],
+      "target_method": "pdfplumber text → LLM extraction (Phase 4). Drop all regex.",
+      "status": "done",
+      "notes": "MIGRATED. parse_agfc_pdf() now calls extractors/pdf.py:extract_counts_from_pdf_bytes(pages=[0]). All regex removed. parse_agfc_index() unchanged."
+    },
+
+    {
+      "source_name": "Loess Bluffs NWR — FWS PDFs (weekly)",
+      "state": "MO",
+      "data_type": "refuge_counts",
+      "current_file": "parsers/loess_bluffs_pdf.py:parse_loess_bluffs_pdf",
+      "spider": "spiders/refuge_counts.py (source_type=pdf_url_list)",
+      "target_url": "https://www.fws.gov/library/collections/loess-bluffs-2025-waterfowl-and-bald-eagle-surveys",
+      "format": "PDF — structured table with 4 week-columns; species rows",
+      "fragility": "medium — regex relies on consistent table format; 'rightmost column' assumption",
+      "hardcoded_patterns": [
+        "Date: YYYY-MM-DD regex",
+        "species_line_pattern multiline regex",
+        "_SKIP_NAMES frozenset",
+        "generate_loess_bluffs_urls() date range hardcoded to Oct 2025 – Apr 2026"
+      ],
+      "target_method": "Port URL generator to be season-aware; consider LLM extraction for species table",
+      "status": "pending",
+      "notes": "generate_loess_bluffs_urls() needs to be updated each season (currently hardcoded 2025-2026)."
+    },
+
+    {
+      "source_name": "Clarence Cannon NWR — FWS HTML wide-format (full season)",
+      "state": "MO",
+      "data_type": "refuge_counts",
+      "current_file": "parsers/clarence_cannon_html.py:parse_clarence_cannon_html",
+      "spider": "spiders/refuge_counts.py (source_type=html_multi)",
+      "target_url": "https://www.fws.gov/refuge/clarence-cannon/clarence-cannon-nwr-waterfowl-surveys",
+      "format": "HTML — wide table (species rows × date columns), ~25 weekly columns for a full season",
+      "fragility": "low-medium — CSS selector `table.table-striped` is stable on Drupal CMS; date regex on 2-digit years",
+      "hardcoded_patterns": [
+        "table.table-striped CSS selector",
+        "_parse_date_header regex: M/D/YY format",
+        "_SKIP_NAMES frozenset"
+      ],
+      "target_method": "Keep current parser — it's clean and deterministic. Port to Scrapling in Phase 3.",
+      "status": "done",
+      "notes": "Recently added. Page only has 2022-2023 data (not updated since). Still valuable for historical flyway data."
+    },
+
+    {
+      "source_name": "Louisiana LDWF Aerial Survey — PDFs (monthly)",
+      "state": "LA",
+      "data_type": "refuge_counts",
+      "current_file": "parsers/ldwf_pdf.py:parse_ldwf_pdf",
+      "spider": "spiders/refuge_counts.py (source_type=pdf_url_list)",
+      "target_url": "https://www.wlf.louisiana.gov/page/aerial-waterfowl-surveys",
+      "format": "PDF — Table 1 with columns: SPECIES | SW | SE | LRB | TOTALS. Two format variants by year.",
+      "fragility": "HIGH — two different table formats (Format A 2023+, Format B 2019-2022); species map has many None/skip entries; line-order parsing",
+      "hardcoded_patterns": [
+        "_LDWF_SPECIES_MAP (14 entries, many None)",
+        "Format A: lookahead to previous line for numbers",
+        "Format B: species-name-prefixed line",
+        "generate_ldwf_urls() range 2019-2027 with month list"
+      ],
+      "target_method": "pdfplumber text → LLM extraction (Phase 4). Both format variants handled automatically.",
+      "status": "done",
+      "notes": "MIGRATED. parse_ldwf_pdf() now calls extractors/pdf.py:extract_counts_from_pdf_bytes(pages=[0]). Both Format A and Format B handled by LLM. generate_ldwf_urls() unchanged."
+    },
+
+    {
+      "source_name": "Texas Regulations — TPWD HTML + PDFs",
+      "state": "TX",
+      "data_type": "regulations",
+      "current_file": "spiders/state_regulations.py:TexasRegulationsSpider",
+      "format": "HTML pages + PDF links",
+      "fragility": "medium — CSS selectors for content areas (div.field-item, div.content, article, main)",
+      "hardcoded_patterns": [
+        "a[href*='migratory-game-birds'] CSS selector",
+        "div.field-item, div.content, article, main content selectors"
+      ],
+      "target_method": "Scrapling + LLM extraction (Phase 3 + 4)",
+      "status": "pending",
+      "notes": "TPWD URLs changed in 2025 (restructured Outdoor Annual). Spider currently has updated URLs."
+    },
+
+    {
+      "source_name": "Arkansas Regulations — AGFC HTML + PDFs",
+      "state": "AR",
+      "data_type": "regulations",
+      "current_file": "spiders/state_regulations.py:ArkansasRegulationsSpider",
+      "format": "HTML pages + PDF links",
+      "fragility": "medium — AGFC dropped /en/ prefix; selectors for content-area, main-content",
+      "hardcoded_patterns": [
+        "a[href*='waterfowl'] link following",
+        "div.content-area, div.main-content, article selectors"
+      ],
+      "target_method": "Scrapling + LLM extraction",
+      "status": "pending"
+    },
+
+    {
+      "source_name": "New Mexico Regulations — NMDGF HTML",
+      "state": "NM",
+      "data_type": "regulations",
+      "current_file": "spiders/state_regulations.py:NewMexicoRegulationsSpider",
+      "format": "HTML pages",
+      "fragility": "medium — site migrated to new domain (wildlife.dgf.nm.gov); uses base StateRegulationsSpider (generic CSS)",
+      "hardcoded_patterns": ["a[href$='.pdf'] base class only"],
+      "target_method": "Scrapling + LLM extraction",
+      "status": "pending"
+    },
+
+    {
+      "source_name": "Louisiana Regulations — LDWF HTML",
+      "state": "LA",
+      "data_type": "regulations",
+      "current_file": "spiders/state_regulations.py:LouisianaRegulationsSpider",
+      "format": "HTML pages",
+      "fragility": "medium — uses base StateRegulationsSpider (generic CSS only)",
+      "hardcoded_patterns": ["body *::text generic only"],
+      "target_method": "Scrapling + LLM extraction",
+      "status": "pending"
+    },
+
+    {
+      "source_name": "Kansas Regulations — KDWP HTML",
+      "state": "KS",
+      "data_type": "regulations",
+      "current_file": "spiders/state_regulations.py:KansasRegulationsSpider",
+      "format": "HTML pages",
+      "fragility": "medium — URL changed from .com to .gov; uses base StateRegulationsSpider",
+      "hardcoded_patterns": ["a[href$='.pdf'] base class only"],
+      "target_method": "Scrapling + LLM extraction",
+      "status": "pending"
+    },
+
+    {
+      "source_name": "Oklahoma Regulations — ODWC HTML",
+      "state": "OK",
+      "data_type": "regulations",
+      "current_file": "spiders/state_regulations.py:OklahomaRegulationsSpider",
+      "format": "HTML pages",
+      "fragility": "medium — uses base StateRegulationsSpider",
+      "hardcoded_patterns": ["body *::text generic only"],
+      "target_method": "Scrapling + LLM extraction",
+      "status": "pending"
+    },
+
+    {
+      "source_name": "Colorado Regulations — CPW HTML (scrapers-node)",
+      "state": "CO",
+      "data_type": "regulations",
+      "current_file": "apps/scrapers-node/src/scrapers/colorado.ts",
+      "format": "Playwright + Cheerio — downloads PDFs, logs sample structures (TODO stubs)",
+      "fragility": "HIGH — mostly TODO stubs, no actual data extracted. BullMQ worker entry point.",
+      "hardcoded_patterns": ["a[href$='.pdf'] Cheerio selector"],
+      "target_method": "Delete scrapers-node. Port CO to Python Scrapling + LLM (Phase 7).",
+      "status": "pending",
+      "notes": "CO not in V1 priority states. Deferred until scrapers-node cleanup in Phase 7."
+    },
+
+    {
+      "source_name": "Montana Regulations — FWP (scrapers-node)",
+      "state": "MT",
+      "data_type": "regulations",
+      "current_file": "apps/scrapers-node/src/scrapers/montana.ts",
+      "format": "Placeholder — no scraping implemented (100% TODO)",
+      "fragility": "N/A",
+      "hardcoded_patterns": [],
+      "target_method": "Delete with scrapers-node. MT not in V1 scope.",
+      "status": "deferred",
+      "notes": "Montana not in V1 priority. Placeholder only. Remove in Phase 7."
+    },
+
+    {
+      "source_name": "MWI Annual Data — CSV ingestion (offline)",
+      "state": "TX,NM,AR,LA,KS,OK",
+      "data_type": "refuge_counts",
+      "current_file": "huntstack_scrapers/ingest_mwi.py",
+      "format": "CSV bulk import — 477 rows, 2006-2016 historical data",
+      "fragility": "low — one-time ingestion, not a recurring scrape",
+      "hardcoded_patterns": ["CSV column name assumptions"],
+      "target_method": "No change needed — already complete",
+      "status": "done",
+      "notes": "MWI data is historical (2006-2016). No recurring scrape needed."
+    }
+
+  ],
+
+  "arcgis_discovery_results": {
+    "run_date": "2026-02-24",
+    "fws_arcgis_live": "https://services.arcgis.com/QVENGdaPbd4LUkLV/arcgis/rest/services",
+    "fws_arcgis_services_total": 1073,
+    "fws_arcgis_useful_for_huntstack": [
+      {
+        "service": "FWS_HQ_MB_Waterfowl_Flyway_Boundaries",
+        "layer": "Waterfowl Flyways",
+        "use": "Flyway boundary polygons — useful for map layer (V2)"
+      },
+      {
+        "service": "National_Wildlife_Refuge_System_Boundaries",
+        "layer": "FWSBoundaries",
+        "use": "NWR boundary polygons — use to enrich locations table with accurate boundaries (V2)"
+      },
+      {
+        "service": "FWS_NWRS_HQ_PubHuntUnits_2022_23",
+        "layer": "FWS_NWRS_HQ_PubHuntUnits",
+        "use": "IMPORTANT: Has Hunt_Unit_Name, Station_Website, Hunting_Website, Huntable, PermitRequ fields. Could auto-populate hunting metadata for all NWRs.",
+        "fields": ["Hunt_Unit_Name", "Huntable", "Organization_Name", "Station_Website", "Hunting_Website", "PermitRequ", "Acreage"]
+      },
+      {
+        "service": "Migratory_Bird_Hunt_Area / New_Migratory_Bird_Hunt_Areas",
+        "use": "Waterfowl hunt area boundaries — spatial hunting zones"
+      }
+    ],
+    "fws_arcgis_verdict": "No live waterfowl survey count data available via ArcGIS REST. Survey counts (refuge_counts table) must stay as HTML/PDF scraping. ArcGIS IS useful for V2 boundary layers and hunt unit metadata.",
+    "migbirdapps_fws_gov": "Homepage returns 200 but no REST API for datasets found. Harvest data is behind web forms, not a queryable API.",
+    "state_arcgis": {
+      "TX": "tpwd.texas.gov/arcgis returns ArcGIS root but 0 public services. Likely requires authentication. Use Scrapling + LLM.",
+      "AR": "No ArcGIS endpoint found. Use Scrapling + LLM on HTML/PDF.",
+      "NM": "No ArcGIS endpoint found. Use Scrapling + LLM.",
+      "LA": "No ArcGIS endpoint found. Use Scrapling + LLM.",
+      "KS": "No ArcGIS endpoint found. Use Scrapling + LLM.",
+      "OK": "No ArcGIS endpoint found. Use Scrapling + LLM.",
+      "MO": "MDC (MO Dept of Conservation) no public ArcGIS found. Use Scrapling + LLM."
+    },
+    "conclusion": "0 sources eliminated by API. All V1 waterfowl sources must use scraping. FWS ArcGIS has boundary data for future V2 map layers."
+  },
+
+  "summary": {
+    "total_sources": 14,
+    "done": 4,
+    "pending": 9,
+    "deferred": 1,
+    "eliminated_by_api": 0,
+    "highest_priority_rewrites": [
+      "parsers/agfc_pdf.py — most fragile, LLM extraction will be a big improvement",
+      "parsers/ldwf_pdf.py — two format variants, LLM handles both naturally",
+      "apps/scrapers-node/ — Colorado and Montana are TODO stubs; delete in Phase 7"
+    ],
+    "phase5_verdict": "No sources eliminated by ArcGIS API discovery. All V1 waterfowl count and regulation sources require HTML/PDF scraping.",
+    "phase3_status": "DONE. scrapers/refuge_counts.py and scrapers/state_regulations.py replace Scrapy spiders. Tested dry-run: Washita NWR (23 species OK), Clarence Cannon (25 survey dates OK).",
+    "phase4_status": "DONE. extractors/llm.py + extractors/pdf.py. agfc_pdf.py and ldwf_pdf.py regex replaced.",
+    "phase6_status": "DONE. scrapers/run.py — unified CLI: python -m huntstack_scrapers.scrapers.run {refuge_counts|state_regulations} [--source X] [--state X] [--dry-run]. Prints JSON summary for Node.js caller.",
+    "phase7_status": "DONE. Deleted spiders/ directory. Deleted apps/scrapers-node/. apps/ now has api, scrapers-python, web only.",
+    "v2_arcgis_opportunities": [
+      "FWS_NWRS_HQ_PubHuntUnits: Auto-populate hunt unit metadata for all NWRs in the locations table",
+      "National_Wildlife_Refuge_System_Boundaries: Add accurate boundary polygons to locations",
+      "FWS_HQ_MB_Waterfowl_Flyway_Boundaries: Add flyway overlay to migration map"
+    ]
+  }
+}

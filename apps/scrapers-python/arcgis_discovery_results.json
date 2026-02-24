@@ -1,0 +1,73 @@
+{
+  "fws_services.arcgis.com": {
+    "url": "https://services.arcgis.com/QVENGdaPbd4LUkLV/arcgis/rest/services",
+    "live": true,
+    "service_count": 1073,
+    "folders": [],
+    "services_preview": [
+      "1911_Remnant_Colonies",
+      "20110808_revised_AUs",
+      "2015_LCC_Network",
+      "2016_GST_Movement_SE1_WFL1",
+      "2016_GST_Movement_SE2_WFL1",
+      "2016_GST_Movement_SE3_WFL1",
+      "2016_JSATS_Receiver_Array_WFL1",
+      "2016_Release_Locations_WFL1",
+      "2016_Trawling_Locations_WFL1",
+      "2017_4TimeStamps_Departures_forPublic"
+    ]
+  },
+  "fws_gis.fws.gov": {
+    "url": "https://gis.fws.gov/arcgis/rest/services",
+    "live": false
+  },
+  "TX": {
+    "url": "https://tpwd.texas.gov/arcgis/rest/services",
+    "live": true,
+    "service_count": 0,
+    "services_preview": []
+  },
+  "AR": {
+    "live": false,
+    "urls_tried": [
+      "https://gis.agfc.com/arcgis/rest/services",
+      "https://agfc.com/arcgis/rest/services"
+    ]
+  },
+  "NM": {
+    "live": false,
+    "urls_tried": [
+      "https://wildlife.dgf.nm.gov/arcgis/rest/services",
+      "https://gis.nm.gov/arcgis/rest/services",
+      "https://rgis.unm.edu/arcgis/rest/services"
+    ]
+  },
+  "LA": {
+    "live": false,
+    "urls_tried": [
+      "https://gis.wlf.louisiana.gov/arcgis/rest/services",
+      "https://www.wlf.louisiana.gov/arcgis/rest/services"
+    ]
+  },
+  "KS": {
+    "live": false,
+    "urls_tried": [
+      "https://gis.ksoutdoors.gov/arcgis/rest/services",
+      "https://ksoutdoors.gov/arcgis/rest/services"
+    ]
+  },
+  "OK": {
+    "live": false,
+    "urls_tried": [
+      "https://gis.wildlifedepartment.com/arcgis/rest/services",
+      "https://www.wildlifedepartment.com/arcgis/rest/services"
+    ]
+  },
+  "MO": {
+    "live": false,
+    "urls_tried": [
+      "https://gis.mdc.mo.gov/arcgis/rest/services",
+      "https://mdc.mo.gov/arcgis/rest/services"
+    ]
+  }
+}

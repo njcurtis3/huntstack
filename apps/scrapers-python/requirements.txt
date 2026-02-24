@@ -1,5 +1,6 @@
 # Web Scraping
-scrapy>=2.11.0
+scrapy>=2.11.0            # Legacy — being replaced by Scrapling in scrapers/
+scrapling[fetchers]>=0.4  # Adaptive scraping (Phase 3 migration target)
 beautifulsoup4>=4.12.0
 lxml>=5.0.0
 playwright>=1.45.0
