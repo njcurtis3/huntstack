@@ -1,10 +1,8 @@
 # huntstack
 
-**Pre-hunt intelligence for waterfowl hunters.**
+**Pre-hunt intelligence.**
 
 HuntStack replaces the fragmented workflow of Googling across state websites, reading PDFs, and checking Facebook groups — with structured data, live refuge counts, and an AI-powered assistant.
-
-> HuntStack tells you **where** to hunt. OnX helps you get there.
 
 ---
 
@@ -174,11 +172,11 @@ Swagger docs at `http://localhost:4000/docs` when running locally.
 ## Environment Variables
 
 ```bash
-DATABASE_URL=postgresql://...
-SUPABASE_URL=https://...
-SUPABASE_ANON_KEY=eyJ...
-SUPABASE_SERVICE_KEY=eyJ...
-TOGETHER_API_KEY=tgp_v1_...
+DATABASE_URL=postgresql:
+SUPABASE_URL=https:
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_KEY=
+TOGETHER_API_KEY=
 VITE_API_URL=http://localhost:4000
 VITE_MAPTILER_KEY=...
 PORT=4000
@@ -220,23 +218,6 @@ V1 targets waterfowl hunters in the Central and Mississippi Flyways.
 - Predictive migration models (weather × count correlation)
 - User harvest reports (crowdsourced)
 - Big game expansion (elk, deer — CO, MT, WY)
-
----
-
-## Strategic Positioning
-
-HuntStack is not a mapping app. It's a pre-hunt intelligence layer.
-
-| Feature | OnX | HuntStand | HuntStack |
-| ------- | --- | --------- | --------- |
-| Offline GPS / navigation | ✓ | ✓ | — |
-| Property boundaries | ✓ | ✓ | — |
-| Live refuge counts | — | — | ✓ |
-| Migration intelligence | — | — | ✓ |
-| AI regulation queries | — | — | ✓ |
-| Season comparison (multi-state) | — | — | ✓ |
-| Weather push factor alerts | — | — | ✓ |
-| "Where should I hunt?" | — | — | ✓ |
 
 ---
 
