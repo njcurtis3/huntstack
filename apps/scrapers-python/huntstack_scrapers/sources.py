@@ -13,7 +13,7 @@ Source types:
 
 from huntstack_scrapers.parsers.fws_html import parse_fws_refuge_page, parse_fws_story_page
 from huntstack_scrapers.parsers.loess_bluffs_pdf import parse_loess_bluffs_pdf, generate_loess_bluffs_urls
-from huntstack_scrapers.parsers.ldwf_pdf import parse_ldwf_pdf, generate_ldwf_urls
+from huntstack_scrapers.parsers.ldwf_pdf import parse_ldwf_pdf, fetch_ldwf_pdf_urls
 from huntstack_scrapers.parsers.clarence_cannon_html import parse_clarence_cannon_html
 
 
@@ -77,7 +77,7 @@ WATERFOWL_SOURCES = [
         "url": "https://www.wlf.louisiana.gov/page/aerial-waterfowl-surveys",
         "source_type": "pdf_url_list",
         "survey_type": "aerial_monthly",
-        "pdf_urls": generate_ldwf_urls(),
+        "pdf_urls": fetch_ldwf_pdf_urls(),
         "pdf_parser": parse_ldwf_pdf,
     },
 ]

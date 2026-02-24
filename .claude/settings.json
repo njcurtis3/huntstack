@@ -6,7 +6,8 @@
       "Bash(pip install:*)",
       "Read(//c/Users/natha/.claude/projects/c--Users-natha-Desktop-repos-huntstack/memory/**)",
       "Bash(find:*)",
-      "Bash(xargs:*)"
+      "Bash(xargs:*)",
+      "WebFetch(domain:www.wlf.louisiana.gov)"
     ]
   }
 }
