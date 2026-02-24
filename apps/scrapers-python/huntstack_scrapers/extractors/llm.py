@@ -135,13 +135,34 @@ def extract_bird_counts_from_text(text: str, source_url: str = "") -> dict | Non
             log.warning(f"LLM could not determine survey date for {source_url or 'unknown'}")
             return None
 
-        # Validate date format
+        # Validate and normalize date format — LLM sometimes returns "Nov 22, 2019" etc.
         from datetime import datetime
+        _ALT_DATE_FORMATS = [
+            "%b %d, %Y",   # Nov 22, 2019
+            "%B %d, %Y",   # November 22, 2019
+            "%m/%d/%Y",    # 11/22/2019
+            "%m-%d-%Y",    # 11-22-2019
+            "%d %b %Y",    # 22 Nov 2019
+        ]
+        if not isinstance(survey_date, str):
+            log.warning(f"LLM returned non-string date {survey_date!r} for {source_url}")
+            return None
+        normalized = None
         try:
             datetime.strptime(survey_date, "%Y-%m-%d")
+            normalized = survey_date
         except ValueError:
-            log.warning(f"LLM returned invalid date format '{survey_date}' for {source_url}")
+            for fmt in _ALT_DATE_FORMATS:
+                try:
+                    normalized = datetime.strptime(survey_date, fmt).strftime("%Y-%m-%d")
+                    log.debug(f"Normalized date '{survey_date}' → '{normalized}'")
+                    break
+                except ValueError:
+                    continue
+        if not normalized:
+            log.warning(f"LLM returned unrecognized date format '{survey_date}' for {source_url}")
             return None
+        survey_date = normalized
 
         return {
             "survey_date": survey_date,

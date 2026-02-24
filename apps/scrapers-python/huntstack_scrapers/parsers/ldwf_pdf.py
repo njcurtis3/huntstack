@@ -17,6 +17,8 @@ Now uses LLM extraction (extractors/llm.py) which handles both formats
 naturally without explicit branching logic.
 """
 
+from datetime import datetime
+
 from huntstack_scrapers.parsers.base import ParseResult
 from huntstack_scrapers.extractors.pdf import extract_counts_from_pdf_bytes
 
@@ -40,15 +42,17 @@ def generate_ldwf_urls() -> list[str]:
     Generate candidate PDF URLs for all LDWF aerial surveys.
 
     Surveys run monthly Sep-Jan. Both underscore and hyphen URL patterns
-    exist — we only need one (underscore is more consistent).
+    exist across years — we try both. Year range starts at 2019 (earliest
+    available) and extends to current year + 1 so new surveys are picked
+    up automatically each season without code changes.
     """
     base = "https://www.wlf.louisiana.gov/assets/Resources/Publications/Waterfowl/Aerial-Surveys"
     months = ["September", "October", "November", "December", "January"]
+    end_year = datetime.today().year + 1
     urls = []
 
-    for year in range(2019, 2027):
+    for year in range(2019, end_year + 1):
         for month in months:
-            # Both underscore and hyphen URL patterns exist across years
             urls.append(f"{base}/Louisiana_Aerial_Waterfowl_Survey_{month}_{year}.pdf")
             urls.append(f"{base}/Louisiana-Aerial-Waterfowl-Survey-{month}-{year}.pdf")
 

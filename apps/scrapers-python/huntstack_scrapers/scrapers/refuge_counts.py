@@ -201,9 +201,11 @@ class RefugeCountsScraper:
         if not response or response.status != 200:
             return []
 
-        selector = source.get("pdf_link_selector", 'a[href*="drive.google.com"]')
-        # Scrapling CSS selector — extract href attrs
-        links = [a.attrib.get("href", "") for a in response.css(selector)]
+        raw_selector = source.get("pdf_link_selector", 'a[href*="drive.google.com"]')
+        # Strip ::attr(...) pseudo-element — Scrapling needs element selectors,
+        # not Scrapy-style attribute extractors. We read .attrib["href"] ourselves.
+        elem_selector = raw_selector.split("::")[0].strip()
+        links = [a.attrib.get("href", "") for a in response.css(elem_selector)]
         log.info(f"Found {len(links)} PDF links on {source['name']} index")
 
         items = []
@@ -351,7 +353,13 @@ class _ScraplingResponseShim:
 def main():
     import os
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
+    # Walk up to find .env regardless of invocation depth
+    _here = os.path.abspath(__file__)
+    for _ in range(8):
+        _here = os.path.dirname(_here)
+        if os.path.exists(os.path.join(_here, ".env")):
+            load_dotenv(os.path.join(_here, ".env"))
+            break
 
     logging.basicConfig(
         level=logging.INFO,

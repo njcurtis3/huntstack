@@ -26,9 +26,17 @@ import argparse
 import os
 from dotenv import load_dotenv
 
-# Load .env from repo root (3 levels up from this file)
-_HERE = os.path.dirname(__file__)
-load_dotenv(os.path.join(_HERE, "..", "..", "..", ".env"))
+# Load .env — walk up from this file until we find it (handles any invocation depth)
+def _find_dotenv() -> str:
+    here = os.path.abspath(__file__)
+    for _ in range(8):
+        here = os.path.dirname(here)
+        candidate = os.path.join(here, ".env")
+        if os.path.exists(candidate):
+            return candidate
+    return ".env"
+
+load_dotenv(_find_dotenv())
 
 logging.basicConfig(
     level=logging.INFO,

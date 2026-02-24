@@ -116,17 +116,33 @@ def parse_loess_bluffs_pdf(pdf_bytes: bytes) -> ParseResult | None:
     )
 
 
+def _current_season_bounds() -> tuple[datetime, datetime]:
+    """
+    Return (start, end) for the current waterfowl season.
+
+    Season runs Oct 1 – Apr 30. If today is Oct–Dec we're in the
+    season that started this calendar year; if Jan–Sep we're in the
+    season that started last calendar year.
+    """
+    today = datetime.today()
+    if today.month >= 10:
+        # Oct–Dec: season started this year, ends next April
+        return datetime(today.year, 10, 1), datetime(today.year + 1, 4, 30)
+    else:
+        # Jan–Sep: season started last year, ends this April
+        return datetime(today.year - 1, 10, 1), datetime(today.year, 4, 30)
+
+
 def generate_loess_bluffs_urls() -> list[str]:
     """
     Generate candidate PDF URLs for the current Loess Bluffs season.
 
     Surveys are weekly during Oct-Apr, typically published Mon-Thu.
-    We try Mon/Tue/Wed/Thu each week (~120 URLs, checked via HEAD).
+    We try Mon/Tue/Wed/Thu each week (~120 URLs per season, checked via HEAD).
+    Season bounds are computed dynamically from today's date.
     """
     urls = []
-    # Current season: Oct 2025 - Apr 2026
-    start = datetime(2025, 10, 1)
-    end = datetime(2026, 4, 30)
+    start, end = _current_season_bounds()
 
     # Find first Monday
     dt = start

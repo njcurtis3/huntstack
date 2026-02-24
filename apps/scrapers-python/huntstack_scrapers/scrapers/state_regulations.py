@@ -312,7 +312,12 @@ class StateRegulationsScraper:
 
 def main():
     from dotenv import load_dotenv
-    load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
+    _here = os.path.abspath(__file__)
+    for _ in range(8):
+        _here = os.path.dirname(_here)
+        if os.path.exists(os.path.join(_here, ".env")):
+            load_dotenv(os.path.join(_here, ".env"))
+            break
 
     logging.basicConfig(
         level=logging.INFO,
