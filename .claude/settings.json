@@ -7,7 +7,8 @@
       "Read(//c/Users/natha/.claude/projects/c--Users-natha-Desktop-repos-huntstack/memory/**)",
       "Bash(find:*)",
       "Bash(xargs:*)",
-      "WebFetch(domain:www.wlf.louisiana.gov)"
+      "WebFetch(domain:www.wlf.louisiana.gov)",
+      "Read(//c/Users/natha/Desktop/repos/**)"
     ]
   }
 }
