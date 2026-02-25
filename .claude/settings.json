@@ -8,7 +8,9 @@
       "Bash(find:*)",
       "Bash(xargs:*)",
       "WebFetch(domain:www.wlf.louisiana.gov)",
-      "Read(//c/Users/natha/Desktop/repos/**)"
+      "Read(//c/Users/natha/Desktop/repos/**)",
+      "Bash(psql:*)",
+      "Bash(node -e:*)"
     ]
   }
 }

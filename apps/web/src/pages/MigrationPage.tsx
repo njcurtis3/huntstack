@@ -567,6 +567,8 @@ export function MigrationPage() {
   }>>(new Map())
   const weatherRequestedRef = useRef<Set<string>>(new Set())
 
+  const [expandedRefuges, setExpandedRefuges] = useState<Set<string>>(new Set())
+
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme)
   const mapColors = getMapColors(resolvedTheme)
   const chartColors = getChartColors(resolvedTheme)
@@ -733,6 +735,53 @@ export function MigrationPage() {
     detectMovementDirection(enrichedCounts, pushFactorsData?.pushFactors ?? []),
     [enrichedCounts, pushFactorsData]
   )
+
+  // Group sorted counts by refuge for the collapsible refuge cards
+  type EnrichedCount = (typeof sortedCounts)[number]
+  type RefugeGroup = {
+    refugeId: string
+    refugeName: string
+    state: string
+    flyway: string | null
+    totalBirds: number
+    speciesCount: number
+    latestDate: string
+    topAnomaly: AnomalyType
+    dominantStatus: MigrationStatus
+    items: EnrichedCount[]
+  }
+
+  const refugeGroups = useMemo((): RefugeGroup[] => {
+    const map = new Map<string, EnrichedCount[]>()
+    for (const item of sortedCounts) {
+      const arr = map.get(item.refugeId) ?? []
+      arr.push(item)
+      map.set(item.refugeId, arr)
+    }
+    return Array.from(map.entries()).map(([refugeId, items]) => {
+      const first = items[0]
+      const totalBirds = items.reduce((s, c) => s + (c.count || 0), 0)
+      const latestDate = items.reduce((best, c) =>
+        c.surveyDate > best ? c.surveyDate : best, items[0].surveyDate)
+      const topAnomaly: AnomalyType = items.some(c => c.anomaly === 'spike') ? 'spike'
+        : items.some(c => c.anomaly === 'drop') ? 'drop' : null
+      // Dominant status: pick the status that appears most, preferring interesting ones
+      const statusPriority: MigrationStatus[] = ['arriving', 'first_survey', 'building', 'peak', 'declining', 'departing', null]
+      const dominantStatus = statusPriority.find(s => items.some(c => c.migrationStatus === s)) ?? null
+      return {
+        refugeId,
+        refugeName: first.refugeName,
+        state: first.state,
+        flyway: first.flyway,
+        totalBirds,
+        speciesCount: items.length,
+        latestDate,
+        topAnomaly,
+        dominantStatus,
+        items,
+      }
+    })
+  }, [sortedCounts])
 
   // Fetch weather for visible refuges (staggered)
   useEffect(() => {
@@ -1089,101 +1138,195 @@ export function MigrationPage() {
               </div>
             )}
 
-            {/* Current Counts */}
-            {sortedCounts.length > 0 ? (
+            {/* Current Counts — grouped by refuge */}
+            {refugeGroups.length > 0 ? (
               <div className="mb-8">
                 <h2 className="text-xl font-semibold mb-4" style={{ color: `rgb(var(--color-text-primary))` }}>
                   Latest Refuge Counts
                 </h2>
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {sortedCounts.map((item, i) => {
-                    const isSpike = item.anomaly === 'spike'
-                    const isDrop = item.anomaly === 'drop'
-                    const statusCfg = item.migrationStatus ? STATUS_CONFIG[item.migrationStatus] : null
+                <div className="flex flex-col gap-4">
+                  {refugeGroups.map((group) => {
+                    const isExpanded = expandedRefuges.has(group.refugeId)
+                    const groupStatusCfg = group.dominantStatus ? STATUS_CONFIG[group.dominantStatus] : null
+                    const isGroupSpike = group.topAnomaly === 'spike'
+                    const isGroupDrop = group.topAnomaly === 'drop'
+                    const w = refugeWeather.get(group.refugeId)
+                    const ratingColors: Record<string, string> = {
+                      excellent: 'text-forest-600 dark:text-forest-400',
+                      good: 'text-accent-600 dark:text-accent-400',
+                      fair: 'text-amber-600 dark:text-amber-400',
+                      poor: 'text-red-600 dark:text-red-400',
+                    }
 
                     return (
-                      <button
-                        key={`${item.refugeId}-${item.species}-${i}`}
-                        onClick={() => handleRefugeClick(item.refugeId, item.refugeName)}
-                        className={`card p-5 text-left hover:border-accent-400 dark:hover:border-accent-500 transition-colors w-full ${
-                          selectedRefuge?.id === item.refugeId ? 'ring-2 ring-accent-500' : ''
-                        } ${isSpike ? 'ring-2 ring-amber-400 dark:ring-amber-500' : ''} ${
-                          isDrop ? 'ring-2 ring-red-400 dark:ring-red-500' : ''
+                      <div
+                        key={group.refugeId}
+                        className={`card overflow-hidden ${
+                          isGroupSpike ? 'ring-2 ring-amber-400 dark:ring-amber-500' : ''
+                        } ${isGroupDrop ? 'ring-2 ring-red-400 dark:ring-red-500' : ''} ${
+                          selectedRefuge?.id === group.refugeId ? 'ring-2 ring-accent-500' : ''
                         }`}
                       >
                         {/* Anomaly banner */}
-                        {isSpike && (
-                          <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-t-md -mx-5 -mt-5 px-5 py-1.5 mb-3">
+                        {isGroupSpike && (
+                          <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 px-5 py-1.5">
                             <Zap className="w-3 h-3" />
-                            Spike detected — {item.deltaPercent !== null ? `+${item.deltaPercent.toFixed(0)}%` : ''} this survey
+                            Spike detected this survey
                           </div>
                         )}
-                        {isDrop && (
-                          <div className="flex items-center gap-1.5 text-xs font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 rounded-t-md -mx-5 -mt-5 px-5 py-1.5 mb-3">
+                        {isGroupDrop && (
+                          <div className="flex items-center gap-1.5 text-xs font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 px-5 py-1.5">
                             <AlertTriangle className="w-3 h-3" />
-                            Sharp decline — {item.deltaPercent !== null ? `${item.deltaPercent.toFixed(0)}%` : ''} this survey
+                            Sharp decline this survey
                           </div>
                         )}
 
-                        <div className="flex items-center justify-between mb-2">
-                          <h3 className="font-semibold truncate pr-2" style={{ color: `rgb(var(--color-text-primary))` }}>
-                            {item.refugeName}
-                          </h3>
-                          <span className="text-xs bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300 rounded px-2 py-0.5 flex-shrink-0">
-                            {item.state}
-                          </span>
-                        </div>
+                        {/* Refuge summary header — clicking toggles expansion */}
+                        <button
+                          className="w-full text-left p-5 hover:bg-earth-50 dark:hover:bg-earth-800/30 transition-colors"
+                          onClick={() => setExpandedRefuges(prev => {
+                            const next = new Set(prev)
+                            next.has(group.refugeId) ? next.delete(group.refugeId) : next.add(group.refugeId)
+                            return next
+                          })}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
+                                <h3 className="font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
+                                  {group.refugeName}
+                                </h3>
+                                <span className="text-xs bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300 rounded px-2 py-0.5 flex-shrink-0">
+                                  {group.state}
+                                </span>
+                                {groupStatusCfg && (
+                                  <span className={`text-xs rounded-full px-2 py-0.5 font-medium flex-shrink-0 ${groupStatusCfg.className}`}>
+                                    {groupStatusCfg.label}
+                                  </span>
+                                )}
+                                {group.flyway && (
+                                  <span className={`text-xs rounded px-2 py-0.5 flex-shrink-0 ${FLYWAY_COLORS[group.flyway] || 'bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300'}`}>
+                                    {group.flyway}
+                                  </span>
+                                )}
+                              </div>
 
-                        {/* Species + migration status */}
-                        <div className="flex items-center gap-2 mb-2 flex-wrap">
-                          <p className="text-sm" style={{ color: `rgb(var(--color-text-secondary))` }}>
-                            {item.speciesName}
-                          </p>
-                          {statusCfg && (
-                            <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${statusCfg.className}`}>
-                              {statusCfg.label}
-                            </span>
-                          )}
-                        </div>
+                              <div className="flex items-baseline gap-3 flex-wrap">
+                                <span className="text-2xl font-bold text-forest-600 dark:text-forest-400">
+                                  {group.totalBirds.toLocaleString()}
+                                </span>
+                                <span className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                                  total birds · {group.speciesCount} {group.speciesCount === 1 ? 'species tracked' : 'species tracked'}
+                                </span>
+                              </div>
 
-                        <p className="text-3xl font-bold text-forest-600 dark:text-forest-400">{item.count.toLocaleString()}</p>
-                        <div className="mt-1">
-                          <DeltaBadge trend={item.trend} delta={item.delta} deltaPercent={item.deltaPercent} />
-                        </div>
-
-                        {/* Weather inline */}
-                        {refugeWeather.has(item.refugeId) && (() => {
-                          const w = refugeWeather.get(item.refugeId)!
-                          const ratingColors: Record<string, string> = {
-                            excellent: 'text-forest-600 dark:text-forest-400',
-                            good: 'text-accent-600 dark:text-accent-400',
-                            fair: 'text-amber-600 dark:text-amber-400',
-                            poor: 'text-red-600 dark:text-red-400',
-                          }
-                          return (
-                            <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                              <Thermometer className="w-3 h-3" />
-                              <span>{w.temperature}°{w.temperatureUnit === 'F' ? 'F' : w.temperatureUnit}</span>
-                              <span>·</span>
-                              <Wind className="w-3 h-3" />
-                              <span>{w.windSpeed} {w.windDirection}</span>
-                              <span>·</span>
-                              <span className={ratingColors[w.huntingRating] || ''}>{w.huntingRating}</span>
+                              <div className="flex items-center gap-3 mt-1.5 flex-wrap">
+                                <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                                  {new Date(group.latestDate).toLocaleDateString()}
+                                </span>
+                                {w && (
+                                  <span className="flex items-center gap-1.5 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                                    <Thermometer className="w-3 h-3" />
+                                    {w.temperature}°{w.temperatureUnit === 'F' ? 'F' : w.temperatureUnit}
+                                    <span>·</span>
+                                    <Wind className="w-3 h-3" />
+                                    {w.windSpeed} {w.windDirection}
+                                    <span>·</span>
+                                    <span className={ratingColors[w.huntingRating] || ''}>{w.huntingRating}</span>
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                          )
-                        })()}
 
-                        <div className="flex items-center justify-between mt-3">
-                          <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                            {new Date(item.surveyDate).toLocaleDateString()}
-                          </span>
-                          {item.flyway && (
-                            <span className={`text-xs rounded px-2 py-0.5 ${FLYWAY_COLORS[item.flyway] || 'bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300'}`}>
-                              {item.flyway}
-                            </span>
-                          )}
-                        </div>
-                      </button>
+                            <div className="flex-shrink-0 mt-1" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                              {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                            </div>
+                          </div>
+                        </button>
+
+                        {/* Expanded: per-species cards */}
+                        {isExpanded && (
+                          <div className="border-t px-5 pb-5 pt-4" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+                            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+                              {group.items.map((item, i) => {
+                                const isSpike = item.anomaly === 'spike'
+                                const isDrop = item.anomaly === 'drop'
+                                const statusCfg = item.migrationStatus ? STATUS_CONFIG[item.migrationStatus] : null
+
+                                return (
+                                  <button
+                                    key={`${item.refugeId}-${item.species}-${i}`}
+                                    onClick={() => handleRefugeClick(item.refugeId, item.refugeName)}
+                                    className={`card p-5 text-left hover:border-accent-400 dark:hover:border-accent-500 transition-colors w-full ${
+                                      selectedRefuge?.id === item.refugeId ? 'ring-2 ring-accent-500' : ''
+                                    } ${isSpike ? 'ring-2 ring-amber-400 dark:ring-amber-500' : ''} ${
+                                      isDrop ? 'ring-2 ring-red-400 dark:ring-red-500' : ''
+                                    }`}
+                                  >
+                                    {/* Anomaly banner */}
+                                    {isSpike && (
+                                      <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-t-md -mx-5 -mt-5 px-5 py-1.5 mb-3">
+                                        <Zap className="w-3 h-3" />
+                                        Spike detected — {item.deltaPercent !== null ? `+${item.deltaPercent.toFixed(0)}%` : ''} this survey
+                                      </div>
+                                    )}
+                                    {isDrop && (
+                                      <div className="flex items-center gap-1.5 text-xs font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 rounded-t-md -mx-5 -mt-5 px-5 py-1.5 mb-3">
+                                        <AlertTriangle className="w-3 h-3" />
+                                        Sharp decline — {item.deltaPercent !== null ? `${item.deltaPercent.toFixed(0)}%` : ''} this survey
+                                      </div>
+                                    )}
+
+                                    {/* Species + migration status */}
+                                    <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                      <p className="text-sm font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>
+                                        {item.speciesName}
+                                      </p>
+                                      {statusCfg && (
+                                        <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${statusCfg.className}`}>
+                                          {statusCfg.label}
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <p className="text-3xl font-bold text-forest-600 dark:text-forest-400">{item.count.toLocaleString()}</p>
+                                    <div className="mt-1">
+                                      <DeltaBadge trend={item.trend} delta={item.delta} deltaPercent={item.deltaPercent} />
+                                    </div>
+
+                                    {/* Weather inline */}
+                                    {refugeWeather.has(item.refugeId) && (() => {
+                                      const ww = refugeWeather.get(item.refugeId)!
+                                      return (
+                                        <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                                          <Thermometer className="w-3 h-3" />
+                                          <span>{ww.temperature}°{ww.temperatureUnit === 'F' ? 'F' : ww.temperatureUnit}</span>
+                                          <span>·</span>
+                                          <Wind className="w-3 h-3" />
+                                          <span>{ww.windSpeed} {ww.windDirection}</span>
+                                          <span>·</span>
+                                          <span className={ratingColors[ww.huntingRating] || ''}>{ww.huntingRating}</span>
+                                        </div>
+                                      )
+                                    })()}
+
+                                    <div className="flex items-center justify-between mt-3">
+                                      <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                                        {new Date(item.surveyDate).toLocaleDateString()}
+                                      </span>
+                                      {item.flyway && (
+                                        <span className={`text-xs rounded px-2 py-0.5 ${FLYWAY_COLORS[item.flyway] || 'bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300'}`}>
+                                          {item.flyway}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )
                   })}
                 </div>
