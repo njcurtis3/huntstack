@@ -9,12 +9,14 @@ Source types:
   - "html_multi": Wide-format table (species rows × date columns) — parser returns list[ParseResult]
   - "pdf_index": Index page with links to PDFs (spider follows links, downloads PDFs)
   - "pdf_url_list": Try a list of candidate PDF URLs directly (for JS-rendered index pages)
+  - "excel_index": Fetch Excel file URLs from an index page, download + parse each
 """
 
 from huntstack_scrapers.parsers.fws_html import parse_fws_refuge_page, parse_fws_story_page
 from huntstack_scrapers.parsers.loess_bluffs_pdf import parse_loess_bluffs_pdf, generate_loess_bluffs_urls
 from huntstack_scrapers.parsers.ldwf_pdf import parse_ldwf_pdf, fetch_ldwf_pdf_urls
 from huntstack_scrapers.parsers.clarence_cannon_html import parse_clarence_cannon_html
+from huntstack_scrapers.parsers.tpwd_excel import fetch_tpwd_excel_urls, parse_tpwd_excel
 
 
 # Registry of all waterfowl count data sources.
@@ -79,5 +81,16 @@ WATERFOWL_SOURCES = [
         "survey_type": "aerial_monthly",
         "pdf_urls": fetch_ldwf_pdf_urls(),
         "pdf_parser": parse_ldwf_pdf,
+    },
+
+    # === Texas TPWD Mid-Winter Waterfowl Survey (annual Excel files) ===
+    {
+        "name": "Texas - TPWD Midwinter Survey",
+        "state_code": "TX",
+        "url": "https://tpwd.texas.gov/huntwild/wild/game_management/waterfowl/",
+        "source_type": "excel_index",
+        "survey_type": "annual_midwinter",
+        "excel_urls": fetch_tpwd_excel_urls(),
+        "excel_parser": parse_tpwd_excel,
     },
 ]

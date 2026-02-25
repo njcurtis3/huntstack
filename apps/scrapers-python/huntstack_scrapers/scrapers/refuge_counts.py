@@ -231,6 +231,46 @@ class RefugeCountsScraper:
 
         return items
 
+    def _handle_excel_index(self, source: dict) -> list[dict]:
+        """Download Excel files from a pre-fetched URL list and parse each."""
+        excel_urls = source.get("excel_urls", [])
+        parser_fn = source.get("excel_parser")
+
+        log.info(f"Processing {len(excel_urls)} Excel URLs for {source['name']}")
+
+        items = []
+        for excel_url in excel_urls:
+            filename = excel_url.split("/")[-1].split("?")[0]
+            log.info(f"Downloading Excel: {excel_url}")
+            try:
+                resp = req.get(
+                    excel_url,
+                    timeout=60,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+                )
+                time.sleep(DOWNLOAD_DELAY)
+                if resp.status_code != 200:
+                    log.warning(f"HTTP {resp.status_code} for {excel_url}")
+                    continue
+                excel_bytes = resp.content
+            except Exception as e:
+                log.error(f"Failed to download {excel_url}: {e}")
+                continue
+
+            results = parser_fn(excel_bytes, filename)
+            if not results:
+                log.warning(f"Excel parser returned no data for {excel_url}")
+                continue
+
+            log.info(f"Parsed {len(results)} survey years from {filename}")
+            for result in results:
+                items.append(self._make_item(
+                    source["name"], source["state_code"], result,
+                    excel_url, source.get("survey_type", "annual_midwinter")
+                ))
+
+        return items
+
     def _handle_pdf_url_list(self, source: dict) -> list[dict]:
         """Try a list of candidate PDF URLs — HEAD check then download."""
         pdf_urls = source.get("pdf_urls", [])
@@ -303,6 +343,8 @@ class RefugeCountsScraper:
                     items = self._handle_pdf_index(source)
                 elif source_type == "pdf_url_list":
                     items = self._handle_pdf_url_list(source)
+                elif source_type == "excel_index":
+                    items = self._handle_excel_index(source)
                 else:
                     log.warning(f"Unknown source_type: {source_type}")
                     items = []

@@ -229,6 +229,7 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
         JOIN states s ON l.state_id = s.id
         JOIN species sp ON rc.species_id = sp.id
         WHERE l.name NOT LIKE '%% - Statewide MWI'
+          AND (l.metadata->>'survey_only' IS NULL OR l.metadata->>'survey_only' = 'false')
           ${speciesSlug ? sql`AND sp.slug = ${speciesSlug}` : sql``}
       )
       SELECT

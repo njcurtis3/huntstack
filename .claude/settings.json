@@ -10,7 +10,8 @@
       "WebFetch(domain:www.wlf.louisiana.gov)",
       "Read(//c/Users/natha/Desktop/repos/**)",
       "Bash(psql:*)",
-      "Bash(node -e:*)"
+      "Bash(node -e:*)",
+      "WebFetch(domain:tpwd.texas.gov)"
     ]
   }
 }

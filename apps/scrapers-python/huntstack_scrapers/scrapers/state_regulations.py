@@ -37,12 +37,16 @@ STATE_SOURCES = {
             "https://tpwd.texas.gov/regulations/outdoor-annual/hunting/migratory-game-bird-regulations",
             "https://tpwd.texas.gov/regulations/outdoor-annual/regs/animals/duck",
             "https://tpwd.texas.gov/regulations/outdoor-annual/regs/animals/goose",
+            "https://tpwd.texas.gov/regulations/outdoor-annual/regs/animals/crane",
+            "https://tpwd.texas.gov/regulations/outdoor-annual/regs/animals/teal",
+            "https://tpwd.texas.gov/regulations/outdoor-annual/regs/animals/dove",
             "https://tpwd.texas.gov/regulations/outdoor-annual/hunting/migratory-game-bird-regulations/stamps-permits-and-certification",
             "https://tpwd.texas.gov/regulations/outdoor-annual/licenses",
+            "https://tpwd.texas.gov/huntwild/hunt/wma/",
         ],
         "allowed_domains": ["tpwd.texas.gov"],
-        "link_keywords": ["migratory-game-birds", "waterfowl", "licenses", "duck", "goose"],
-        "pdf_keywords": ["waterfowl", "migratory", "duck", "goose"],
+        "link_keywords": ["migratory-game-birds", "waterfowl", "licenses", "duck", "goose", "crane", "teal", "dove", "wma"],
+        "pdf_keywords": ["waterfowl", "migratory", "duck", "goose", "crane", "teal"],
     },
     "AR": {
         "name": "Arkansas",
@@ -212,6 +216,11 @@ class StateRegulationsScraper:
             if url in visited:
                 continue
             visited.add(url)
+
+            # Skip binary file URLs — only scrape HTML pages
+            _url_lower = url.lower().split("?")[0]
+            if any(_url_lower.endswith(ext) for ext in (".pdf", ".xlsx", ".xls", ".doc", ".docx", ".zip", ".csv")):
+                continue
 
             response = self._fetch(url)
             if not response or response.status != 200:
