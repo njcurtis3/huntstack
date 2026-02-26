@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify'
 import { eq, and, gte, lte, desc, sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { locations, refugeCounts, species, states } from '@huntstack/db/schema'
+import { getEBirdCountsForRefuge } from '../lib/ebird.js'
 
 export const refugeRoutes: FastifyPluginAsync = async (app) => {
   // List wildlife refuges
@@ -253,6 +254,37 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
       })
     }
 
+    // Fetch eBird community observations for all refuges with known coordinates
+    const refugeCoords = await db.execute(sql`
+      SELECT l.id, l.name, s.code as state_code, l.center_point, l.metadata
+      FROM locations l JOIN states s ON l.state_id = s.id
+      WHERE l.location_type = 'wildlife_refuge'
+        AND l.center_point IS NOT NULL
+        AND (l.metadata->>'survey_only') IS DISTINCT FROM 'true'
+        AND l.name NOT LIKE '% - Statewide MWI'
+        ${flyway ? sql`AND l.metadata->>'flyway' = ${flyway}` : sql``}
+    `)
+
+    const ebirdResults = await Promise.allSettled(
+      (refugeCoords as unknown as Array<Record<string, unknown>>).map(r => {
+        let cp = r.center_point as { lat: number; lng: number } | string | null
+        if (typeof cp === 'string') { try { cp = JSON.parse(cp) } catch { cp = null } }
+        const coord = cp as { lat: number; lng: number } | null
+        if (!coord?.lat || !coord?.lng) return Promise.resolve([])
+        return getEBirdCountsForRefuge(
+          r.id as string,
+          r.name as string,
+          r.state_code as string,
+          (r.metadata as Record<string, unknown> | null)?.flyway as string | null ?? null,
+          coord.lat,
+          coord.lng,
+        )
+      })
+    )
+    const ebirdCounts = ebirdResults
+      .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof getEBirdCountsForRefuge>>> => r.status === 'fulfilled')
+      .flatMap(r => r.value)
+
     // Get historical MWI trends (annual totals by state)
     const historicalTrends = await db.execute(sql`
       SELECT
@@ -315,6 +347,7 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
           trend,
         }
       }),
+      ebirdCounts,
       historicalTrends: historicalTrends as unknown as Array<Record<string, unknown>>,
     }
   })

@@ -52,6 +52,7 @@ type CurrentCount = {
   delta: number | null
   deltaPercent: number | null
   trend: 'increasing' | 'decreasing' | 'stable' | 'new'
+  source?: 'ebird' | 'official'
 }
 
 type HistoricalTrend = {
@@ -522,6 +523,7 @@ export function MigrationPage() {
   const [selectedState, setSelectedState] = useState('')
 
   const [currentCounts, setCurrentCounts] = useState<CurrentCount[]>([])
+  const [ebirdCounts, setEbirdCounts] = useState<CurrentCount[]>([])
   const [historicalTrends, setHistoricalTrends] = useState<HistoricalTrend[]>([])
   const [speciesOptions, setSpeciesOptions] = useState<SpeciesOption[]>([])
   const [loading, setLoading] = useState(true)
@@ -588,7 +590,8 @@ export function MigrationPage() {
           api.getSpecies({ category: 'waterfowl' }),
         ])
         if (cancelled) return
-        setCurrentCounts(dashboardData.currentCounts)
+        setCurrentCounts(dashboardData.currentCounts.map(c => ({ ...c, source: 'official' as const })))
+        setEbirdCounts((dashboardData.ebirdCounts ?? []) as CurrentCount[])
         setHistoricalTrends(dashboardData.historicalTrends)
         setSpeciesOptions(speciesData.species.map(s => ({ slug: s.slug, name: s.name })))
       } catch (err) {
@@ -623,9 +626,8 @@ export function MigrationPage() {
     }
   }
 
-  // Derive states from data
-  const statesWithData = useMemo(() => new Set(currentCounts.map(c => c.state)), [currentCounts])
-  const stateOptions = useMemo(() => [...statesWithData].sort(), [statesWithData])
+  // State options for weather/push-factor fetches — from official counts (stable, pre-eBird)
+  const stateOptions = useMemo(() => [...new Set(currentCounts.map(c => c.state))].sort(), [currentCounts])
 
   // Fetch weekly LLM summary — respects flyway + species filters
   const fetchWeeklySummary = useCallback(async (forceRefresh = false) => {
@@ -700,11 +702,15 @@ export function MigrationPage() {
     setSelectedState(prev => prev === stateCode ? '' : stateCode)
   }, [])
 
-  // Filter cards by selected state
+  // Merge official + eBird counts, then filter by selected state
+  const allCounts = useMemo(() => [...currentCounts, ...ebirdCounts], [currentCounts, ebirdCounts])
+  // Map highlights: include eBird-only states (TX, KS, NM) even with no official counts
+  const statesWithData = useMemo(() => new Set(allCounts.map(c => c.state)), [allCounts])
+
   const filteredCounts = useMemo(() => {
-    if (!selectedState) return currentCounts
-    return currentCounts.filter(c => c.state === selectedState)
-  }, [currentCounts, selectedState])
+    if (!selectedState) return allCounts
+    return allCounts.filter(c => c.state === selectedState)
+  }, [allCounts, selectedState])
 
   // Enrich counts with migration status + anomaly
   const enrichedCounts = useMemo(() => {
@@ -1314,11 +1320,18 @@ export function MigrationPage() {
                                       <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                                         {new Date(item.surveyDate).toLocaleDateString()}
                                       </span>
-                                      {item.flyway && (
-                                        <span className={`text-xs rounded px-2 py-0.5 ${FLYWAY_COLORS[item.flyway] || 'bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300'}`}>
-                                          {item.flyway}
-                                        </span>
-                                      )}
+                                      <div className="flex items-center gap-1.5">
+                                        {item.source === 'ebird' && (
+                                          <span className="text-xs rounded px-2 py-0.5 bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300">
+                                            eBird
+                                          </span>
+                                        )}
+                                        {item.flyway && (
+                                          <span className={`text-xs rounded px-2 py-0.5 ${FLYWAY_COLORS[item.flyway] || 'bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300'}`}>
+                                            {item.flyway}
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
                                   </button>
                                 )

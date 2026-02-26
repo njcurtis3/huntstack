@@ -11,7 +11,11 @@
       "Read(//c/Users/natha/Desktop/repos/**)",
       "Bash(psql:*)",
       "Bash(node -e:*)",
-      "WebFetch(domain:tpwd.texas.gov)"
+      "WebFetch(domain:tpwd.texas.gov)",
+      "WebFetch(domain:science.ebird.org)",
+      "WebFetch(domain:api.ebird.org)",
+      "WebFetch(domain:documenter.getpostman.com)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

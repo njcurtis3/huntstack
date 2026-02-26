@@ -269,6 +269,24 @@ class ApiClient {
         deltaPercent: number | null
         trend: 'increasing' | 'decreasing' | 'stable' | 'new'
       }>
+      ebirdCounts: Array<{
+        refugeId: string
+        refugeName: string
+        state: string
+        species: string
+        speciesName: string
+        count: number
+        surveyDate: string
+        surveyType: 'ebird_recent'
+        centerPoint: { lat: number; lng: number } | null
+        flyway: string | null
+        source: 'ebird'
+        previousCount: null
+        previousDate: null
+        delta: null
+        deltaPercent: null
+        trend: 'new'
+      }>
       historicalTrends: Array<{
         year: number
         state_code: string
