@@ -321,6 +321,86 @@ export async function getHuntingConditions(
   }
 }
 
+// ─── Push factor types + shared helper ───────────────────────────────────────
+
+export interface StatePushFactor {
+  stateCode: string
+  pushScore: number
+  coldFrontPresent: boolean
+  coldFrontIncoming: boolean
+  windDirection: string | null
+  windIsFromNorth: boolean
+  temperature: number | null
+  temperatureUnit: string | null
+  activeAlerts: Array<{ event: string; severity: string; headline: string | null }>
+}
+
+const NORTH_DIRECTIONS = new Set(['N', 'NW', 'NNW', 'NNE', 'NE'])
+
+function isNorthWind(dir: string): boolean {
+  return NORTH_DIRECTIONS.has(dir.toUpperCase().trim())
+}
+
+function detectColdFront(periods: { temperature: number }[]): {
+  coldFrontPresent: boolean
+  coldFrontIncoming: boolean
+} {
+  if (periods.length < 4) return { coldFrontPresent: false, coldFrontIncoming: false }
+  const short = periods.slice(0, 4)
+  const shortMax = Math.max(...short.slice(0, 2).map(p => p.temperature))
+  const shortMin = Math.min(...short.slice(2).map(p => p.temperature))
+  const coldFrontPresent = shortMax - shortMin >= 10
+  const long = periods.slice(0, Math.min(8, periods.length))
+  const longMax = Math.max(...long.slice(0, 4).map(p => p.temperature))
+  const longMin = Math.min(...long.slice(4).map(p => p.temperature))
+  const coldFrontIncoming = !coldFrontPresent && long.length >= 6 && longMax - longMin >= 10
+  return { coldFrontPresent, coldFrontIncoming }
+}
+
+/**
+ * Fetch push factors (cold front, north wind, sub-freezing) for a list of states.
+ * Requires a DB-provided map of state → representative refuge center point.
+ * Both hunt.ts and migration.ts use this shared helper.
+ */
+export async function getPushFactorsForStates(
+  stateCodes: string[],
+  refugeByState: Map<string, { lat: number; lng: number }>,
+): Promise<{ pushFactors: StatePushFactor[]; overallPushScore: number }> {
+  const results = await Promise.allSettled(
+    stateCodes.map(async (stateCode): Promise<StatePushFactor> => {
+      const cp = refugeByState.get(stateCode)
+      const [forecast, alerts] = await Promise.all([
+        cp ? getForecast(cp.lat, cp.lng) : Promise.resolve(null),
+        getAlerts(stateCode),
+      ])
+
+      const migrationAlerts = alerts
+        .filter(a => ['Extreme', 'Severe', 'Moderate'].includes(a.severity))
+        .slice(0, 3)
+        .map(a => ({ event: a.event, severity: a.severity, headline: a.headline }))
+
+      if (!forecast || forecast.length === 0) {
+        return { stateCode, pushScore: 0, coldFrontPresent: false, coldFrontIncoming: false, windDirection: null, windIsFromNorth: false, temperature: null, temperatureUnit: null, activeAlerts: migrationAlerts }
+      }
+
+      const current = forecast.find(p => p.isDaytime) ?? forecast[0]
+      const { coldFrontPresent, coldFrontIncoming } = detectColdFront(forecast)
+      const northWind = isNorthWind(current.windDirection)
+      const subFreezing = current.temperature < 32
+      const pushScore = (coldFrontPresent ? 1 : 0) + (northWind ? 1 : 0) + (subFreezing ? 1 : 0)
+
+      return { stateCode, pushScore, coldFrontPresent, coldFrontIncoming, windDirection: current.windDirection, windIsFromNorth: northWind, temperature: current.temperature, temperatureUnit: current.temperatureUnit, activeAlerts: migrationAlerts }
+    })
+  )
+
+  const pushFactors = results
+    .filter((r): r is PromiseFulfilledResult<StatePushFactor> => r.status === 'fulfilled')
+    .map(r => r.value)
+
+  const overallPushScore = pushFactors.length > 0 ? Math.max(...pushFactors.map(f => f.pushScore)) : 0
+  return { pushFactors, overallPushScore }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function mapPeriods(periods: NOAAForecastPeriod[]): ForecastPeriod[] {

@@ -555,6 +555,11 @@ class ApiClient {
         trend: 'increasing' | 'decreasing' | 'stable' | 'new' | 'no_data'
         delta: number | null
         deltaPercent: number | null
+        migrationStatus: 'arriving' | 'building' | 'peak' | 'declining' | 'departing' | 'first_survey' | 'no_data' | null
+        isAnomaly: boolean
+        pushScore: number
+        coldFrontPresent: boolean
+        coldFrontIncoming: boolean
         seasonOpen: boolean
         seasonName: string | null
         seasonStart: string | null
@@ -570,6 +575,9 @@ class ApiClient {
           magnitudeScore: number
           seasonScore: number
           weatherScore: number
+          pushScore: number
+          migrationScore: number
+          anomalyBonus: number
         }
       }>
       queryParams: { species: string | null; states: string[]; date: string }

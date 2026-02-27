@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
 import {
   Loader2, Crosshair, TrendingUp, TrendingDown, Minus, Sparkles,
-  ExternalLink, CheckCircle2, XCircle, AlertCircle, Wind, Thermometer,
+  ExternalLink, CheckCircle2, XCircle, AlertCircle, Wind, Thermometer, Zap,
 } from 'lucide-react'
 import { api } from '../lib/api'
 
 const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
+
+type MigrationStatus = 'arriving' | 'building' | 'peak' | 'declining' | 'departing' | 'first_survey' | 'no_data'
 
 type Recommendation = {
   rank: number
@@ -24,6 +26,11 @@ type Recommendation = {
   trend: 'increasing' | 'decreasing' | 'stable' | 'new' | 'no_data'
   delta: number | null
   deltaPercent: number | null
+  migrationStatus: MigrationStatus | null
+  isAnomaly: boolean
+  pushScore: number
+  coldFrontPresent: boolean
+  coldFrontIncoming: boolean
   seasonOpen: boolean
   seasonName: string | null
   seasonStart: string | null
@@ -39,7 +46,20 @@ type Recommendation = {
     magnitudeScore: number
     seasonScore: number
     weatherScore: number
+    pushScore: number
+    migrationScore: number
+    anomalyBonus: number
   }
+}
+
+const MIGRATION_STATUS_CONFIG: Record<MigrationStatus, { label: string; className: string }> = {
+  arriving:     { label: 'Arriving',     className: 'bg-forest-100 dark:bg-forest-900/40 text-forest-700 dark:text-forest-300' },
+  building:     { label: 'Building',     className: 'bg-accent-100 dark:bg-accent-900/40 text-accent-700 dark:text-accent-300' },
+  peak:         { label: 'Peak',         className: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300' },
+  declining:    { label: 'Declining',    className: 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300' },
+  departing:    { label: 'Departing',    className: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300' },
+  first_survey: { label: 'First Survey', className: 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300' },
+  no_data:      { label: '',             className: '' },
 }
 
 type SpeciesOption = { slug: string; name: string }
@@ -308,10 +328,13 @@ export function WhereToHuntPage() {
         {/* Scoring Legend */}
         <div className="flex flex-wrap gap-4 mb-6 text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
           <span className="font-medium" style={{ color: 'rgb(var(--color-text-secondary))' }}>Score factors:</span>
-          <span>Bird trend <span className="font-medium">35 pts</span></span>
-          <span>Count volume <span className="font-medium">25 pts</span></span>
-          <span>Season open <span className="font-medium">25 pts</span></span>
+          <span>Bird trend <span className="font-medium">25 pts</span></span>
+          <span>Count volume <span className="font-medium">20 pts</span></span>
+          <span>Season open <span className="font-medium">20 pts</span></span>
           <span>Weather <span className="font-medium">15 pts</span></span>
+          <span>Push factor <span className="font-medium">10 pts</span></span>
+          <span>Migration status <span className="font-medium">10 pts</span></span>
+          <span>Spike bonus <span className="font-medium">+5</span></span>
         </div>
 
         {/* Loading */}
@@ -364,7 +387,17 @@ export function WhereToHuntPage() {
 
             <div className="space-y-4">
               {results.map(rec => (
-                <div key={rec.locationId} className="card p-5">
+                <div
+                  key={rec.locationId}
+                  className={`card p-5 ${rec.isAnomaly ? 'ring-1 ring-amber-400 dark:ring-amber-500' : ''}`}
+                >
+                  {/* Anomaly banner */}
+                  {rec.isAnomaly && (
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 mb-2">
+                      <Zap className="w-3.5 h-3.5" />
+                      Spike detected — numbers well above recent average
+                    </div>
+                  )}
                   {/* Header row */}
                   <div className="flex items-start gap-3 mb-3">
                     <RankBadge rank={rec.rank} />
@@ -381,6 +414,11 @@ export function WhereToHuntPage() {
                             {rec.flyway && (
                               <span className={`text-xs rounded px-2 py-0.5 ${FLYWAY_COLORS[rec.flyway] || 'bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300'}`}>
                                 {rec.flyway}
+                              </span>
+                            )}
+                            {rec.migrationStatus && rec.migrationStatus !== 'no_data' && MIGRATION_STATUS_CONFIG[rec.migrationStatus].label && (
+                              <span className={`text-xs rounded px-2 py-0.5 font-medium ${MIGRATION_STATUS_CONFIG[rec.migrationStatus].className}`}>
+                                {MIGRATION_STATUS_CONFIG[rec.migrationStatus].label}
                               </span>
                             )}
                             <span className="text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
@@ -462,7 +500,7 @@ export function WhereToHuntPage() {
                       )}
                     </div>
 
-                    {/* Weather */}
+                    {/* Weather + Push */}
                     <div>
                       <p className="text-xs mb-1" style={{ color: 'rgb(var(--color-text-tertiary))' }}>Conditions</p>
                       {rec.weatherRating ? (
@@ -486,6 +524,23 @@ export function WhereToHuntPage() {
                       ) : (
                         <p className="text-sm" style={{ color: 'rgb(var(--color-text-tertiary))' }}>Unavailable</p>
                       )}
+                      {/* Push factor indicator */}
+                      {rec.pushScore > 0 && (
+                        <div className="mt-1.5 flex items-center gap-1">
+                          <span className="text-xs font-medium text-blue-600 dark:text-blue-400">Push</span>
+                          <span className="flex gap-0.5">
+                            {[1,2,3].map(n => (
+                              <span key={n} className={`w-2 h-2 rounded-full ${n <= rec.pushScore ? 'bg-blue-500' : 'bg-earth-300 dark:bg-earth-600'}`} />
+                            ))}
+                          </span>
+                          {rec.coldFrontPresent && (
+                            <Wind className="w-3 h-3 text-blue-500 ml-0.5" />
+                          )}
+                        </div>
+                      )}
+                      {rec.coldFrontIncoming && !rec.coldFrontPresent && (
+                        <p className="text-xs text-blue-500 dark:text-blue-400 mt-1">Front incoming</p>
+                      )}
                     </div>
 
                     {/* Score breakdown */}
@@ -494,20 +549,34 @@ export function WhereToHuntPage() {
                       <div className="space-y-0.5 text-xs" style={{ color: 'rgb(var(--color-text-secondary))' }}>
                         <div className="flex justify-between">
                           <span>Trend</span>
-                          <span className="font-medium">{rec.scoreBreakdown.trendScore}/35</span>
+                          <span className="font-medium">{rec.scoreBreakdown.trendScore}/25</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Volume</span>
-                          <span className="font-medium">{rec.scoreBreakdown.magnitudeScore}/25</span>
+                          <span className="font-medium">{rec.scoreBreakdown.magnitudeScore}/20</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Season</span>
-                          <span className="font-medium">{rec.scoreBreakdown.seasonScore}/25</span>
+                          <span className="font-medium">{rec.scoreBreakdown.seasonScore}/20</span>
                         </div>
                         <div className="flex justify-between">
                           <span>Weather</span>
                           <span className="font-medium">{rec.scoreBreakdown.weatherScore}/15</span>
                         </div>
+                        <div className="flex justify-between">
+                          <span>Push</span>
+                          <span className="font-medium">{rec.scoreBreakdown.pushScore}/10</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Migration</span>
+                          <span className="font-medium">{rec.scoreBreakdown.migrationScore}/10</span>
+                        </div>
+                        {rec.scoreBreakdown.anomalyBonus > 0 && (
+                          <div className="flex justify-between text-amber-600 dark:text-amber-400">
+                            <span className="flex items-center gap-0.5"><Zap className="w-3 h-3" />Spike</span>
+                            <span className="font-medium">+{rec.scoreBreakdown.anomalyBonus}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

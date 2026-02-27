@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify'
 import { isConfigured, generateEmbedding, generateChatResponse } from '../lib/together.js'
 import { getDb } from '../lib/db.js'
 import { sql } from 'drizzle-orm'
+import { getPushFactorsForStates } from '../lib/weather.js'
 
 // ─── Entity aliases for query matching ───────────────────────────────────────
 
@@ -72,6 +73,7 @@ interface StructuredContext {
   refugeCounts: Array<Record<string, unknown>>
   locations: Array<Record<string, unknown>>
   weather: Array<Record<string, unknown>>
+  pushFactors: Array<{ stateCode: string; pushScore: number; coldFrontPresent: boolean; coldFrontIncoming: boolean; windDirection: string | null; windIsFromNorth: boolean; temperature: number | null }>
   sources: Array<{ title: string; url?: string; snippet: string }>
 }
 
@@ -307,6 +309,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     refugeCounts: [],
     locations: [],
     weather: [],
+    pushFactors: [],
     sources: [],
   }
 
@@ -567,6 +570,48 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
       })())
     }
 
+    // ── Push factors (migration pressure signals) ─────────────────────────
+    if (isWaterfowl || isMigrationQuery) {
+      queries.push((async () => {
+        try {
+          const targetStates = stateCodes.length > 0 ? stateCodes : ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
+          const stateFilter = sql`st.code IN (${sql.join(targetStates.map(c => sql`${c}`), sql`, `)})`
+
+          const refugeRows = await db.execute(sql`
+            SELECT DISTINCT ON (st.code)
+              st.code AS state_code,
+              l.center_point
+            FROM locations l
+            JOIN states st ON l.state_id = st.id
+            WHERE l.location_type = 'wildlife_refuge'
+              AND l.center_point IS NOT NULL
+              AND l.name NOT LIKE '%% - Statewide MWI'
+              AND ${stateFilter}
+            ORDER BY st.code, l.name
+          `)
+
+          const refugeByState = new Map<string, { lat: number; lng: number }>()
+          for (const row of refugeRows as unknown as Array<{ state_code: string; center_point: unknown }>) {
+            const cp = row.center_point as { lat: number; lng: number } | null
+            if (cp) refugeByState.set(row.state_code, cp)
+          }
+
+          const { pushFactors } = await getPushFactorsForStates(targetStates, refugeByState)
+          result.pushFactors = pushFactors.map(pf => ({
+            stateCode: pf.stateCode,
+            pushScore: pf.pushScore,
+            coldFrontPresent: pf.coldFrontPresent,
+            coldFrontIncoming: pf.coldFrontIncoming,
+            windDirection: pf.windDirection,
+            windIsFromNorth: pf.windIsFromNorth,
+            temperature: pf.temperature,
+          }))
+        } catch (error) {
+          console.error('Push factor retrieval error:', error)
+        }
+      })())
+    }
+
     await Promise.all(queries)
   } catch (error) {
     console.error('retrieveStructuredContext error:', error)
@@ -664,6 +709,21 @@ function formatStructuredContext(ctx: StructuredContext): string {
     sections.push(`## Current Weather Conditions\n${lines.join('\n')}`)
   }
 
+  // Migration Push Factors
+  if (ctx.pushFactors.length > 0) {
+    const lines = ctx.pushFactors.map(pf => {
+      const signals: string[] = []
+      if (pf.coldFrontPresent) signals.push('cold front arriving now')
+      if (pf.coldFrontIncoming) signals.push('cold front expected within 4 days')
+      if (pf.windIsFromNorth) signals.push(`north wind (${pf.windDirection})`)
+      if (pf.temperature !== null && pf.temperature < 32) signals.push(`sub-freezing (${pf.temperature}°F)`)
+      const label = pf.pushScore >= 3 ? 'HIGH' : pf.pushScore === 2 ? 'MODERATE' : pf.pushScore === 1 ? 'LOW' : 'NONE'
+      const signalStr = signals.length > 0 ? ` — ${signals.join(', ')}` : ' — no active push signals'
+      return `- ${pf.stateCode}: push score ${pf.pushScore}/3 (${label})${signalStr}`
+    })
+    sections.push(`## Migration Push Factors\nHigher push scores mean birds are more likely to be actively moving. Cold fronts, north winds, and sub-freezing temps are the primary triggers.\n${lines.join('\n')}`)
+  }
+
   return sections.join('\n\n')
 }
 
@@ -724,7 +784,8 @@ Your role is to:
 2. Provide information about seasons, bag limits, and license requirements
 3. Help users find hunting locations and outfitters
 4. Explain migratory bird patterns and flyway information
-5. Always remind users to verify regulations with official state sources
+5. When asked where to hunt or whether conditions are good, use Migration Push Factors and bird counts together to give actionable advice
+6. Always remind users to verify regulations with official state sources
 
 Important guidelines:
 - Answer ONLY using the provided context
@@ -734,6 +795,7 @@ Important guidelines:
 - Be helpful and conversational while remaining informative
 - When providing season dates, bag limits, or license prices, use the STRUCTURED DATA section first — it contains verified, structured records from state agencies
 - When explaining regulations in detail, use the DOCUMENT CONTEXT section for additional details
+- When answering "where should I hunt?" or "are conditions good?", prioritize states with: (1) high push score, (2) arriving/building migration status, (3) high bird counts. A push score of 2–3 with arriving birds is the strongest buy signal.
 
 ${structuredText ? `=== STRUCTURED DATA (verified records from our database) ===
 
