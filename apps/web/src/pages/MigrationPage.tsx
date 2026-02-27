@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   Loader2, AlertCircle, Bird, X, TrendingUp, TrendingDown, Minus, Sparkles,
   Wind, Thermometer, Zap, AlertTriangle, ChevronDown, ChevronUp, RefreshCw,
-  Send, Bot, User, MessageSquare,
+  Send, Bot, User, MessageSquare, MapPin, Navigation,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -881,13 +881,33 @@ export function MigrationPage() {
   }
 
   const handleMyAreaSearch = async () => {
-    if (!/^\d{5}$/.test(myZip)) { setMyAreaError('Enter a valid 5-digit zip code'); return }
+    const trimmed = myZip.trim()
+    if (!trimmed) { setMyAreaError('Enter a city, state, or zip code'); return }
     setMyAreaLoading(true)
     setMyAreaError(null)
-    const result = await api.geocodeZip(myZip)
+    const isZip = /^\d{5}$/.test(trimmed)
+    const result = isZip ? await api.geocodeZip(trimmed) : await api.geocodeCity(trimmed)
     setMyAreaLoading(false)
-    if (!result) { setMyAreaError('Zip code not found'); return }
+    if (!result) { setMyAreaError('Location not found. Try "Stuttgart, AR" or a zip code.'); return }
     setMyLocation(result)
+  }
+
+  const handleMyAreaGps = () => {
+    if (!navigator.geolocation) { setMyAreaError('Geolocation not supported by your browser.'); return }
+    setMyAreaLoading(true)
+    setMyAreaError(null)
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords
+        const result = await api.geocodeReverse(lat, lng)
+        setMyAreaLoading(false)
+        const resolved = result ?? { lat, lng, city: '', state: '' }
+        setMyLocation(resolved)
+        if (resolved.city) setMyZip(`${resolved.city}${resolved.state ? ', ' + resolved.state : ''}`)
+      },
+      () => { setMyAreaError('Could not get your location.'); setMyAreaLoading(false) },
+      { timeout: 8000 }
+    )
   }
 
   // State options for weather/push-factor fetches — from official counts (stable, pre-eBird)
@@ -1414,15 +1434,17 @@ export function MigrationPage() {
             My Area
           </h2>
           <div className="flex flex-col sm:flex-row gap-3 items-start flex-wrap">
-            <input
-              type="text"
-              className="input max-w-xs"
-              placeholder="Enter zip code"
-              maxLength={5}
-              value={myZip}
-              onChange={e => { setMyZip(e.target.value.replace(/\D/g, '')); setMyLocation(null); setMyAreaError(null) }}
-              onKeyDown={e => e.key === 'Enter' && handleMyAreaSearch()}
-            />
+            <div className="relative flex-1 min-w-0 max-w-xs">
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: `rgb(var(--color-text-tertiary))` }} />
+              <input
+                type="text"
+                className="input w-full pl-9"
+                placeholder="City, State or Zip Code"
+                value={myZip}
+                onChange={e => { setMyZip(e.target.value); setMyLocation(null); setMyAreaError(null) }}
+                onKeyDown={e => e.key === 'Enter' && handleMyAreaSearch()}
+              />
+            </div>
             <select
               className="input max-w-xs"
               value={myAreaRadius}
@@ -1436,9 +1458,17 @@ export function MigrationPage() {
             <button
               className="btn btn-primary flex-shrink-0"
               onClick={handleMyAreaSearch}
-              disabled={myAreaLoading || myZip.length !== 5}
+              disabled={myAreaLoading || !myZip.trim()}
             >
-              {myAreaLoading ? 'Searching...' : 'Search'}
+              {myAreaLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
+            </button>
+            <button
+              className="btn btn-secondary flex-shrink-0 flex items-center gap-1.5"
+              onClick={handleMyAreaGps}
+              disabled={myAreaLoading}
+              title="Use my current location"
+            >
+              {myAreaLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
             </button>
             {myLocation && (
               <button

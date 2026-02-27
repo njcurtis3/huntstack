@@ -1,9 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Loader2, Crosshair, TrendingUp, TrendingDown, Minus, Sparkles,
   ExternalLink, CheckCircle2, XCircle, AlertCircle, Wind, Thermometer, Zap,
+  MapPin, Navigation, X as XIcon, ArrowUpDown,
 } from 'lucide-react'
 import { api } from '../lib/api'
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
 
 const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
 
@@ -175,6 +184,14 @@ export function WhereToHuntPage() {
   const [error, setError] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
 
+  // My Area — user location for proximity sorting
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number; label: string } | null>(null)
+  const [locationInput, setLocationInput] = useState('')
+  const [locationLoading, setLocationLoading] = useState(false)
+  const [locationError, setLocationError] = useState<string | null>(null)
+  const [sortByDistance, setSortByDistance] = useState(false)
+  const locationInputRef = useRef<HTMLInputElement>(null)
+
   // Load species options on mount
   useEffect(() => {
     api.getSpecies({ category: 'waterfowl' }).then(data => {
@@ -183,6 +200,92 @@ export function WhereToHuntPage() {
       // Silently fail — dropdown just stays empty, user can still search all species
     })
   }, [])
+
+  // Geocode helpers
+  const resolveLocation = async (input: string) => {
+    const trimmed = input.trim()
+    if (!trimmed) return
+    setLocationLoading(true)
+    setLocationError(null)
+    try {
+      const isZip = /^\d{5}$/.test(trimmed)
+      const result = isZip
+        ? await api.geocodeZip(trimmed)
+        : await api.geocodeCity(trimmed)
+      if (!result) {
+        setLocationError('Location not found. Try "Stuttgart, AR" or a zip code.')
+        return
+      }
+      const label = result.city && result.state ? `${result.city}, ${result.state}` : trimmed
+      setUserLocation({ lat: result.lat, lng: result.lng, label })
+      setLocationInput(label)
+      setSortByDistance(true)
+    } catch {
+      setLocationError('Could not resolve location.')
+    } finally {
+      setLocationLoading(false)
+    }
+  }
+
+  const handleGps = () => {
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation not supported by your browser.')
+      return
+    }
+    setLocationLoading(true)
+    setLocationError(null)
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords
+        try {
+          const result = await api.geocodeReverse(lat, lng)
+          const label = result?.city && result?.state
+            ? `${result.city}, ${result.state}`
+            : `${lat.toFixed(3)}, ${lng.toFixed(3)}`
+          setUserLocation({ lat, lng, label })
+          setLocationInput(label)
+          setSortByDistance(true)
+        } catch {
+          setUserLocation({ lat, lng, label: `${lat.toFixed(3)}, ${lng.toFixed(3)}` })
+          setSortByDistance(true)
+        } finally {
+          setLocationLoading(false)
+        }
+      },
+      () => {
+        setLocationError('Could not get your location.')
+        setLocationLoading(false)
+      },
+      { timeout: 8000 }
+    )
+  }
+
+  const clearLocation = () => {
+    setUserLocation(null)
+    setLocationInput('')
+    setLocationError(null)
+    setSortByDistance(false)
+    locationInputRef.current?.focus()
+  }
+
+  // Distance-annotated + optionally sorted results
+  const displayResults = useMemo(() => {
+    if (!results) return null
+    const annotated = results.map(rec => {
+      const distKm = userLocation && rec.centerPoint
+        ? haversineKm(userLocation.lat, userLocation.lng, rec.centerPoint.lat, rec.centerPoint.lng)
+        : null
+      return { ...rec, distKm, distMi: distKm !== null ? distKm * 0.621371 : null }
+    })
+    if (sortByDistance && userLocation) {
+      return [...annotated].sort((a, b) => {
+        if (a.distKm === null) return 1
+        if (b.distKm === null) return -1
+        return a.distKm - b.distKm
+      })
+    }
+    return annotated
+  }, [results, userLocation, sortByDistance])
 
   const toggleState = (code: string) => {
     setSelectedStates(prev => {
@@ -293,8 +396,62 @@ export function WhereToHuntPage() {
             </div>
           </div>
 
+          {/* Near Me */}
+          <div className="border-t pt-5 mt-1" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
+            <label className="block text-sm font-medium mb-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
+              Near Me <span className="font-normal text-xs ml-1" style={{ color: 'rgb(var(--color-text-tertiary))' }}>— sort by distance from your location</span>
+            </label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'rgb(var(--color-text-tertiary))' }} />
+                <input
+                  ref={locationInputRef}
+                  type="text"
+                  value={locationInput}
+                  onChange={e => setLocationInput(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && resolveLocation(locationInput)}
+                  placeholder="City, State or Zip Code"
+                  className="input w-full pl-9 pr-8"
+                />
+                {locationInput && (
+                  <button
+                    onClick={clearLocation}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:opacity-70"
+                    style={{ color: 'rgb(var(--color-text-tertiary))' }}
+                  >
+                    <XIcon className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={() => resolveLocation(locationInput)}
+                disabled={locationLoading || !locationInput.trim()}
+                className="btn-secondary px-4 flex items-center gap-1.5 text-sm"
+              >
+                {locationLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+                Go
+              </button>
+              <button
+                onClick={handleGps}
+                disabled={locationLoading}
+                title="Use my current location"
+                className="btn-secondary px-3 flex items-center gap-1.5 text-sm"
+              >
+                {locationLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
+              </button>
+            </div>
+            {locationError && (
+              <p className="text-xs mt-1.5 text-red-600 dark:text-red-400">{locationError}</p>
+            )}
+            {userLocation && (
+              <p className="text-xs mt-1.5" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
+                Showing distances from <span className="font-medium" style={{ color: 'rgb(var(--color-text-secondary))' }}>{userLocation.label}</span>
+              </p>
+            )}
+          </div>
+
           {/* State pills */}
-          <div>
+          <div className="mt-5">
             <label className="block text-sm font-medium mb-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
               States
             </label>
@@ -374,19 +531,40 @@ export function WhereToHuntPage() {
         )}
 
         {/* Results */}
-        {!loading && !error && results && results.length > 0 && (
+        {!loading && !error && displayResults && displayResults.length > 0 && (
           <>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold" style={{ color: 'rgb(var(--color-text-primary))' }}>
                 Top Locations
               </h2>
-              <span className="text-sm" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
-                {results.length} of {totalLocations} locations
-              </span>
+              <div className="flex items-center gap-3">
+                {userLocation && (
+                  <div className="flex items-center gap-1 rounded-lg border p-0.5 text-xs" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
+                    <button
+                      onClick={() => setSortByDistance(false)}
+                      className={`px-2.5 py-1 rounded-md transition-colors ${!sortByDistance ? 'bg-accent-600 text-white' : ''}`}
+                      style={!sortByDistance ? undefined : { color: 'rgb(var(--color-text-secondary))' }}
+                    >
+                      Score
+                    </button>
+                    <button
+                      onClick={() => setSortByDistance(true)}
+                      className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 ${sortByDistance ? 'bg-accent-600 text-white' : ''}`}
+                      style={sortByDistance ? undefined : { color: 'rgb(var(--color-text-secondary))' }}
+                    >
+                      <ArrowUpDown className="w-3 h-3" />
+                      Distance
+                    </button>
+                  </div>
+                )}
+                <span className="text-sm" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
+                  {displayResults.length} of {totalLocations} locations
+                </span>
+              </div>
             </div>
 
             <div className="space-y-4">
-              {results.map(rec => (
+              {displayResults.map(rec => (
                 <div
                   key={rec.locationId}
                   className={`card p-5 ${rec.isAnomaly ? 'ring-1 ring-amber-400 dark:ring-amber-500' : ''}`}
@@ -424,6 +602,12 @@ export function WhereToHuntPage() {
                             <span className="text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
                               {rec.speciesName}
                             </span>
+                            {'distMi' in rec && rec.distMi !== null && (
+                              <span className="flex items-center gap-0.5 text-xs font-medium" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
+                                <Navigation className="w-3 h-3" />
+                                {Math.round(rec.distMi as number)} mi
+                              </span>
+                            )}
                           </div>
                         </div>
                         {rec.websiteUrl && (

@@ -304,6 +304,22 @@ class ApiClient {
     }
   }
 
+  async geocodeCity(q: string): Promise<{ lat: number; lng: number; city: string; state: string } | null> {
+    try {
+      return await this.request<{ lat: number; lng: number; city: string; state: string }>('/api/geo/search', { params: { q } })
+    } catch {
+      return null
+    }
+  }
+
+  async geocodeReverse(lat: number, lng: number): Promise<{ lat: number; lng: number; city: string; state: string } | null> {
+    try {
+      return await this.request<{ lat: number; lng: number; city: string; state: string }>('/api/geo/reverse', { params: { lat, lng } })
+    } catch {
+      return null
+    }
+  }
+
   async getRefuges(options?: {
     state?: string
     flyway?: string
