@@ -296,6 +296,14 @@ class ApiClient {
     }>('/api/refuges/migration/dashboard', { params: options })
   }
 
+  async geocodeZip(zip: string): Promise<{ lat: number; lng: number; city: string; state: string } | null> {
+    try {
+      return await this.request<{ lat: number; lng: number; city: string; state: string }>(`/api/geo/zip/${zip}`)
+    } catch {
+      return null
+    }
+  }
+
   async getRefuges(options?: {
     state?: string
     flyway?: string

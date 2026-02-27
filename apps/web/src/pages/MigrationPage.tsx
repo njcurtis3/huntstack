@@ -515,6 +515,16 @@ function PushFactorsPanel({ pushFactors, overallPushScore, states }: {
   )
 }
 
+// ─── Geo helpers ─────────────────────────────────────────────────────────────
+
+function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 3958.8
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function MigrationPage() {
@@ -528,6 +538,12 @@ export function MigrationPage() {
   const [speciesOptions, setSpeciesOptions] = useState<SpeciesOption[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const [myZip, setMyZip] = useState('')
+  const [myLocation, setMyLocation] = useState<{ lat: number; lng: number; city: string; state: string } | null>(null)
+  const [myAreaLoading, setMyAreaLoading] = useState(false)
+  const [myAreaError, setMyAreaError] = useState<string | null>(null)
+  const [myAreaRadius, setMyAreaRadius] = useState(100)
 
   const [selectedRefuge, setSelectedRefuge] = useState<{ id: string; name: string } | null>(null)
   const [refugeDetail, setRefugeDetail] = useState<RefugeCount[]>([])
@@ -627,6 +643,16 @@ export function MigrationPage() {
     }
   }
 
+  const handleMyAreaSearch = async () => {
+    if (!/^\d{5}$/.test(myZip)) { setMyAreaError('Enter a valid 5-digit zip code'); return }
+    setMyAreaLoading(true)
+    setMyAreaError(null)
+    const result = await api.geocodeZip(myZip)
+    setMyAreaLoading(false)
+    if (!result) { setMyAreaError('Zip code not found'); return }
+    setMyLocation(result)
+  }
+
   // State options for weather/push-factor fetches — from official counts (stable, pre-eBird)
   const stateOptions = useMemo(() => [...new Set(currentCounts.map(c => c.state))].sort(), [currentCounts])
 
@@ -707,6 +733,44 @@ export function MigrationPage() {
   const allCounts = useMemo(() => [...currentCounts, ...ebirdCounts], [currentCounts, ebirdCounts])
   // Map highlights: include eBird-only states (TX, KS, NM) even with no official counts
   const statesWithData = useMemo(() => new Set(allCounts.map(c => c.state)), [allCounts])
+
+  // My Area: nearby refuges sorted by distance
+  type NearbyRefuge = {
+    refugeId: string; refugeName: string; state: string
+    distance: number; totalBirds: number; topSpecies: string
+    dominantStatus: MigrationStatus
+  }
+  const nearbyRefuges = useMemo((): NearbyRefuge[] => {
+    if (!myLocation) return []
+    const byRefuge = new Map<string, NearbyRefuge & { _topCount: number }>()
+    for (const c of allCounts) {
+      if (!c.centerPoint) continue
+      const dist = haversineMiles(myLocation.lat, myLocation.lng, c.centerPoint.lat, c.centerPoint.lng)
+      if (dist > myAreaRadius) continue
+      const existing = byRefuge.get(c.refugeId)
+      if (!existing) {
+        byRefuge.set(c.refugeId, {
+          refugeId: c.refugeId, refugeName: c.refugeName, state: c.state,
+          distance: Math.round(dist), totalBirds: c.count,
+          topSpecies: c.speciesName, _topCount: c.count,
+          dominantStatus: getMigrationStatus(c.trend, c.deltaPercent),
+        })
+      } else {
+        existing.totalBirds += c.count
+        if (c.count > existing._topCount) { existing.topSpecies = c.speciesName; existing._topCount = c.count }
+      }
+    }
+    return Array.from(byRefuge.values()).sort((a, b) => a.distance - b.distance)
+  }, [myLocation, myAreaRadius, allCounts])
+
+  const localActivityLevel = useMemo((): 'High' | 'Moderate' | 'Low' | 'None' => {
+    if (!nearbyRefuges.length) return 'None'
+    const total = nearbyRefuges.reduce((s, r) => s + r.totalBirds, 0)
+    if (total >= 5000) return 'High'
+    if (total >= 1000) return 'Moderate'
+    if (total > 0) return 'Low'
+    return 'None'
+  }, [nearbyRefuges])
 
   const filteredCounts = useMemo(() => {
     if (!selectedState) return allCounts
@@ -895,6 +959,89 @@ export function MigrationPage() {
 
   const refugeChartData = useMemo(() => [...refugeDetail].reverse(), [refugeDetail])
 
+  // 4B — Historical Comparison: this week vs same week last year, derived from flywayProgression (seasons=2)
+  // 4B — Season-to-date comparison: this season's total vs prior season, from flywayProgression (seasons=2)
+  const seasonComparison = useMemo(() => {
+    if (!flywayProgression || flywayProgression.states.length === 0) return null
+    const seasonYear = flywayProgression.seasonYear // e.g. 2026
+    // Current season: Sep (year-1) → now.  Prior season: Sep (year-2) → Aug (year-1)
+    const thisSep = `${seasonYear - 1}-09-01`
+    const prevSep = `${seasonYear - 2}-09-01`
+
+    const rows = flywayProgression.states
+      .map(state => {
+        const thisSeason = state.weeks
+          .filter(w => w.weekStart >= thisSep)
+          .reduce((s, w) => s + w.totalCount, 0)
+        const prevSeason = state.weeks
+          .filter(w => w.weekStart >= prevSep && w.weekStart < thisSep)
+          .reduce((s, w) => s + w.totalCount, 0)
+        // Only include rows where both seasons have data
+        if (thisSeason === 0 || prevSeason === 0) return null
+        const delta = thisSeason - prevSeason
+        const deltaPercent = Math.round((delta / prevSeason) * 100)
+        return { stateCode: state.stateCode, stateName: state.stateName, thisSeason, prevSeason, delta, deltaPercent }
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+      .sort((a, b) => b.thisSeason - a.thisSeason)
+
+    if (rows.length === 0) return null
+    return { seasonYear, rows }
+  }, [flywayProgression])
+
+  // 3B — Hunt Recommendation: rule-based synthesis of top state + push factors + trend
+  const huntRecommendation = useMemo(() => {
+    if (stateGroups.length === 0) return null
+    const overallPush = pushFactorsData?.overallPushScore ?? 0
+    const pushFactors = pushFactorsData?.pushFactors ?? []
+
+    const scoredStates = stateGroups.map(sg => {
+      const pf = pushFactors.find(p => p.stateCode === sg.state)
+      const pushScore = pf?.pushScore ?? 0
+      const isArriving = sg.dominantStatus === 'arriving' || sg.dominantStatus === 'building'
+      const hasSpike = sg.topAnomaly === 'spike'
+      const score = sg.totalBirds + (pushScore * 5000) + (isArriving ? 10000 : 0) + (hasSpike ? 8000 : 0)
+      return { ...sg, pushScore, isArriving, hasSpike, compositeScore: score }
+    }).sort((a, b) => b.compositeScore - a.compositeScore)
+
+    const top = scoredStates[0]
+    if (!top) return null
+
+    let action: string
+    let reasoning: string
+    let urgency: 'high' | 'medium' | 'low'
+
+    if (overallPush >= 2 && top.isArriving) {
+      action = `Hunt ${top.stateName} this weekend`
+      reasoning = `Cold front pushing birds south with numbers actively arriving. ${top.totalBirds.toLocaleString()} birds counted — conditions are stacking up.`
+      urgency = 'high'
+    } else if (top.hasSpike) {
+      action = `Get to ${top.stateName} now`
+      reasoning = `Anomalous spike detected — ${top.totalBirds.toLocaleString()} birds, well above recent averages. This window may be short.`
+      urgency = 'high'
+    } else if (top.isArriving && top.totalBirds > 5000) {
+      action = `${top.stateName} is heating up`
+      reasoning = `Numbers are building (${top.totalBirds.toLocaleString()} birds) with an arriving trend. Worth positioning now before peak.`
+      urgency = 'medium'
+    } else if (overallPush >= 1 && top.totalBirds > 1000) {
+      action = `Watch ${top.stateName} over the next 48 hours`
+      reasoning = `Push conditions developing. Current count: ${top.totalBirds.toLocaleString()} — movement likely incoming.`
+      urgency = 'medium'
+    } else if (migrationIndex.score >= 50) {
+      action = `${top.stateName} offers the best opportunity right now`
+      reasoning = `${top.totalBirds.toLocaleString()} birds on the ground across ${top.refugeCount} refuges. Migration Index at ${migrationIndex.score}/100.`
+      urgency = 'medium'
+    } else {
+      action = `Activity is slow — patience required`
+      reasoning = `${top.stateName} leads with ${top.totalBirds.toLocaleString()} birds, but movement is limited. Monitor push factors for change.`
+      urgency = 'low'
+    }
+
+    const coldFrontStates = pushFactors.filter(p => p.coldFrontPresent || p.coldFrontIncoming).map(p => p.stateCode)
+    const topRefuge = top.refuges[0]
+    return { action, reasoning, urgency, topState: top, coldFrontStates, topRefuge }
+  }, [stateGroups, pushFactorsData, migrationIndex])
+
   // Flyway progression chart — one entry per week, state codes as keys
   const progressionChartData = useMemo(() => {
     if (!flywayProgression || flywayProgression.weeks.length === 0) return []
@@ -1022,6 +1169,118 @@ export function MigrationPage() {
               <option key={f.value} value={f.value}>{f.label}</option>
             ))}
           </select>
+        </div>
+
+        {/* My Area */}
+        <div className="card p-4 mb-6">
+          <h2 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-secondary))` }}>
+            My Area
+          </h2>
+          <div className="flex flex-col sm:flex-row gap-3 items-start flex-wrap">
+            <input
+              type="text"
+              className="input max-w-xs"
+              placeholder="Enter zip code"
+              maxLength={5}
+              value={myZip}
+              onChange={e => { setMyZip(e.target.value.replace(/\D/g, '')); setMyLocation(null); setMyAreaError(null) }}
+              onKeyDown={e => e.key === 'Enter' && handleMyAreaSearch()}
+            />
+            <select
+              className="input max-w-xs"
+              value={myAreaRadius}
+              onChange={e => setMyAreaRadius(Number(e.target.value))}
+            >
+              <option value={50}>Within 50 mi</option>
+              <option value={100}>Within 100 mi</option>
+              <option value={200}>Within 200 mi</option>
+              <option value={300}>Within 300 mi</option>
+            </select>
+            <button
+              className="btn btn-primary flex-shrink-0"
+              onClick={handleMyAreaSearch}
+              disabled={myAreaLoading || myZip.length !== 5}
+            >
+              {myAreaLoading ? 'Searching...' : 'Search'}
+            </button>
+            {myLocation && (
+              <button
+                className="text-xs self-center flex-shrink-0"
+                style={{ color: `rgb(var(--color-text-tertiary))` }}
+                onClick={() => { setMyLocation(null); setMyZip(''); setMyAreaError(null) }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {myAreaError && (
+            <p className="text-sm mt-2" style={{ color: 'rgb(239 68 68)' }}>{myAreaError}</p>
+          )}
+
+          {myLocation && (
+            <div className="mt-4">
+              <div className="flex items-center gap-3 mb-3 flex-wrap">
+                <span className="text-sm font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>
+                  {myLocation.city}{myLocation.city && myLocation.state ? ', ' : ''}{myLocation.state}
+                </span>
+                <span className={`text-xs font-semibold rounded-full px-3 py-1 ${
+                  localActivityLevel === 'High'     ? 'bg-forest-100 dark:bg-forest-900/30 text-forest-700 dark:text-forest-300' :
+                  localActivityLevel === 'Moderate' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300' :
+                  localActivityLevel === 'Low'      ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300' :
+                                                      'bg-earth-100 dark:bg-earth-800 text-earth-500 dark:text-earth-400'
+                }`}>
+                  {localActivityLevel} Activity
+                </span>
+                <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                  {nearbyRefuges.length} refuge{nearbyRefuges.length !== 1 ? 's' : ''} within {myAreaRadius} mi
+                </span>
+              </div>
+
+              {nearbyRefuges.length === 0 ? (
+                <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                  No refuges with current count data found within {myAreaRadius} miles.
+                </p>
+              ) : (
+                <div className="flex flex-col">
+                  {nearbyRefuges.slice(0, 5).map(r => {
+                    const statusCfg = r.dominantStatus ? STATUS_CONFIG[r.dominantStatus] : null
+                    return (
+                      <div
+                        key={r.refugeId}
+                        className="flex items-center justify-between gap-3 py-2 border-t"
+                        style={{ borderColor: `rgb(var(--color-border-primary))` }}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>
+                            {r.refugeName}
+                          </span>
+                          <span className="ml-2 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                            {r.state} · {r.distance} mi
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <span className="text-sm font-semibold text-forest-600 dark:text-forest-400">
+                            {r.totalBirds.toLocaleString()}
+                          </span>
+                          {statusCfg && (
+                            <span className={`text-xs rounded-full px-2 py-0.5 ${statusCfg.className}`}>
+                              {statusCfg.label}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {nearbyRefuges.length > 5 && (
+                    <p className="text-xs mt-2" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                      +{nearbyRefuges.length - 5} more refuges within {myAreaRadius} miles
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* US State Map */}
@@ -1166,23 +1425,123 @@ export function MigrationPage() {
               </div>
             </div>
 
-            {/* Movement Direction card */}
-            {movementDirection && (
-              <div className="mb-8">
-                <div
-                  className="card p-4 inline-flex flex-col"
-                  style={{ borderColor: `rgb(var(--color-border-primary))` }}
-                >
-                  <p className="text-xs font-medium mb-1" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                    Movement
-                  </p>
-                  <p className={`text-lg font-bold flex items-center gap-1.5 ${movementDirection.color}`}>
-                    <span className="text-xl">{movementDirection.icon}</span>
-                    {movementDirection.label}
-                  </p>
-                  <p className="text-xs mt-1" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                    {movementDirection.sublabel}
-                  </p>
+            {/* Movement Direction + Hunt Recommendation row */}
+            {(movementDirection || huntRecommendation) && (
+              <div className="flex flex-col sm:flex-row gap-4 mb-8">
+                {movementDirection && (
+                  <div
+                    className="card p-4 flex flex-col"
+                    style={{ borderColor: `rgb(var(--color-border-primary))` }}
+                  >
+                    <p className="text-xs font-medium mb-1" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                      Movement
+                    </p>
+                    <p className={`text-lg font-bold flex items-center gap-1.5 ${movementDirection.color}`}>
+                      <span className="text-xl">{movementDirection.icon}</span>
+                      {movementDirection.label}
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                      {movementDirection.sublabel}
+                    </p>
+                  </div>
+                )}
+
+                {/* 3B — Hunt Recommendation */}
+                {huntRecommendation && (
+                  <div
+                    className={`card p-4 flex-1 flex flex-col gap-1 border-l-4 ${
+                      huntRecommendation.urgency === 'high'
+                        ? 'border-l-forest-500 dark:border-l-forest-400'
+                        : huntRecommendation.urgency === 'medium'
+                        ? 'border-l-amber-500 dark:border-l-amber-400'
+                        : 'border-l-earth-400 dark:border-l-earth-500'
+                    }`}
+                  >
+                    <p className="text-xs font-medium" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                      This Weekend
+                    </p>
+                    <p className={`text-base font-bold ${
+                      huntRecommendation.urgency === 'high'
+                        ? 'text-forest-700 dark:text-forest-300'
+                        : huntRecommendation.urgency === 'medium'
+                        ? 'text-amber-700 dark:text-amber-300'
+                        : 'text-earth-600 dark:text-earth-400'
+                    }`}>
+                      {huntRecommendation.action}
+                    </p>
+                    <p className="text-sm leading-snug" style={{ color: `rgb(var(--color-text-secondary))` }}>
+                      {huntRecommendation.reasoning}
+                    </p>
+                    {huntRecommendation.coldFrontStates.length > 0 && (
+                      <p className="text-xs mt-1 text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                        <Wind className="w-3 h-3" />
+                        Cold front affecting {huntRecommendation.coldFrontStates.join(', ')}
+                      </p>
+                    )}
+                    {huntRecommendation.topRefuge && (
+                      <p className="text-xs mt-0.5" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                        Top refuge: {huntRecommendation.topRefuge.refugeName}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 4B — Season-to-date comparison */}
+            {seasonComparison && seasonComparison.rows.length > 0 && (
+              <div className="card p-5 mb-8">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h2 className="text-base font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
+                      Season Comparison
+                    </h2>
+                    <p className="text-xs mt-0.5" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                      {seasonComparison.seasonYear - 1}–{seasonComparison.seasonYear} season vs {seasonComparison.seasonYear - 2}–{seasonComparison.seasonYear - 1} · season-to-date totals
+                    </p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr style={{ borderBottom: `1px solid rgb(var(--color-border-primary))` }}>
+                        <th className="text-left pb-2 pr-4 font-medium" style={{ color: `rgb(var(--color-text-tertiary))` }}>State</th>
+                        <th className="text-right pb-2 pr-4 font-medium" style={{ color: `rgb(var(--color-text-tertiary))` }}>This Season</th>
+                        <th className="text-right pb-2 pr-4 font-medium" style={{ color: `rgb(var(--color-text-tertiary))` }}>Last Season</th>
+                        <th className="text-right pb-2 font-medium" style={{ color: `rgb(var(--color-text-tertiary))` }}>Change</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {seasonComparison.rows.map(row => (
+                        <tr
+                          key={row.stateCode}
+                          style={{ borderBottom: `1px solid rgb(var(--color-border-primary))` }}
+                          className="last:border-0"
+                        >
+                          <td className="py-2 pr-4 font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>
+                            {row.stateName}
+                          </td>
+                          <td className="py-2 pr-4 text-right" style={{ color: `rgb(var(--color-text-primary))` }}>
+                            {row.thisSeason.toLocaleString()}
+                          </td>
+                          <td className="py-2 pr-4 text-right" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                            {row.prevSeason.toLocaleString()}
+                          </td>
+                          <td className="py-2 text-right">
+                            <span className={`font-medium ${
+                              row.deltaPercent > 0
+                                ? 'text-forest-600 dark:text-forest-400'
+                                : row.deltaPercent < 0
+                                ? 'text-red-600 dark:text-red-400'
+                                : ''
+                            }`} style={row.deltaPercent === 0 ? { color: `rgb(var(--color-text-tertiary))` } : undefined}>
+                              {row.deltaPercent > 0 ? '+' : ''}{row.deltaPercent}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}

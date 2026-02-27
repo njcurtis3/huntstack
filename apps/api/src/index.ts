@@ -19,6 +19,7 @@ import { refugeRoutes } from './routes/refuges.js'
 import { weatherRoutes } from './routes/weather.js'
 import { huntRoutes } from './routes/hunt.js'
 import { migrationRoutes } from './routes/migration.js'
+import { geoRoutes } from './routes/geo.js'
 
 const app = Fastify({
   logger: {
@@ -80,6 +81,7 @@ await app.register(refugeRoutes, { prefix: '/api/refuges' })
 await app.register(weatherRoutes, { prefix: '/api/weather' })
 await app.register(huntRoutes, { prefix: '/api/hunt' })
 await app.register(migrationRoutes, { prefix: '/api/migration' })
+await app.register(geoRoutes, { prefix: '/api/geo' })
 
 // Global error handler
 app.setErrorHandler((error, request, reply) => {
