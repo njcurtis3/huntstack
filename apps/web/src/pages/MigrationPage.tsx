@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   Loader2, AlertCircle, Bird, X, TrendingUp, TrendingDown, Minus, Sparkles,
   Wind, Thermometer, Zap, AlertTriangle, ChevronDown, ChevronUp, RefreshCw,
+  Send, Bot, User, MessageSquare,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -523,6 +524,242 @@ function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number):
   const dLng = (lng2 - lng1) * Math.PI / 180
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+// ─── Migration Chat ───────────────────────────────────────────────────────────
+
+interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  sources?: Array<{ title: string; url?: string; snippet: string }>
+}
+
+function MigrationChat({ speciesName, selectedStates }: {
+  speciesName: string
+  selectedStates: string[]
+}) {
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [isOpen, setIsOpen] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const contextPrefix = useMemo(() => {
+    const parts: string[] = []
+    if (speciesName) parts.push(speciesName)
+    if (selectedStates.length > 0) parts.push(`in ${selectedStates.join(', ')}`)
+    return parts.length > 0 ? `[Context: ${parts.join(' ')}] ` : ''
+  }, [speciesName, selectedStates])
+
+  const suggestedQuestions = useMemo(() => {
+    const sp = speciesName || 'waterfowl'
+    const stateStr = selectedStates.length > 0 ? selectedStates[0] : 'the region'
+    return [
+      `Are ${sp} numbers building or declining right now?`,
+      `Should I hunt ${stateStr} this weekend?`,
+      `What push factors are driving ${sp} movement?`,
+      `Where are the highest concentrations of ${sp} right now?`,
+    ]
+  }, [speciesName, selectedStates])
+
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || isLoading) return
+
+    const fullMessage = contextPrefix + text.trim()
+
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: text.trim(), // display without prefix
+    }
+    setMessages(prev => [...prev, userMessage])
+    setInput('')
+    setIsLoading(true)
+
+    try {
+      const data = await api.chat(fullMessage)
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: data.response,
+        sources: data.sources,
+      }])
+    } catch {
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        content: 'Something went wrong. Please try again.',
+      }])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  if (!isOpen) {
+    return (
+      <button
+        onClick={() => setIsOpen(true)}
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-full shadow-lg text-white text-sm font-medium transition-all hover:scale-105"
+        style={{ backgroundColor: 'rgb(var(--color-accent-500, 6 95 70))' }}
+      >
+        <MessageSquare className="w-4 h-4" />
+        Ask HuntStack AI
+      </button>
+    )
+  }
+
+  return (
+    <div
+      className="fixed bottom-6 right-6 z-50 flex flex-col rounded-xl shadow-2xl overflow-hidden"
+      style={{
+        width: 380,
+        height: 520,
+        backgroundColor: `rgb(var(--color-bg-elevated))`,
+        border: `1px solid rgb(var(--color-border-primary))`,
+      }}
+    >
+      {/* Chat header */}
+      <div
+        className="flex items-center justify-between px-4 py-3 flex-shrink-0"
+        style={{ backgroundColor: `rgb(var(--color-bg-secondary))`, borderBottom: `1px solid rgb(var(--color-border-primary))` }}
+      >
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 bg-accent-100 dark:bg-accent-900/40 rounded-full flex items-center justify-center">
+            <Bot className="w-4 h-4 text-accent-600 dark:text-accent-400" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>Ask HuntStack</p>
+            {(speciesName || selectedStates.length > 0) && (
+              <p className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                {[speciesName, selectedStates.length > 0 && selectedStates.join(', ')].filter(Boolean).join(' · ')}
+              </p>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={() => setIsOpen(false)}
+          className="p-1 rounded hover:opacity-70 transition-opacity"
+          style={{ color: `rgb(var(--color-text-tertiary))` }}
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+        {messages.length === 0 ? (
+          <div className="space-y-2">
+            <p className="text-xs font-medium" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+              Ask about current migration conditions:
+            </p>
+            {suggestedQuestions.map(q => (
+              <button
+                key={q}
+                onClick={() => sendMessage(q)}
+                className="w-full text-left text-xs px-3 py-2 rounded-lg border transition-colors hover:border-accent-400 dark:hover:border-accent-500"
+                style={{
+                  backgroundColor: `rgb(var(--color-bg-secondary))`,
+                  borderColor: `rgb(var(--color-border-primary))`,
+                  color: `rgb(var(--color-text-secondary))`,
+                }}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <>
+            {messages.map(msg => (
+              <div key={msg.id} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : ''}`}>
+                {msg.role === 'assistant' && (
+                  <div className="w-6 h-6 bg-accent-100 dark:bg-accent-900/40 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Bot className="w-3.5 h-3.5 text-accent-600 dark:text-accent-400" />
+                  </div>
+                )}
+                <div className="max-w-[85%] space-y-1">
+                  <div
+                    className={`text-xs rounded-lg px-3 py-2 ${msg.role === 'user' ? 'bg-accent-500 text-white' : ''}`}
+                    style={msg.role === 'assistant' ? {
+                      backgroundColor: `rgb(var(--color-bg-secondary))`,
+                      color: `rgb(var(--color-text-primary))`,
+                    } : undefined}
+                  >
+                    <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                  </div>
+                  {msg.sources && msg.sources.length > 0 && (
+                    <div className="space-y-0.5">
+                      {msg.sources.slice(0, 2).map((src, i) => (
+                        <div key={i} className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                          {src.url ? (
+                            <a href={src.url} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:underline">
+                              {src.title}
+                            </a>
+                          ) : (
+                            <span>{src.title}</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {msg.role === 'user' && (
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 bg-earth-200 dark:bg-earth-700">
+                    <User className="w-3.5 h-3.5 text-earth-600 dark:text-earth-300" />
+                  </div>
+                )}
+              </div>
+            ))}
+            {isLoading && (
+              <div className="flex gap-2">
+                <div className="w-6 h-6 bg-accent-100 dark:bg-accent-900/40 rounded-full flex items-center justify-center flex-shrink-0">
+                  <Bot className="w-3.5 h-3.5 text-accent-600 dark:text-accent-400" />
+                </div>
+                <div
+                  className="text-xs rounded-lg px-3 py-2"
+                  style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}
+                >
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: `rgb(var(--color-text-tertiary))` }} />
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </>
+        )}
+      </div>
+
+      {/* Input */}
+      <div
+        className="px-3 py-3 flex-shrink-0"
+        style={{ borderTop: `1px solid rgb(var(--color-border-primary))` }}
+      >
+        <form
+          onSubmit={e => { e.preventDefault(); sendMessage(input) }}
+          className="flex gap-2"
+        >
+          <input
+            type="text"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            placeholder="Ask about migration conditions..."
+            className="input flex-1 text-xs py-2"
+            disabled={isLoading}
+          />
+          <button
+            type="submit"
+            disabled={!input.trim() || isLoading}
+            className="btn-primary px-3 py-2"
+          >
+            <Send className="w-3.5 h-3.5" />
+          </button>
+        </form>
+      </div>
+    </div>
+  )
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -2050,6 +2287,12 @@ export function MigrationPage() {
           </>
         )}
       </div>
+
+      {/* Floating AI Chat */}
+      <MigrationChat
+        speciesName={speciesOptions.find(s => s.slug === selectedSpecies)?.name ?? ''}
+        selectedStates={selectedState ? [selectedState] : []}
+      />
     </div>
   )
 }

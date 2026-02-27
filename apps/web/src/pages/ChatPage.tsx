@@ -17,10 +17,10 @@ interface Message {
 }
 
 const suggestedQuestions = [
-  "What are the waterfowl hunting seasons in Texas?",
-  "Where can I hunt snow geese in New Mexico?",
-  "What license do I need for duck hunting in Arkansas as a non-resident?",
-  "When does conservation order start in the Central Flyway?",
+  "Are snow geese moving in Arkansas right now?",
+  "Where should I hunt waterfowl this weekend?",
+  "What license do I need for duck hunting in Texas as a non-resident?",
+  "When does the conservation order start in the Central Flyway?",
   "What are the bag limits for geese in Kansas?",
 ]
 
@@ -102,7 +102,7 @@ export function ChatPage() {
           </div>
           <div>
             <h1 className="font-semibold text-sm" style={{ color: `rgb(var(--color-text-primary))` }}>HuntStack AI Assistant</h1>
-            <p className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>Ask anything about hunting regulations, seasons, and locations</p>
+            <p className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>Live migration data + regulations + seasons — ask anything</p>
           </div>
         </div>
       </div>
