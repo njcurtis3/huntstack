@@ -371,24 +371,56 @@ class ApiClient {
   async getOutfitters(options?: {
     q?: string
     state?: string
-    huntType?: string
     species?: string
-    minRating?: number
+    priceRange?: string
     limit?: number
     offset?: number
   }) {
-    return this.request('/api/outfitters', { params: options })
+    return this.request<{
+      outfitters: Array<{
+        id: string
+        name: string
+        slug: string
+        city: string
+        state: string
+        statesServed: string[]
+        speciesOffered: string[]
+        huntTypes: string[]
+        priceRange: string
+        priceNote: string
+        rating: number | null
+        reviewCount: number
+        description: string
+        website: string | null
+        phone: string | null
+        isVerified: boolean
+      }>
+      total: number
+      states: string[]
+    }>('/api/outfitters', { params: options })
   }
 
   async getOutfitterById(id: string) {
-    return this.request(`/api/outfitters/${id}`)
-  }
-
-  async getOutfitterReviews(id: string, options?: {
-    limit?: number
-    offset?: number
-  }) {
-    return this.request(`/api/outfitters/${id}/reviews`, { params: options })
+    return this.request<{
+      outfitter: {
+        id: string
+        name: string
+        slug: string
+        city: string
+        state: string
+        statesServed: string[]
+        speciesOffered: string[]
+        huntTypes: string[]
+        priceRange: string
+        priceNote: string
+        rating: number
+        reviewCount: number
+        description: string
+        website: string | null
+        phone: string | null
+        isVerified: boolean
+      }
+    }>(`/api/outfitters/${id}`)
   }
 
   // Chat
