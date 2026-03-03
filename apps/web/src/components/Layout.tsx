@@ -23,10 +23,10 @@ const primaryNav = [
 
 const secondaryNav = [
   { name: 'Regulations', href: '/regulations', icon: FileText },
-  { name: 'Ask AI', href: '/chat', icon: MessageSquare },
-  { name: 'Search', href: '/search', icon: Search },
   { name: 'Outfitters', href: '/outfitters', icon: Users },
+  { name: 'Ask AI', href: '/chat', icon: MessageSquare },
   { name: 'Map', href: '/map', icon: Map },
+  { name: 'Search', href: '/search', icon: Search },
 ]
 
 // Combined for mobile (Home first, then primary, then secondary)
