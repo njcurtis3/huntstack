@@ -6,6 +6,7 @@ import { MapPage } from './pages/MapPage'
 import { RegulationsPage } from './pages/RegulationsPage'
 import { OutfittersPage } from './pages/OutfittersPage'
 import { MigrationPage } from './pages/MigrationPage'
+import { MigrationReportPage } from './pages/MigrationReportPage'
 import { ChatPage } from './pages/ChatPage'
 import { WhereToHuntPage } from './pages/WhereToHuntPage'
 import { NotFoundPage } from './pages/NotFoundPage'
@@ -13,6 +14,7 @@ import { NotFoundPage } from './pages/NotFoundPage'
 function App() {
   return (
     <Routes>
+      <Route path="/report" element={<MigrationReportPage />} />
       <Route path="/" element={<Layout />}>
         <Route index element={<HomePage />} />
         <Route path="search" element={<SearchPage />} />

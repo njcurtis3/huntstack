@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   Loader2, AlertCircle, Bird, X, TrendingUp, TrendingDown, Minus, Sparkles,
   Wind, Thermometer, Zap, AlertTriangle, ChevronDown, ChevronUp, RefreshCw,
-  Send, Bot, User, MessageSquare, MapPin, Navigation,
+  Send, Bot, User, MessageSquare, MapPin, Navigation, Share2,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -824,6 +824,7 @@ export function MigrationPage() {
 
   const [expandedStates, setExpandedStates] = useState<Set<string>>(new Set())
   const [expandedRefuges, setExpandedRefuges] = useState<Set<string>>(new Set())
+  const [shareCopied, setShareCopied] = useState(false)
 
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme)
   const mapColors = getMapColors(resolvedTheme)
@@ -985,6 +986,22 @@ export function MigrationPage() {
   const handleMapStateClick = useCallback((stateCode: string) => {
     setSelectedState(prev => prev === stateCode ? '' : stateCode)
   }, [])
+
+  // Share report
+  const handleShare = useCallback(() => {
+    const params = new URLSearchParams()
+    if (selectedFlyway) params.set('flyway', selectedFlyway)
+    if (selectedSpecies) params.set('species', selectedSpecies)
+    const url = `${window.location.origin}/report${params.size ? '?' + params.toString() : ''}`
+    if (navigator.share) {
+      navigator.share({ title: 'Migration Conditions Report — HuntStack', url }).catch(() => {})
+    } else {
+      navigator.clipboard.writeText(url).then(() => {
+        setShareCopied(true)
+        setTimeout(() => setShareCopied(false), 2000)
+      })
+    }
+  }, [selectedFlyway, selectedSpecies])
 
   // Merge official + eBird counts, then filter by selected state
   const allCounts = useMemo(() => [...currentCounts, ...ebirdCounts], [currentCounts, ebirdCounts])
@@ -1320,15 +1337,26 @@ export function MigrationPage() {
       {/* Header */}
       <div className="bg-earth-900 dark:bg-[#0d1117] text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3 mb-3">
-            <Bird className="w-8 h-8" />
-            <h1 className="text-3xl font-bold">Migration</h1>
-            <span className="text-xs bg-accent-600 dark:bg-accent-700 rounded-full px-3 py-1 font-medium">Beta</span>
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="flex items-center gap-3 mb-3">
+                <Bird className="w-8 h-8" />
+                <h1 className="text-3xl font-bold">Migration</h1>
+                <span className="text-xs bg-accent-600 dark:bg-accent-700 rounded-full px-3 py-1 font-medium">Beta</span>
+              </div>
+              <p className="text-earth-300 max-w-2xl">
+                Track waterfowl movement across refuges and flyways. See the latest survey counts,
+                spot migration trends, and plan your hunts around real bird activity.
+              </p>
+            </div>
+            <button
+              onClick={handleShare}
+              className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-white/10 hover:bg-white/20 text-white border border-white/20 mt-1"
+            >
+              <Share2 className="w-4 h-4" />
+              {shareCopied ? 'Link copied!' : 'Share Report'}
+            </button>
           </div>
-          <p className="text-earth-300 max-w-2xl">
-            Track waterfowl movement across refuges and flyways. See the latest survey counts,
-            spot migration trends, and plan your hunts around real bird activity.
-          </p>
         </div>
       </div>
 
