@@ -65,7 +65,7 @@ const STATUS_CONFIG: Record<NonNullable<MigrationStatus>, { label: string; color
   peak:         { label: 'Peak',        color: '#bf8700' },
   declining:    { label: 'Declining',   color: '#bc4c00' },
   departing:    { label: 'Departing',   color: '#cf222e' },
-  first_survey: { label: 'New Data',    color: '#8250df' },
+  first_survey: { label: 'New Data',    color: '#01210a' },
 }
 
 const PUSH_SCORE_LABELS = ['Low', 'Moderate', 'High', 'Extreme']

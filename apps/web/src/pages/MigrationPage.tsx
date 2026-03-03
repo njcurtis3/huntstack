@@ -8,7 +8,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
-import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
+import { ComposableMap, Geographies, Geography, Annotation } from 'react-simple-maps'
 import { api } from '../lib/api'
 import { useThemeStore } from '../stores/themeStore'
 import { getMapColors, getChartColors } from '../lib/themeColors'
@@ -125,7 +125,7 @@ const STATUS_CONFIG: Record<NonNullable<MigrationStatus>, { label: string; class
   peak:         { label: 'Peak',         className: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300' },
   declining:    { label: 'Declining',    className: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300' },
   departing:    { label: 'Departing',    className: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' },
-  first_survey: { label: 'New Data',     className: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300' },
+  first_survey: { label: 'New Data',     className: 'bg-[#01210a]/10 dark:bg-[#01210a]/40 text-[#01210a] dark:text-[#2da44e]' },
 }
 
 // ─── Anomaly detection ────────────────────────────────────────────────────────
@@ -262,6 +262,16 @@ const PUSH_SCORE_COLORS = [
   'text-red-600 dark:text-red-400',
 ]
 
+// ─── Flyway state ordering (north → south) ────────────────────────────────────
+
+const FLYWAY_STATE_ORDER: Record<string, string[]> = {
+  central:     ['MT', 'ND', 'SD', 'NE', 'KS', 'CO', 'OK', 'TX', 'NM'],
+  mississippi: ['MN', 'WI', 'IA', 'IL', 'MO', 'TN', 'AR', 'MS', 'LA'],
+  pacific:     ['WA', 'OR', 'ID', 'NV', 'CA'],
+  atlantic:    ['ME', 'NY', 'PA', 'NJ', 'MD', 'VA', 'NC', 'SC', 'GA', 'FL'],
+  '':          ['ND', 'SD', 'MN', 'NE', 'IA', 'KS', 'MO', 'CO', 'OK', 'AR', 'TX', 'LA', 'NM', 'MS'],
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function DeltaBadge({ trend, delta, deltaPercent }: {
@@ -320,7 +330,7 @@ function WeatherAlertsPanel({ alerts }: {
   const hasSevere = severeCount > 0
 
   return (
-    <div className={`card p-4 mb-6 ${hasSevere ? 'border-red-300 dark:border-red-800' : 'border-amber-300 dark:border-amber-800'}`}>
+    <div className={`card p-4 ${hasSevere ? 'border-red-300 dark:border-red-800' : 'border-amber-300 dark:border-amber-800'}`}>
       <button
         className="w-full flex items-center justify-between"
         onClick={() => setExpanded(e => !e)}
@@ -405,7 +415,7 @@ function PushFactorsPanel({ pushFactors, overallPushScore, states }: {
   const scoreColor = PUSH_SCORE_COLORS[Math.min(overallPushScore, 3)]
 
   return (
-    <div className="card p-4 mb-6">
+    <div className="card p-4">
       <button
         className="w-full flex items-center justify-between"
         onClick={() => setExpanded(e => !e)}
@@ -510,6 +520,240 @@ function PushFactorsPanel({ pushFactors, overallPushScore, states }: {
               No strong push signals detected across {states.join(', ')}. Birds likely holding.
             </p>
           )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Flow Visualization ───────────────────────────────────────────────────────
+
+type FlowDirection = 'south' | 'north' | 'both' | null
+
+function computeFlowDirection(
+  upperStatus: MigrationStatus,
+  lowerStatus: MigrationStatus,
+  upperBirds?: number,
+  lowerBirds?: number,
+): FlowDirection {
+  // Trend-based (multi-survey data): first_survey treated as arriving
+  const upper = upperStatus === 'first_survey' ? 'arriving' : upperStatus
+  const lower = lowerStatus === 'first_survey' ? 'arriving' : lowerStatus
+  const isSouthUpper = upper === 'declining' || upper === 'departing'
+  const isSouthLower = lower === 'arriving' || lower === 'building'
+  const isNorthUpper = upper === 'arriving' || upper === 'building'
+  const isNorthLower = lower === 'declining' || lower === 'departing'
+  if (isSouthUpper && isSouthLower) return 'south'
+  if (isNorthUpper && isNorthLower) return 'north'
+  if (isNorthUpper && isSouthLower) return 'both'
+
+  // Magnitude-based fallback when both states only have first-survey data:
+  // more birds in upper state → northward staging; more in lower → southward/wintering
+  if (
+    (upperStatus === 'first_survey' || upperStatus === null) &&
+    (lowerStatus === 'first_survey' || lowerStatus === null) &&
+    upperBirds !== undefined && lowerBirds !== undefined
+  ) {
+    const ratio = upperBirds > 0 && lowerBirds > 0
+      ? Math.max(upperBirds, lowerBirds) / Math.min(upperBirds, lowerBirds)
+      : 0
+    if (ratio >= 2) {
+      // Significant concentration difference — show direction of concentration
+      return upperBirds > lowerBirds ? 'north' : 'south'
+    }
+  }
+
+  return null
+}
+
+type StateGroupSummary = {
+  state: string
+  totalBirds: number
+  dominantStatus: MigrationStatus
+  refuges: Array<{ items: Array<{ deltaPercent: number | null }> }>
+}
+
+function FlowVisualization({ stateGroups, pushFactorsData, selectedFlyway }: {
+  stateGroups: StateGroupSummary[]
+  pushFactorsData: { pushFactors: PushFactor[]; overallPushScore: number } | null
+  selectedFlyway: string
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  const orderedStates = FLYWAY_STATE_ORDER[selectedFlyway] ?? FLYWAY_STATE_ORDER['']
+
+  const stateMap = useMemo(() => {
+    const m = new Map<string, StateGroupSummary>()
+    for (const sg of stateGroups) m.set(sg.state, sg)
+    return m
+  }, [stateGroups])
+
+  type FlowRow = {
+    stateCode: string
+    stateGroup: StateGroupSummary | null
+    flowBelow: FlowDirection
+    lowerDeltaPercent: number | null
+  }
+
+  const rows = useMemo((): FlowRow[] => {
+    return orderedStates.map((code, idx) => {
+      const sg = stateMap.get(code) ?? null
+      const nextCode = orderedStates[idx + 1]
+      const nextSg = nextCode ? (stateMap.get(nextCode) ?? null) : null
+      const flowBelow: FlowDirection =
+        sg && nextSg ? computeFlowDirection(sg.dominantStatus, nextSg.dominantStatus, sg.totalBirds, nextSg.totalBirds) : null
+      const lowerItems = nextSg ? (nextSg.refuges ?? []).flatMap(r => (r.items ?? [])) : []
+      const lowerDeltaPercent = lowerItems.length > 0
+        ? lowerItems.reduce((best, item) =>
+            item.deltaPercent !== null && Math.abs(item.deltaPercent) > Math.abs(best ?? 0)
+              ? item.deltaPercent : best, null as number | null)
+        : null
+      return { stateCode: code, stateGroup: sg, flowBelow, lowerDeltaPercent }
+    })
+  }, [orderedStates, stateMap])
+
+  const activeStateCount = rows.filter(r => r.stateGroup !== null).length
+  const southFlowCount = rows.filter(r => r.flowBelow === 'south').length
+  const northFlowCount = rows.filter(r => r.flowBelow === 'north').length
+
+  const overallLabel =
+    southFlowCount >= 2 ? 'Southward movement' :
+    northFlowCount >= 2 ? 'Northward movement' :
+    'Mixed / stalled'
+
+  const flywayLabel = FLYWAY_OPTIONS.find(f => f.value === selectedFlyway)?.label ?? 'All Flyways'
+
+  if (activeStateCount === 0) return null
+
+  return (
+    <div className="card p-4">
+      <button className="w-full flex items-center justify-between" onClick={() => setExpanded(e => !e)}>
+        <div className="flex items-center gap-3">
+          <span className="text-base font-bold select-none" style={{ color: southFlowCount >= 2 ? '#1f883d' : northFlowCount >= 2 ? '#0969da' : 'rgb(var(--color-text-tertiary))' }}>
+            {southFlowCount >= 2 ? '↓' : northFlowCount >= 2 ? '↑' : '↔'}
+          </span>
+          <div className="text-left">
+            <h2 className="text-sm font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
+              Flyway Flow
+            </h2>
+            <p className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+              {flywayLabel} · {overallLabel} · {activeStateCount} of {orderedStates.length} states active
+            </p>
+          </div>
+        </div>
+        {expanded
+          ? <ChevronUp className="w-4 h-4" style={{ color: `rgb(var(--color-text-tertiary))` }} />
+          : <ChevronDown className="w-4 h-4" style={{ color: `rgb(var(--color-text-tertiary))` }} />
+        }
+      </button>
+
+      {expanded && (
+        <div className="mt-4 pt-4 border-t" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+          <div className="flex flex-col" style={{ maxWidth: 520 }}>
+            {rows.map((row, idx) => {
+              const sg = row.stateGroup
+              const statusCfg = sg?.dominantStatus ? STATUS_CONFIG[sg.dominantStatus] : null
+              const isLast = idx === rows.length - 1
+              const pf = pushFactorsData?.pushFactors.find(p => p.stateCode === row.stateCode)
+
+              const dotColor =
+                sg?.dominantStatus === 'arriving'     ? '#1f883d' :
+                sg?.dominantStatus === 'building'     ? '#0969da' :
+                sg?.dominantStatus === 'peak'         ? '#bf8700' :
+                sg?.dominantStatus === 'declining'    ? '#f97316' :
+                sg?.dominantStatus === 'departing'    ? '#ef4444' :
+                sg?.dominantStatus === 'first_survey' ? '#01210a' :
+                'rgb(var(--color-border-primary))'
+
+              const absPercent = Math.abs(row.lowerDeltaPercent ?? 0)
+              const arrowWeight = absPercent >= 80 ? 'font-black text-base' : absPercent >= 40 ? 'font-bold text-sm' : 'font-medium text-sm'
+
+              const arrowChar =
+                row.flowBelow === 'south' ? '↓' :
+                row.flowBelow === 'north' ? '↑' :
+                row.flowBelow === 'both'  ? '↕' : null
+
+              const arrowColor =
+                row.flowBelow === 'south' ? 'text-forest-600 dark:text-forest-400' :
+                row.flowBelow === 'north' ? 'text-accent-600 dark:text-accent-400' :
+                'text-amber-600 dark:text-amber-400'
+
+              return (
+                <div key={row.stateCode}>
+                  {/* State row */}
+                  <div className="flex items-center gap-3 py-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: dotColor }} />
+                    <span className="text-sm font-mono font-semibold w-7 flex-shrink-0" style={{ color: `rgb(var(--color-text-primary))` }}>
+                      {row.stateCode}
+                    </span>
+                    <span className={`text-xs flex-shrink-0 ${sg ? '' : 'opacity-40'}`} style={{ color: `rgb(var(--color-text-secondary))`, minWidth: 100 }}>
+                      {STATE_CODE_TO_NAME[row.stateCode] ?? row.stateCode}
+                    </span>
+                    {sg ? (
+                      <>
+                        <span className="text-sm font-semibold text-forest-600 dark:text-forest-400 tabular-nums">
+                          {sg.totalBirds.toLocaleString()}
+                        </span>
+                        {statusCfg && (
+                          <span className={`text-xs rounded-full px-2 py-0.5 font-medium flex-shrink-0 ${statusCfg.className}`}>
+                            {statusCfg.label}
+                          </span>
+                        )}
+                        {pf && pf.pushScore >= 2 && (
+                          <Zap className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-xs opacity-30" style={{ color: `rgb(var(--color-text-tertiary))` }}>no data</span>
+                    )}
+                  </div>
+
+                  {/* Flow connector */}
+                  {!isLast && (
+                    <div className="flex items-center gap-2 py-0.5" style={{ paddingLeft: 3 }}>
+                      <div className="flex-shrink-0" style={{
+                        width: 2, height: 14, marginLeft: 3,
+                        backgroundColor:
+                          row.flowBelow === 'south' ? '#1f883d' :
+                          row.flowBelow === 'north' ? '#0969da' :
+                          row.flowBelow === 'both'  ? '#bf8700' :
+                          'rgb(var(--color-border-primary))',
+                        opacity: row.flowBelow === null ? 0.3 : 1,
+                      }} />
+                      {arrowChar ? (
+                        <span className={`${arrowColor} ${arrowWeight} leading-none select-none`}>{arrowChar}</span>
+                      ) : (
+                        <span className="text-xs opacity-20 select-none" style={{ color: `rgb(var(--color-text-tertiary))` }}>—</span>
+                      )}
+                      {row.flowBelow === 'south' && row.lowerDeltaPercent !== null && row.lowerDeltaPercent >= 30 && (
+                        <span className="text-xs text-forest-600 dark:text-forest-400 opacity-70">
+                          +{Math.round(row.lowerDeltaPercent)}% arriving
+                        </span>
+                      )}
+                      {row.flowBelow === 'north' && row.lowerDeltaPercent !== null && row.lowerDeltaPercent <= -30 && (
+                        <span className="text-xs text-accent-600 dark:text-accent-400 opacity-70">
+                          {Math.round(row.lowerDeltaPercent)}% departing
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Legend */}
+          <div className="mt-4 pt-3 border-t flex flex-wrap gap-4 text-xs" style={{ borderColor: `rgb(var(--color-border-primary))`, color: `rgb(var(--color-text-tertiary))` }}>
+            <span className="flex items-center gap-1">
+              <span className="text-forest-600 dark:text-forest-400 font-bold">↓</span> Southward — birds moving toward you
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="text-accent-600 dark:text-accent-400 font-bold">↑</span> Northward — spring movement
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="text-amber-600 dark:text-amber-400 font-bold">↕</span> Active throughout
+            </span>
+          </div>
         </div>
       )}
     </div>
@@ -1366,101 +1610,80 @@ export function MigrationPage() {
           Refuge count data is currently limited to select states and sources. We're actively working to expand coverage across more refuges and flyways.
         </div>
 
-        {/* Weekly Intelligence Card */}
+        {/* Weekly Intelligence */}
         {(weeklySummary || weeklySummaryLoading) && (
-          <div className="card p-5 mb-6">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-accent-500" />
-                <h2 className="text-sm font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
-                  Weekly Intelligence
-                </h2>
+          <div className="rounded-lg border" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+            <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+              <span className="text-base font-bold text-white">Weekly Intelligence</span>
+              <div className="flex items-center gap-3">
                 {weeklySummary && (
                   <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                     {weeklySummary.cached ? 'cached' : 'live'} · {new Date(weeklySummary.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
+                <button
+                  onClick={() => fetchWeeklySummary(true)}
+                  disabled={weeklySummaryLoading}
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                  style={{ color: `rgb(var(--color-text-tertiary))`, backgroundColor: `rgb(var(--color-bg-tertiary))` }}
+                  title="Regenerate summary"
+                >
+                  <RefreshCw className={`w-3 h-3 ${weeklySummaryLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
               </div>
-              <button
-                onClick={() => fetchWeeklySummary(true)}
-                disabled={weeklySummaryLoading}
-                className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
-                style={{ color: `rgb(var(--color-text-tertiary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}
-                title="Regenerate summary"
-              >
-                <RefreshCw className={`w-3 h-3 ${weeklySummaryLoading ? 'animate-spin' : ''}`} />
-                Refresh
-              </button>
             </div>
-            {weeklySummaryLoading && !weeklySummary ? (
-              <div className="flex items-center gap-2 text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Generating intelligence report…
-              </div>
-            ) : weeklySummary ? (
-              <p className="text-sm leading-relaxed" style={{ color: `rgb(var(--color-text-secondary))` }}>
-                {weeklySummary.summary
-                  .replace(/\*\*([^*]+)\*\*/g, '$1')   // strip **bold**
-                  .replace(/\*([^*]+)\*/g, '$1')        // strip *italic*
-                  .replace(/^#+\s+/gm, '')              // strip # headings
-                  .replace(/^[-*]\s+/gm, '')            // strip bullet markers
-                  .trim()
-                }
-              </p>
-            ) : null}
+            <div className="p-5">
+              {weeklySummaryLoading && !weeklySummary ? (
+                <div className="flex items-center gap-2 text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Generating intelligence report…
+                </div>
+              ) : weeklySummary ? (
+                <p className="text-sm leading-relaxed" style={{ color: `rgb(var(--color-text-secondary))` }}>
+                  {weeklySummary.summary
+                    .replace(/\*\*([^*]+)\*\*/g, '$1')
+                    .replace(/\*([^*]+)\*/g, '$1')
+                    .replace(/^#+\s+/gm, '')
+                    .replace(/^[-*]\s+/gm, '')
+                    .trim()
+                  }
+                </p>
+              ) : null}
+            </div>
           </div>
         )}
 
-        {/* Weather Alerts — collapsible */}
-        {weatherAlerts.length > 0 && <WeatherAlertsPanel alerts={weatherAlerts} />}
-
-        {/* Push Factors Panel */}
-        {pushFactorsData && (
-          <PushFactorsPanel
-            pushFactors={pushFactorsData.pushFactors}
-            overallPushScore={pushFactorsData.overallPushScore}
-            states={stateOptions.length > 0 ? stateOptions : ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']}
-          />
-        )}
-
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <select
-            className="input max-w-xs"
-            value={selectedState}
-            onChange={(e) => setSelectedState(e.target.value)}
-          >
-            <option value="">All States</option>
-            {stateOptions.map(s => (
-              <option key={s} value={s}>{STATE_CODE_TO_NAME[s] || s} ({s})</option>
-            ))}
-          </select>
-          <select
-            className="input max-w-xs"
-            value={selectedSpecies}
-            onChange={(e) => setSelectedSpecies(e.target.value)}
-          >
-            <option value="">All Species</option>
-            {speciesOptions.map(s => (
-              <option key={s.slug} value={s.slug}>{s.name}</option>
-            ))}
-          </select>
-          <select
-            className="input max-w-xs"
-            value={selectedFlyway}
-            onChange={(e) => setSelectedFlyway(e.target.value)}
-          >
-            {FLYWAY_OPTIONS.map(f => (
-              <option key={f.value} value={f.value}>{f.label}</option>
-            ))}
-          </select>
+        {/* Quick Intel */}
+        <div className="rounded-lg border" style={{ margin: '100px 0', borderColor: `rgb(var(--color-border-primary))` }}>
+          <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+            <span className="text-base font-bold text-white">Quick Intel</span>
+          </div>
+          <div className="p-3 space-y-3">
+            {weatherAlerts.length > 0 && <WeatherAlertsPanel alerts={weatherAlerts} />}
+            {pushFactorsData && (
+              <PushFactorsPanel
+                pushFactors={pushFactorsData.pushFactors}
+                overallPushScore={pushFactorsData.overallPushScore}
+                states={stateOptions.length > 0 ? stateOptions : ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']}
+              />
+            )}
+            {stateGroups.length > 0 && (
+              <FlowVisualization
+                stateGroups={stateGroups}
+                pushFactorsData={pushFactorsData}
+                selectedFlyway={selectedFlyway}
+              />
+            )}
+          </div>
         </div>
 
         {/* My Area */}
-        <div className="card p-4 mb-6">
-          <h2 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-secondary))` }}>
-            My Area
-          </h2>
+        <div className="rounded-lg border" style={{ margin: '100px 0', borderColor: `rgb(var(--color-border-primary))` }}>
+          <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+            <span className="text-base font-bold text-white">My Area</span>
+          </div>
+          <div className="p-4">
           <div className="flex flex-col sm:flex-row gap-3 items-start flex-wrap">
             <div className="relative flex-1 min-w-0 max-w-xs">
               <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: `rgb(var(--color-text-tertiary))` }} />
@@ -1576,6 +1799,40 @@ export function MigrationPage() {
               )}
             </div>
           )}
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-col sm:flex-row gap-4 mb-4">
+          <select
+            className="input max-w-xs"
+            value={selectedState}
+            onChange={(e) => setSelectedState(e.target.value)}
+          >
+            <option value="">All States</option>
+            {stateOptions.map(s => (
+              <option key={s} value={s}>{STATE_CODE_TO_NAME[s] || s} ({s})</option>
+            ))}
+          </select>
+          <select
+            className="input max-w-xs"
+            value={selectedSpecies}
+            onChange={(e) => setSelectedSpecies(e.target.value)}
+          >
+            <option value="">All Species</option>
+            {speciesOptions.map(s => (
+              <option key={s.slug} value={s.slug}>{s.name}</option>
+            ))}
+          </select>
+          <select
+            className="input max-w-xs"
+            value={selectedFlyway}
+            onChange={(e) => setSelectedFlyway(e.target.value)}
+          >
+            {FLYWAY_OPTIONS.map(f => (
+              <option key={f.value} value={f.value}>{f.label}</option>
+            ))}
+          </select>
         </div>
 
         {/* US State Map */}
@@ -1591,13 +1848,20 @@ export function MigrationPage() {
                 </button>
               )}
             </h2>
-            <div className="flex items-center gap-4 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-sm bg-forest-200 dark:bg-forest-800 inline-block" /> Has data
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-sm bg-accent-500 inline-block" /> Selected
-              </span>
+            <div className="flex items-center gap-3 text-xs flex-wrap justify-end" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+              {([
+                { status: 'arriving',     color: '#1f883d', label: 'Arriving' },
+                { status: 'building',     color: '#0969da', label: 'Building' },
+                { status: 'peak',         color: '#bf8700', label: 'Peak' },
+                { status: 'declining',    color: '#f97316', label: 'Declining' },
+                { status: 'departing',    color: '#ef4444', label: 'Departing' },
+                { status: 'first_survey', color: '#01210a', label: 'New Data' },
+              ] as const).map(({ color, label }) => (
+                <span key={label} className="flex items-center gap-1">
+                  <span className="w-3 h-3 rounded-sm inline-block" style={{ backgroundColor: color }} />
+                  {label}
+                </span>
+              ))}
               <span className="flex items-center gap-1">
                 <span className="w-3 h-3 rounded-sm inline-block border" style={{ backgroundColor: `rgb(var(--color-bg-secondary))`, borderColor: `rgb(var(--color-border-primary))` }} /> No data
               </span>
@@ -1616,8 +1880,29 @@ export function MigrationPage() {
                   const stateName = geo.properties.name as string
                   const stateCode = STATE_NAME_TO_CODE[stateName]
                   if (!stateCode) return null
+                  const sg = stateGroups.find(s => s.state === stateCode)
                   const hasData = statesWithData.has(stateCode)
                   const isSelected = selectedState === stateCode
+
+                  // Color by migration status
+                  const statusFill =
+                    sg?.dominantStatus === 'arriving'     ? '#1f883d' :
+                    sg?.dominantStatus === 'building'     ? '#0969da' :
+                    sg?.dominantStatus === 'peak'         ? '#bf8700' :
+                    sg?.dominantStatus === 'declining'    ? '#f97316' :
+                    sg?.dominantStatus === 'departing'    ? '#ef4444' :
+                    sg?.dominantStatus === 'first_survey' ? '#01210a' :
+                    hasData ? mapColors.hasData : mapColors.empty
+
+                  const statusFillHover =
+                    sg?.dominantStatus === 'arriving'     ? '#2da44e' :
+                    sg?.dominantStatus === 'building'     ? '#218bff' :
+                    sg?.dominantStatus === 'peak'         ? '#d4a017' :
+                    sg?.dominantStatus === 'declining'    ? '#fb923c' :
+                    sg?.dominantStatus === 'departing'    ? '#f87171' :
+                    sg?.dominantStatus === 'first_survey' ? '#0a4d1f' :
+                    hasData ? mapColors.hasDataHover : mapColors.empty
+
                   return (
                     <Geography
                       key={geo.rsmKey}
@@ -1625,21 +1910,21 @@ export function MigrationPage() {
                       onClick={() => hasData && handleMapStateClick(stateCode)}
                       style={{
                         default: {
-                          fill: isSelected ? mapColors.selected : hasData ? mapColors.hasData : mapColors.empty,
-                          stroke: mapColors.stroke,
-                          strokeWidth: 0.5,
+                          fill: isSelected ? mapColors.selected : statusFill,
+                          stroke: isSelected ? mapColors.selected : mapColors.stroke,
+                          strokeWidth: isSelected ? 1.5 : 0.75,
                           outline: 'none',
                           cursor: hasData ? 'pointer' : 'default',
                         },
                         hover: {
-                          fill: isSelected ? mapColors.selectedHover : hasData ? mapColors.hasDataHover : mapColors.empty,
-                          stroke: hasData ? mapColors.selected : mapColors.stroke,
-                          strokeWidth: hasData ? 1.5 : 0.5,
+                          fill: isSelected ? mapColors.selectedHover : hasData ? statusFillHover : mapColors.empty,
+                          stroke: hasData ? '#fff' : mapColors.stroke,
+                          strokeWidth: hasData ? 1.5 : 0.75,
                           outline: 'none',
                           cursor: hasData ? 'pointer' : 'default',
                         },
                         pressed: {
-                          fill: isSelected ? mapColors.selectedHover : hasData ? mapColors.hasDataHover : mapColors.empty,
+                          fill: mapColors.selectedHover,
                           stroke: mapColors.selected,
                           strokeWidth: 1.5,
                           outline: 'none',
@@ -1650,6 +1935,75 @@ export function MigrationPage() {
                 })
               }
             </Geographies>
+
+            {/* Flow arrows between adjacent flyway states */}
+            {(() => {
+              // Approximate AlbersUSA centroids [lng, lat] for arrow positioning
+              const STATE_CENTROIDS: Record<string, [number, number]> = {
+                MT: [-110.4, 47.0], ND: [-100.5, 47.5], SD: [-100.2, 44.5],
+                NE: [-99.9, 41.5], KS: [-98.4, 38.5], CO: [-105.5, 39.0],
+                OK: [-97.5, 35.5], TX: [-99.3, 31.0], NM: [-106.1, 34.4],
+                MN: [-94.6, 46.4], WI: [-89.6, 44.5], IA: [-93.1, 42.0],
+                IL: [-89.2, 40.0], MO: [-92.5, 38.3], TN: [-86.4, 35.9],
+                AR: [-92.4, 34.8], MS: [-89.7, 32.7], LA: [-91.8, 31.0],
+                WA: [-120.5, 47.4], OR: [-120.5, 44.0], ID: [-114.5, 44.5],
+                NV: [-116.7, 39.5], CA: [-119.4, 37.2],
+              }
+
+              const orderedStates = FLYWAY_STATE_ORDER[selectedFlyway] ?? FLYWAY_STATE_ORDER['']
+              const sgMap = new Map(stateGroups.map(s => [s.state, s]))
+
+              return orderedStates.slice(0, -1).map((code, idx) => {
+                const nextCode = orderedStates[idx + 1]
+                const sg = sgMap.get(code)
+                const nextSg = sgMap.get(nextCode)
+                if (!sg || !nextSg) return null
+
+                const flow = computeFlowDirection(sg.dominantStatus, nextSg.dominantStatus, sg.totalBirds, nextSg.totalBirds)
+                if (!flow) return null
+
+                const from = STATE_CENTROIDS[code]
+                const to = STATE_CENTROIDS[nextCode]
+                if (!from || !to) return null
+
+                // Midpoint for annotation anchor
+                const midLng = (from[0] + to[0]) / 2
+                const midLat = (from[1] + to[1]) / 2
+
+                const arrowColor =
+                  flow === 'south' ? '#1f883d' :
+                  flow === 'north' ? '#0969da' : '#bf8700'
+
+                const arrowChar = flow === 'south' ? '↓' : flow === 'north' ? '↑' : '↕'
+
+                return (
+                  <Annotation
+                    key={`${code}-${nextCode}`}
+                    subject={[midLng, midLat]}
+                    dx={0}
+                    dy={0}
+                    connectorProps={{}}
+                  >
+                    <text
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      style={{
+                        fontSize: 18,
+                        fontWeight: 900,
+                        fill: arrowColor,
+                        stroke: 'rgba(0,0,0,0.4)',
+                        strokeWidth: 3,
+                        paintOrder: 'stroke',
+                        pointerEvents: 'none',
+                        userSelect: 'none',
+                      }}
+                    >
+                      {arrowChar}
+                    </text>
+                  </Annotation>
+                )
+              })
+            })()}
           </ComposableMap>
         </div>
 
@@ -1673,6 +2027,13 @@ export function MigrationPage() {
 
         {!loading && !error && (
           <>
+            {/* Snapshot */}
+            <div className="rounded-lg border" style={{ margin: '100px 0', borderColor: `rgb(var(--color-border-primary))` }}>
+              <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+                <span className="text-base font-bold text-white">Snapshot</span>
+              </div>
+              <div className="p-4">
+
             {/* Summary Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               <div className="card p-4">
@@ -1785,7 +2146,7 @@ export function MigrationPage() {
 
             {/* 4B — Season-to-date comparison */}
             {seasonComparison && seasonComparison.rows.length > 0 && (
-              <div className="card p-5 mb-8">
+              <div className="card p-5 mb-4 mt-4">
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <h2 className="text-base font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
@@ -1840,6 +2201,9 @@ export function MigrationPage() {
                 </div>
               </div>
             )}
+
+              </div>
+            </div>
 
             {/* Current Counts — State → Refuge → Species hierarchy */}
             {stateGroups.length > 0 ? (

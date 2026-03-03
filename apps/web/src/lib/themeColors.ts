@@ -6,7 +6,7 @@ export function getMapColors(resolvedTheme: 'light' | 'dark') {
   const isDark = resolvedTheme === 'dark'
   return {
     empty: isDark ? '#161b22' : '#f6f8fa',
-    stroke: isDark ? '#30363d' : '#d0d7de',
+    stroke: isDark ? '#484f58' : '#8c959f',
     hasData: isDark ? '#238636' : '#dafbe1',
     hasDataHover: isDark ? '#2ea043' : '#aceebb',
     selected: isDark ? '#1f6feb' : '#0969da',
