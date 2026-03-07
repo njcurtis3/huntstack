@@ -130,6 +130,24 @@ class StateRegulationsScraper:
             self._state_id_map = {code: str(sid) for code, sid in cur.fetchall()}
         log.info(f"DB connected, {len(self._state_id_map)} states loaded")
 
+    def _reconnect_db(self):
+        """Reconnect to the database if the connection was dropped."""
+        db_url = os.getenv("DATABASE_URL")
+        if not db_url:
+            return
+        import psycopg2
+        try:
+            if self._conn:
+                try:
+                    self._conn.close()
+                except Exception:
+                    pass
+            self._conn = psycopg2.connect(db_url)
+            log.info("DB reconnected")
+        except Exception as e:
+            log.error(f"DB reconnect failed: {e}")
+            self._conn = None
+
     def _store_document(self, state_code: str, title: str, content: str, source_url: str, doc_type: str):
         if not self._conn:
             return
@@ -148,7 +166,28 @@ class StateRegulationsScraper:
             log.info(f"Stored {doc_type}: {source_url[:80]}")
         except Exception as e:
             log.error(f"DB error storing document: {e}")
-            self._conn.rollback()
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+            # Attempt reconnect and retry once
+            log.info("Attempting DB reconnect after error...")
+            self._reconnect_db()
+            if self._conn:
+                try:
+                    with self._conn.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO documents (title, content, document_type, source_url, source_type, state_id, metadata)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT DO NOTHING
+                        """, (
+                            title, content, doc_type, source_url, "state_agency", state_id,
+                            json.dumps({"state_code": state_code, "scraped_at": datetime.utcnow().isoformat()}),
+                        ))
+                    self._conn.commit()
+                    log.info(f"Stored {doc_type} (after reconnect): {source_url[:80]}")
+                except Exception as e2:
+                    log.error(f"DB error after reconnect: {e2}")
 
     # ─── Fetch helpers ────────────────────────────────────────────────────────
 
@@ -219,11 +258,25 @@ class StateRegulationsScraper:
 
             # Skip binary file URLs — only scrape HTML pages
             _url_lower = url.lower().split("?")[0]
-            if any(_url_lower.endswith(ext) for ext in (".pdf", ".xlsx", ".xls", ".doc", ".docx", ".zip", ".csv")):
+            if any(_url_lower.endswith(ext) for ext in (".pdf", ".xlsx", ".xls", ".doc", ".docx", ".zip", ".csv",
+                                                        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
+                                                        ".mp4", ".mp3", ".wmv", ".avi",
+                                                        ".kmz", ".kml", ".shp", ".geojson",
+                                                        ".wpdmdl", ".exe", ".msi")):
                 continue
 
             response = self._fetch(url)
             if not response or response.status != 200:
+                continue
+
+            # Skip non-HTML responses (PDFs, images, downloads served with wrong extension)
+            content_type = ""
+            try:
+                content_type = (response.headers.get("content-type") or "").lower()
+            except Exception:
+                pass
+            if content_type and not any(ct in content_type for ct in ("text/html", "text/plain", "application/xhtml")):
+                log.debug(f"Skipping non-HTML content-type '{content_type}' for {url}")
                 continue
 
             # Extract page text — h1 text may be nested in spans.
@@ -261,6 +314,35 @@ class StateRegulationsScraper:
                 if full_url in visited or full_url in queue:
                     continue
                 if not self._is_allowed_domain(full_url, config["allowed_domains"]):
+                    continue
+
+                # Skip URLs that contain repeating path prefix segments (URL loop indicator)
+                # e.g. /layout/set/print/layout/set/print/... on ksoutdoors.gov
+                _path_str = urlparse(full_url).path
+                _path_parts = [p for p in _path_str.split("/") if p]
+                # Detect any consecutive 3-segment repeat (sliding window check)
+                _loop_detected = False
+                for _i in range(len(_path_parts) - 3):
+                    if _path_parts[_i:_i+3] == _path_parts[_i+3:_i+6]:
+                        _loop_detected = True
+                        break
+                if _loop_detected:
+                    log.debug(f"Skipping looped URL: {full_url[:80]}")
+                    continue
+
+                # Never queue binary/media files as HTML pages
+                _full_lower = full_url.lower().split("?")[0]
+                _is_binary = any(_full_lower.endswith(ext) for ext in (
+                    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
+                    ".mp4", ".mp3", ".wmv", ".avi",
+                    ".pdf", ".xlsx", ".xls", ".doc", ".docx", ".zip", ".csv",
+                    ".kmz", ".kml", ".shp", ".geojson", ".exe", ".msi",
+                ))
+                # Also skip download URLs with binary query params
+                if not _is_binary:
+                    _full_query = full_url.lower()
+                    _is_binary = any(p in _full_query for p in ("wpdmdl=", "/download/", "?download="))
+                if _is_binary:
                     continue
 
                 if self._is_relevant_link(full_url, config["link_keywords"]):

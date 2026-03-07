@@ -457,6 +457,135 @@ def upsert_regulations(conn, state_id: str, regs: list[dict], species_map: dict,
 # MAIN
 # ============================================
 
+FLUSH_EVERY = 50  # Flush to DB after this many docs to survive DNS failures on long runs
+
+
+def _reconnect(conn):
+    """Close old connection and return a fresh one."""
+    db_url = os.getenv("DATABASE_URL")
+    try:
+        conn.close()
+    except Exception:
+        pass
+    return psycopg2.connect(db_url)
+
+
+def _clear_state_data(conn, state_id: str, year: int):
+    """Delete all existing extraction data for a state before a fresh run."""
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM seasons WHERE state_id = %s AND year = %s", (state_id, year))
+        cur.execute("DELETE FROM licenses WHERE state_id = %s", (state_id,))
+        cur.execute("UPDATE regulations SET is_active = false WHERE state_id = %s AND season_year = %s", (state_id, year))
+    conn.commit()
+    log.info(f"  Cleared existing data for state_id={state_id} year={year}")
+
+
+def _append_seasons(conn, state_id: str, seasons: list[dict], species_map: dict, year: int, seen: set):
+    """Append new (deduped) seasons to DB, skipping names already seen."""
+    inserted = 0
+    with conn.cursor() as cur:
+        for s in seasons:
+            key = s["name"].lower().strip()
+            if key in seen:
+                continue
+            seen.add(key)
+
+            species_id = resolve_species_id(s.get("species"), species_map)
+            if not species_id:
+                species_id = species_map.get("mallard")
+
+            start_date = end_date = None
+            if s.get("start_date"):
+                try:
+                    start_date = datetime.strptime(s["start_date"], "%Y-%m-%d")
+                except ValueError:
+                    pass
+            if s.get("end_date"):
+                try:
+                    end_date = datetime.strptime(s["end_date"], "%Y-%m-%d")
+                except ValueError:
+                    pass
+
+            if not start_date or not end_date:
+                log.warning(f"  Skipping season '{s['name']}' — missing dates")
+                continue
+
+            bag_limit = s.get("bag_limit")
+            shooting_hours = s.get("shooting_hours")
+            cur.execute("""
+                INSERT INTO seasons (state_id, species_id, name, season_type, start_date, end_date, year,
+                                     bag_limit, shooting_hours, restrictions, units, source_url, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                state_id, species_id, s["name"], s.get("season_type", "general"),
+                start_date, end_date, year,
+                json.dumps(bag_limit) if bag_limit else None,
+                json.dumps(shooting_hours) if shooting_hours else None,
+                s.get("restrictions"),
+                json.dumps(s.get("zones")) if s.get("zones") else None,
+                None,
+                json.dumps({"extracted_at": datetime.utcnow().isoformat(), "source": "llm_extraction"}),
+            ))
+            inserted += 1
+    conn.commit()
+    return inserted
+
+
+def _append_licenses(conn, state_id: str, licenses: list[dict], seen: set):
+    """Append new (deduped) licenses to DB, skipping names already seen."""
+    inserted = 0
+    with conn.cursor() as cur:
+        for lic in licenses:
+            key = lic["name"].lower().strip()
+            if key in seen:
+                continue
+            seen.add(key)
+            cur.execute("""
+                INSERT INTO licenses (state_id, name, license_type, description, is_resident_only,
+                                      price_resident, price_non_resident, valid_for, purchase_url, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                state_id, lic["name"], lic.get("license_type", "base"),
+                lic.get("description"),
+                lic.get("is_resident_only", False),
+                lic.get("price_resident"),
+                lic.get("price_non_resident"),
+                json.dumps(lic.get("valid_for")) if lic.get("valid_for") else None,
+                lic.get("purchase_url"),
+                json.dumps({"extracted_at": datetime.utcnow().isoformat(), "source": "llm_extraction"}),
+            ))
+            inserted += 1
+    conn.commit()
+    return inserted
+
+
+def _append_regulations(conn, state_id: str, regs: list[dict], species_map: dict, year: int, seen: set):
+    """Append new (deduped) regulations to DB, skipping titles already seen."""
+    inserted = 0
+    with conn.cursor() as cur:
+        for reg in regs:
+            if not reg.get("title") or not reg.get("content"):
+                continue
+            key = reg["title"].lower().strip()
+            if key in seen:
+                continue
+            seen.add(key)
+            species_id = resolve_species_id(reg.get("species"), species_map)
+            cur.execute("""
+                INSERT INTO regulations (state_id, species_id, category, title, content, summary,
+                                         season_year, is_active, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                state_id, species_id, reg.get("category", "waterfowl"),
+                reg["title"], reg["content"], reg.get("summary"),
+                year, True,
+                json.dumps({"extracted_at": datetime.utcnow().isoformat(), "source": "llm_extraction"}),
+            ))
+            inserted += 1
+    conn.commit()
+    return inserted
+
+
 def process_state(conn, state_code: str, model: str, dry_run: bool, year: int):
     """Process all documents for a single state."""
     log.info(f"\n{'='*50}")
@@ -470,11 +599,50 @@ def process_state(conn, state_code: str, model: str, dry_run: bool, year: int):
         return
 
     species_map = load_species_map(conn)
-    state_id = docs[0]["state_id"]
+    state_id = str(docs[0]["state_id"])
 
+    # Accumulate for dry-run display; for live runs flush periodically
     all_seasons = []
     all_licenses = []
     all_regulations = []
+
+    # Seen-name sets used for dedup across flushes
+    seen_seasons: set = set()
+    seen_licenses: set = set()
+    seen_regs: set = set()
+
+    if not dry_run:
+        conn = _reconnect(conn)
+        _clear_state_data(conn, state_id, year)
+
+    batch_seasons: list = []
+    batch_licenses: list = []
+    batch_regs: list = []
+    docs_since_flush = 0
+
+    def flush(force=False):
+        nonlocal conn, docs_since_flush, batch_seasons, batch_licenses, batch_regs
+        if dry_run:
+            return
+        if not force and docs_since_flush < FLUSH_EVERY:
+            return
+        try:
+            s = _append_seasons(conn, state_id, batch_seasons, species_map, year, seen_seasons)
+            l = _append_licenses(conn, state_id, batch_licenses, seen_licenses)
+            r = _append_regulations(conn, state_id, batch_regs, species_map, year, seen_regs)
+            if s or l or r:
+                log.info(f"  [flush] +{s} seasons, +{l} licenses, +{r} regs")
+        except Exception as e:
+            log.warning(f"  [flush] DB error, reconnecting: {e}")
+            conn = _reconnect(conn)
+            s = _append_seasons(conn, state_id, batch_seasons, species_map, year, seen_seasons)
+            l = _append_licenses(conn, state_id, batch_licenses, seen_licenses)
+            r = _append_regulations(conn, state_id, batch_regs, species_map, year, seen_regs)
+            log.info(f"  [flush retry] +{s} seasons, +{l} licenses, +{r} regs")
+        batch_seasons = []
+        batch_licenses = []
+        batch_regs = []
+        docs_since_flush = 0
 
     for doc in docs:
         log.info(f"\nClassifying: '{doc['title']}'")
@@ -482,91 +650,67 @@ def process_state(conn, state_code: str, model: str, dry_run: bool, year: int):
 
         if not categories:
             log.info(f"  Skipped (no relevant content)")
+            docs_since_flush += 1
+            flush()
             continue
 
         log.info(f"  Categories: {categories}")
 
-        # Extract all types for any waterfowl-relevant doc (classifier sometimes
-        # misses "seasons" when dates are embedded in regulation text)
         seasons = extract_seasons(doc, state_code, model, year=year)
         valid = [s for s in seasons if validate_season(s)]
         if len(valid) < len(seasons):
             log.warning(f"  {len(seasons) - len(valid)} seasons failed validation")
+        batch_seasons.extend(valid)
         all_seasons.extend(valid)
 
         licenses = extract_licenses(doc, state_code, model)
         valid = [l for l in licenses if validate_license(l)]
         if len(valid) < len(licenses):
             log.warning(f"  {len(licenses) - len(valid)} licenses failed validation")
+        batch_licenses.extend(valid)
         all_licenses.extend(valid)
 
         regs = extract_regulations(doc, state_code, model)
-        all_regulations.extend([r for r in regs if r.get("title") and r.get("content")])
+        valid_regs = [r for r in regs if r.get("title") and r.get("content")]
+        batch_regs.extend(valid_regs)
+        all_regulations.extend(valid_regs)
 
-    # Deduplicate by name
-    seen_seasons = set()
-    deduped_seasons = []
-    for s in all_seasons:
-        key = s["name"].lower().strip()
-        if key not in seen_seasons:
-            seen_seasons.add(key)
-            deduped_seasons.append(s)
+        docs_since_flush += 1
+        flush()
 
-    seen_licenses = set()
-    deduped_licenses = []
-    for l in all_licenses:
-        key = l["name"].lower().strip()
-        if key not in seen_licenses:
-            seen_licenses.add(key)
-            deduped_licenses.append(l)
-
-    seen_regs = set()
-    deduped_regs = []
-    for r in all_regulations:
-        key = r["title"].lower().strip()
-        if key not in seen_regs:
-            seen_regs.add(key)
-            deduped_regs.append(r)
+    # Final flush
+    flush(force=True)
 
     # Summary
     log.info(f"\n--- {state_code} Summary ---")
-    log.info(f"  Seasons:     {len(deduped_seasons)}")
-    log.info(f"  Licenses:    {len(deduped_licenses)}")
-    log.info(f"  Regulations: {len(deduped_regs)}")
+    log.info(f"  Seasons:     {len(seen_seasons)}")
+    log.info(f"  Licenses:    {len(seen_licenses)}")
+    log.info(f"  Regulations: {len(seen_regs)}")
 
     if dry_run:
         log.info("\n[DRY RUN] Extracted data (not written to DB):")
-        if deduped_seasons:
-            log.info("\nSeasons:")
-            for s in deduped_seasons:
-                log.info(f"  {s['name']}: {s.get('start_date')} to {s.get('end_date')} | bag: {s.get('bag_limit')}")
-        if deduped_licenses:
-            log.info("\nLicenses:")
-            for l in deduped_licenses:
-                log.info(f"  {l['name']} ({l.get('license_type')}) R:${l.get('price_resident')} NR:${l.get('price_non_resident')}")
-        if deduped_regs:
-            log.info("\nRegulations:")
-            for r in deduped_regs:
-                log.info(f"  [{r.get('category')}] {r['title']}")
-        return
+        # Deduplicate for display
+        seen = set()
+        for s in all_seasons:
+            key = s["name"].lower().strip()
+            if key not in seen:
+                seen.add(key)
+                log.info(f"  Season: {s['name']}: {s.get('start_date')} to {s.get('end_date')} | bag: {s.get('bag_limit')}")
+        seen = set()
+        for l in all_licenses:
+            key = l["name"].lower().strip()
+            if key not in seen:
+                seen.add(key)
+                log.info(f"  License: {l['name']} ({l.get('license_type')}) R:${l.get('price_resident')} NR:${l.get('price_non_resident')}")
+        seen = set()
+        for r in all_regulations:
+            key = r["title"].lower().strip()
+            if key not in seen:
+                seen.add(key)
+                log.info(f"  Reg: [{r.get('category')}] {r['title']}")
 
-    # Reconnect before writing (long extraction can cause Supabase connection timeout)
-    db_url = os.getenv("DATABASE_URL")
-    try:
+    if not dry_run:
         conn.close()
-    except Exception:
-        pass
-    conn = psycopg2.connect(db_url)
-
-    # Write to DB
-    if deduped_seasons:
-        upsert_seasons(conn, str(state_id), deduped_seasons, species_map, year, None)
-    if deduped_licenses:
-        upsert_licenses(conn, str(state_id), deduped_licenses)
-    if deduped_regs:
-        upsert_regulations(conn, str(state_id), deduped_regs, species_map, year)
-
-    conn.close()
 
 
 def main():

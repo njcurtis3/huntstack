@@ -15,7 +15,10 @@
       "WebFetch(domain:science.ebird.org)",
       "WebFetch(domain:api.ebird.org)",
       "WebFetch(domain:documenter.getpostman.com)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(wc -l /c/Users/natha/Desktop/repos/huntstack/apps/web/src/pages/*.tsx)",
+      "Bash(powershell -Command \"python -c \"\":*)",
+      "Bash(python -:*)"
     ]
   }
 }
