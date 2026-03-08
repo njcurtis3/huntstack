@@ -62,12 +62,13 @@ export const regulationsRoutes: FastifyPluginAsync = async (app) => {
         properties: {
           category: { type: 'string', description: 'Filter by category (big-game, waterfowl, etc.)' },
           species: { type: 'string', description: 'Filter by species slug' },
+          year: { type: 'number', description: 'Filter by season year (e.g. 2024)' },
         },
       },
     },
   }, async (request, reply) => {
     const { stateCode } = request.params as { stateCode: string }
-    const { category, species: speciesSlug } = request.query as { category?: string; species?: string }
+    const { category, species: speciesSlug, year } = request.query as { category?: string; species?: string; year?: number }
 
     const db = getDb()
     const code = stateCode.toUpperCase()
@@ -81,6 +82,10 @@ export const regulationsRoutes: FastifyPluginAsync = async (app) => {
 
     // Build filters for regulations query
     const conditions = [eq(regulations.stateId, state.id), eq(regulations.isActive, true)]
+
+    if (year) {
+      conditions.push(eq(regulations.seasonYear, year))
+    }
 
     if (category) {
       conditions.push(eq(regulations.category, category))

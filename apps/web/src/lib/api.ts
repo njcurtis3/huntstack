@@ -98,6 +98,7 @@ class ApiClient {
   async getStateRegulations(stateCode: string, options?: {
     category?: string
     species?: string
+    year?: number
   }) {
     return this.request<{
       state: {

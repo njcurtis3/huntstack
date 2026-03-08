@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ChevronRight, FileText, AlertCircle, ExternalLink, Loader2 } from 'lucide-react'
+import { ChevronRight, ChevronDown, FileText, AlertCircle, ExternalLink, Loader2 } from 'lucide-react'
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
 import { api } from '../lib/api'
 import { useThemeStore } from '../stores/themeStore'
@@ -75,6 +75,29 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedCategory, setSelectedCategory] = useState('all')
+  const [selectedYear, setSelectedYear] = useState<number>(2024)
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
+  const [expandedLicenseTypes, setExpandedLicenseTypes] = useState<Set<string>>(new Set())
+
+  const regsByCategory = useMemo(() => {
+    const filtered = selectedCategory === 'all' ? regs : regs.filter(r => r.category === selectedCategory)
+    const groups: Record<string, Regulation[]> = {}
+    for (const reg of filtered) {
+      if (!groups[reg.category]) groups[reg.category] = []
+      groups[reg.category].push(reg)
+    }
+    return groups
+  }, [regs, selectedCategory])
+
+  const licensesByType = useMemo(() => {
+    const groups: Record<string, License[]> = {}
+    for (const lic of licensesList) {
+      const t = lic.licenseType || 'other'
+      if (!groups[t]) groups[t] = []
+      groups[t].push(lic)
+    }
+    return groups
+  }, [licensesList])
 
   useEffect(() => {
     async function fetchData() {
@@ -82,8 +105,8 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
       setError(null)
       try {
         const [regData, seasonsData, licensesData] = await Promise.all([
-          api.getStateRegulations(stateCode),
-          api.getStateSeasons(stateCode),
+          api.getStateRegulations(stateCode, { year: selectedYear }),
+          api.getStateSeasons(stateCode, { year: selectedYear }),
           api.getStateLicenses(stateCode),
         ])
         setStateInfo(regData.state as StateInfo)
@@ -97,7 +120,8 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
       }
     }
     fetchData()
-  }, [stateCode])
+    setExpandedCategories(new Set())
+  }, [stateCode, selectedYear])
 
   if (loading) {
     return (
@@ -121,6 +145,11 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
 
   const stateName = stateInfo?.name || stateCode.toUpperCase()
 
+  // Normalize category label: "waterfowl|general" → "Waterfowl / General"
+  function formatCategory(cat: string) {
+    return cat.split(/[|_-]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' / ')
+  }
+
   // Get unique categories from regulations
   const categories = ['all', ...new Set(regs.map(r => r.category))]
   if (licensesList.length > 0 && !categories.includes('licenses')) {
@@ -130,6 +159,15 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
   const filteredRegs = selectedCategory === 'all'
     ? regs
     : regs.filter(r => r.category === selectedCategory)
+
+  function toggleCategory(cat: string) {
+    setExpandedCategories(prev => {
+      const next = new Set(prev)
+      if (next.has(cat)) next.delete(cat)
+      else next.add(cat)
+      return next
+    })
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -163,53 +201,83 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
         </div>
       </div>
 
-      {/* Category Filter */}
-      {categories.length > 1 && (
-        <div className="flex gap-2 mb-8 overflow-x-auto pb-2">
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap border transition-colors ${
-                selectedCategory === cat
-                  ? 'bg-accent-50 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400 border-accent-300 dark:border-accent-700'
-                  : 'bg-earth-50 dark:bg-earth-800 text-earth-600 dark:text-earth-300 border-earth-200 dark:border-earth-700 hover:bg-earth-100 dark:hover:bg-earth-700'
-              }`}
-            >
-              {cat === 'all' ? 'All' : cat.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')}
-            </button>
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-3 mb-8">
+        {/* Year selector */}
+        <select
+          value={selectedYear}
+          onChange={e => { setSelectedYear(Number(e.target.value)); setSelectedCategory('all') }}
+          className="px-3 py-2 rounded-md text-sm font-medium border bg-earth-50 dark:bg-earth-800 text-earth-700 dark:text-earth-200 border-earth-200 dark:border-earth-700"
+        >
+          {[2025, 2024, 2023, 2022].map(y => (
+            <option key={y} value={y}>{y}</option>
           ))}
-        </div>
-      )}
+        </select>
 
-      {/* Regulations */}
+        {/* Category filters */}
+        {categories.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSelectedCategory(cat)}
+                className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap border transition-colors ${
+                  selectedCategory === cat
+                    ? 'bg-accent-50 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400 border-accent-300 dark:border-accent-700'
+                    : 'bg-earth-50 dark:bg-earth-800 text-earth-600 dark:text-earth-300 border-earth-200 dark:border-earth-700 hover:bg-earth-100 dark:hover:bg-earth-700'
+                }`}
+              >
+                {cat === 'all' ? 'All' : cat.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Regulations — grouped by category, collapsed by default */}
       {filteredRegs.length > 0 && (
-        <div className="space-y-6 mb-8">
-          <h2 className="text-xl font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>Regulations</h2>
-          {filteredRegs.map((reg) => (
-            <div key={reg.id} className="card">
-              <div className="p-6 flex items-center justify-between" style={{ borderBottom: `1px solid rgb(var(--color-border-primary))` }}>
-                <div>
-                  <h3 className="text-lg font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>{reg.title}</h3>
-                  <span className="text-xs bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300 rounded px-2 py-0.5 mt-1 inline-block">
-                    {reg.category}
-                  </span>
-                </div>
-                {reg.sourceUrl && (
-                  <a href={reg.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:underline text-sm flex items-center gap-1">
-                    Source <ExternalLink className="w-3 h-3" />
-                  </a>
+        <div className="space-y-2 mb-8">
+          <h2 className="text-xl font-semibold mb-4" style={{ color: `rgb(var(--color-text-primary))` }}>
+            Regulations <span className="text-sm font-normal ml-2" style={{ color: `rgb(var(--color-text-tertiary))` }}>({filteredRegs.length} total)</span>
+          </h2>
+          {Object.entries(regsByCategory).map(([cat, catRegs]) => {
+            const isOpen = expandedCategories.has(cat)
+            return (
+              <div key={cat} className="card overflow-hidden">
+                <button
+                  onClick={() => toggleCategory(cat)}
+                  className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-earth-50 dark:hover:bg-earth-800/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <ChevronDown className={`w-4 h-4 transition-transform flex-shrink-0 ${isOpen ? '' : '-rotate-90'}`} style={{ color: `rgb(var(--color-text-tertiary))` }} />
+                    <span className="font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>{formatCategory(cat)}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                      {catRegs.length}
+                    </span>
+                  </div>
+                </button>
+                {isOpen && (
+                  <div className="divide-y" style={{ borderTop: `1px solid rgb(var(--color-border-primary))`, borderColor: `rgb(var(--color-border-primary))` }}>
+                    {catRegs.map((reg) => (
+                      <div key={reg.id} className="px-5 py-4">
+                        <div className="flex items-start justify-between gap-4 mb-2">
+                          <h3 className="font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>{reg.title}</h3>
+                          {reg.sourceUrl && (
+                            <a href={reg.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:underline text-xs flex items-center gap-1 flex-shrink-0">
+                              Source <ExternalLink className="w-3 h-3" />
+                            </a>
+                          )}
+                        </div>
+                        <p className="text-sm" style={{ color: `rgb(var(--color-text-secondary))` }}>
+                          {reg.summary || reg.content}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-              <div className="p-6">
-                {reg.summary ? (
-                  <p style={{ color: `rgb(var(--color-text-secondary))` }} className="mb-4">{reg.summary}</p>
-                ) : (
-                  <p style={{ color: `rgb(var(--color-text-secondary))` }} className="whitespace-pre-wrap">{reg.content}</p>
-                )}
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -253,45 +321,71 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
 
       {/* Licenses */}
       {(selectedCategory === 'all' || selectedCategory === 'licenses') && licensesList.length > 0 && (
-        <div className="space-y-6">
-          <h2 className="text-xl font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>License Requirements</h2>
-          <div className="grid md:grid-cols-2 gap-4">
-            {licensesList.map((license) => (
-              <div key={license.id} className="card p-6">
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>{license.name}</h3>
-                  <span className="text-xs bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300 rounded px-2 py-0.5">
-                    {license.licenseType}
-                  </span>
-                </div>
-                {license.description && (
-                  <p className="text-sm mb-3" style={{ color: `rgb(var(--color-text-secondary))` }}>{license.description}</p>
-                )}
-                <div className="flex gap-4 text-sm">
-                  {license.priceResident != null && (
-                    <div>
-                      <span style={{ color: `rgb(var(--color-text-tertiary))` }}>Resident:</span>{' '}
-                      <span className="font-medium">${license.priceResident.toFixed(2)}</span>
-                    </div>
-                  )}
-                  {license.priceNonResident != null && (
-                    <div>
-                      <span style={{ color: `rgb(var(--color-text-tertiary))` }}>Non-resident:</span>{' '}
-                      <span className="font-medium">${license.priceNonResident.toFixed(2)}</span>
-                    </div>
-                  )}
-                </div>
-                {license.isResidentOnly && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">Resident only</p>
-                )}
-                {license.purchaseUrl && (
-                  <a href={license.purchaseUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-accent-500 hover:underline mt-3 inline-flex items-center gap-1">
-                    Purchase <ExternalLink className="w-3 h-3" />
-                  </a>
+        <div className="space-y-2 mb-8">
+          <h2 className="text-xl font-semibold mb-4" style={{ color: `rgb(var(--color-text-primary))` }}>
+            License Requirements <span className="text-sm font-normal ml-2" style={{ color: `rgb(var(--color-text-tertiary))` }}>({licensesList.length} total)</span>
+          </h2>
+          {Object.entries(licensesByType).map(([type, typeLicenses]) => {
+            const isOpen = expandedLicenseTypes.has(type)
+            const label = type.charAt(0).toUpperCase() + type.slice(1)
+            return (
+              <div key={type} className="card overflow-hidden">
+                <button
+                  onClick={() => setExpandedLicenseTypes(prev => {
+                    const next = new Set(prev)
+                    if (next.has(type)) next.delete(type)
+                    else next.add(type)
+                    return next
+                  })}
+                  className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-earth-50 dark:hover:bg-earth-800/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <ChevronDown className={`w-4 h-4 transition-transform flex-shrink-0 ${isOpen ? '' : '-rotate-90'}`} style={{ color: `rgb(var(--color-text-tertiary))` }} />
+                    <span className="font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>{label}</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                      {typeLicenses.length}
+                    </span>
+                  </div>
+                </button>
+                {isOpen && (
+                  <div className="divide-y" style={{ borderTop: `1px solid rgb(var(--color-border-primary))`, borderColor: `rgb(var(--color-border-primary))` }}>
+                    {typeLicenses.map((license) => (
+                      <div key={license.id} className="px-5 py-4">
+                        <div className="flex items-start justify-between gap-4 mb-2">
+                          <h3 className="font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>{license.name}</h3>
+                          {license.isResidentOnly && (
+                            <span className="text-xs text-amber-600 dark:text-amber-400 flex-shrink-0">Resident only</span>
+                          )}
+                        </div>
+                        {license.description && (
+                          <p className="text-sm mb-3" style={{ color: `rgb(var(--color-text-secondary))` }}>{license.description}</p>
+                        )}
+                        <div className="flex gap-4 text-sm">
+                          {license.priceResident != null && (
+                            <div>
+                              <span style={{ color: `rgb(var(--color-text-tertiary))` }}>Resident:</span>{' '}
+                              <span className="font-medium">${license.priceResident.toFixed(2)}</span>
+                            </div>
+                          )}
+                          {license.priceNonResident != null && (
+                            <div>
+                              <span style={{ color: `rgb(var(--color-text-tertiary))` }}>Non-resident:</span>{' '}
+                              <span className="font-medium">${license.priceNonResident.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
+                        {license.purchaseUrl && (
+                          <a href={license.purchaseUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-accent-500 hover:underline mt-3 inline-flex items-center gap-1">
+                            Purchase <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-            ))}
-          </div>
+            )
+          })}
         </div>
       )}
 
@@ -331,7 +425,7 @@ export function RegulationsPage() {
           await Promise.all(states.map(async (s) => {
             try {
               const [regData, seasonsData, licensesData] = await Promise.all([
-                api.getStateRegulations(s.code),
+                api.getStateRegulations(s.code, { year: 2024 }), // counts shown for current season
                 api.getStateSeasons(s.code),
                 api.getStateLicenses(s.code),
               ])
