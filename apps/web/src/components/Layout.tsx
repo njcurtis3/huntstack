@@ -1,7 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import {
   Home,
-  Search,
   Map,
   Bird,
   FileText,
@@ -26,7 +25,6 @@ const secondaryNav = [
   { name: 'Outfitters', href: '/outfitters', icon: Users },
   { name: 'Ask AI', href: '/chat', icon: MessageSquare },
   { name: 'Map', href: '/map', icon: Map },
-  { name: 'Search', href: '/search', icon: Search },
 ]
 
 // Combined for mobile (Home first, then primary, then secondary)

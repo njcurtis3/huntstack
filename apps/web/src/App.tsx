@@ -1,7 +1,6 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { Layout } from './components/Layout'
 import { HomePage } from './pages/HomePage'
-import { SearchPage } from './pages/SearchPage'
 import { MapPage } from './pages/MapPage'
 import { RegulationsPage } from './pages/RegulationsPage'
 import { OutfittersPage } from './pages/OutfittersPage'
@@ -17,7 +16,7 @@ function App() {
       <Route path="/report" element={<MigrationReportPage />} />
       <Route path="/" element={<Layout />}>
         <Route index element={<HomePage />} />
-        <Route path="search" element={<SearchPage />} />
+        <Route path="search" element={<Navigate to="/chat" replace />} />
         <Route path="map" element={<MapPage />} />
         <Route path="migration" element={<MigrationPage />} />
         <Route path="where-to-hunt" element={<WhereToHuntPage />} />
