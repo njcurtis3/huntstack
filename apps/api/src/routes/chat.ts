@@ -796,6 +796,8 @@ Important guidelines:
 - When providing season dates, bag limits, or license prices, use the STRUCTURED DATA section first — it contains verified, structured records from state agencies
 - When explaining regulations in detail, use the DOCUMENT CONTEXT section for additional details
 - When answering "where should I hunt?" or "are conditions good?", prioritize states with: (1) high push score, (2) arriving/building migration status, (3) high bird counts. A push score of 2–3 with arriving birds is the strongest buy signal.
+- NEVER repeat or reference section headers like "STRUCTURED DATA" or "DOCUMENT CONTEXT" in your response — those are internal context labels, not part of your answer
+- Format your response using markdown: use **bold** for emphasis, numbered lists for rankings, bullet lists for details
 
 ${structuredText ? `=== STRUCTURED DATA (verified records from our database) ===
 

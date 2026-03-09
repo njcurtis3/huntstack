@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Bot, User, Loader2, Sparkles, ExternalLink, Search, MapPin, FileText, Bird, TreePine, RotateCcw } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import ReactMarkdown from 'react-markdown'
 import { api } from '../lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -290,7 +291,29 @@ export function ChatPage() {
                         color: `rgb(var(--color-text-primary))`,
                       } : undefined}
                     >
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+                      {message.role === 'assistant' ? (
+                        <div className="text-sm leading-relaxed prose-chat">
+                          <ReactMarkdown
+                            components={{
+                              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                              ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
+                              ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
+                              li: ({ children }) => <li className="leading-snug">{children}</li>,
+                              h1: ({ children }) => <h1 className="font-bold text-base mb-1 mt-3 first:mt-0">{children}</h1>,
+                              h2: ({ children }) => <h2 className="font-semibold text-sm mb-1 mt-3 first:mt-0">{children}</h2>,
+                              h3: ({ children }) => <h3 className="font-semibold text-sm mb-1 mt-2 first:mt-0">{children}</h3>,
+                              code: ({ children }) => <code className="bg-earth-100 dark:bg-earth-800 rounded px-1 py-0.5 text-xs font-mono">{children}</code>,
+                              blockquote: ({ children }) => <blockquote className="border-l-2 border-accent-400 pl-3 italic opacity-80 mb-2">{children}</blockquote>,
+                              a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:underline">{children}</a>,
+                            }}
+                          >
+                            {message.content}
+                          </ReactMarkdown>
+                        </div>
+                      ) : (
+                        <p className="text-sm leading-relaxed">{message.content}</p>
+                      )}
                     </div>
 
                     {/* Inline search results (assistant only) */}
