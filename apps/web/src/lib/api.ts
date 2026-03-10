@@ -430,6 +430,7 @@ class ApiClient {
       response: string
       sources: Array<{ title: string; url?: string; snippet: string }>
       conversationId: string
+      dataFreshnessNote?: string | null
     }>('/api/chat', {
       method: 'POST',
       body: JSON.stringify({ message, conversationId }),

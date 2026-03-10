@@ -75,6 +75,7 @@ interface StructuredContext {
   weather: Array<Record<string, unknown>>
   pushFactors: Array<{ stateCode: string; pushScore: number; coldFrontPresent: boolean; coldFrontIncoming: boolean; windDirection: string | null; windIsFromNorth: boolean; temperature: number | null }>
   sources: Array<{ title: string; url?: string; snippet: string }>
+  lastScrapedByState: Record<string, string | null>
 }
 
 // ─── Route handler ───────────────────────────────────────────────────────────
@@ -110,6 +111,7 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
               },
             },
             conversationId: { type: 'string' },
+            dataFreshnessNote: { type: 'string', nullable: true },
           },
         },
       },
@@ -156,10 +158,21 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
         return true
       })
 
+      // Build data freshness note
+      const freshnessEntries = Object.entries(structuredCtx.lastScrapedByState)
+      let dataFreshnessNote: string | null = null
+      if (freshnessEntries.length > 0) {
+        const parts = freshnessEntries
+          .filter(([, date]) => date)
+          .map(([code, date]) => `${code}: ${new Date(date!).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`)
+        if (parts.length > 0) dataFreshnessNote = `Data last updated — ${parts.join(', ')}`
+      }
+
       return {
         response: responseText,
         sources: dedupedSources,
         conversationId: conversationId || generateConversationId(),
+        dataFreshnessNote,
       }
     } catch (error) {
       app.log.error(error)
@@ -311,6 +324,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     weather: [],
     pushFactors: [],
     sources: [],
+    lastScrapedByState: {},
   }
 
   const { stateCodes, speciesSlugs, isWaterfowl, isMigrationQuery, isLocationQuery, isWeatherQuery } = entities
@@ -322,6 +336,19 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
 
   try {
     const queries: Promise<void>[] = []
+
+    // ── State freshness ───────────────────────────────────────────────────
+    if (stateCodes.length > 0) {
+      queries.push((async () => {
+        const rows = await db.execute(sql`
+          SELECT code, last_scraped FROM states
+          WHERE code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})
+        `)
+        for (const row of rows as unknown as Array<{ code: string; last_scraped: string | null }>) {
+          result.lastScrapedByState[row.code] = row.last_scraped
+        }
+      })())
+    }
 
     // ── Seasons ──────────────────────────────────────────────────────────
     if (stateCodes.length > 0 || speciesSlugs.length > 0) {

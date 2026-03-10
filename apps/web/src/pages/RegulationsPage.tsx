@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { ChevronRight, ChevronDown, FileText, AlertCircle, ExternalLink, Loader2 } from 'lucide-react'
+import { Link, useParams, useNavigate } from 'react-router-dom'
+import { ChevronRight, ChevronDown, FileText, AlertCircle, ExternalLink, Loader2, MessageSquare } from 'lucide-react'
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
 import { api } from '../lib/api'
 import { useThemeStore } from '../stores/themeStore'
@@ -68,6 +68,7 @@ type License = {
 }
 
 function StateDetailView({ stateCode }: { stateCode: string }) {
+  const navigate = useNavigate()
   const [stateInfo, setStateInfo] = useState<StateInfo | null>(null)
   const [regs, setRegs] = useState<Regulation[]>([])
   const [seasonsList, setSeasonsList] = useState<Season[]>([])
@@ -193,11 +194,19 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md px-4 py-2">
-          <AlertCircle className="w-5 h-5 text-yellow-600" />
-          <span className="text-sm text-yellow-800 dark:text-yellow-200">
-            Always verify with official state sources
-          </span>
+        <div className="flex flex-col items-end gap-2">
+          <button
+            onClick={() => navigate(`/chat?q=${encodeURIComponent(`What are the hunting regulations, license requirements, and season dates for ${stateName}?`)}`)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium bg-accent-50 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400 border border-accent-200 dark:border-accent-700 hover:bg-accent-100 dark:hover:bg-accent-900/50 transition-colors"
+          >
+            <MessageSquare className="w-4 h-4" /> Ask AI about {stateName}
+          </button>
+          <div className="flex items-center gap-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md px-4 py-2">
+            <AlertCircle className="w-5 h-5 text-yellow-600" />
+            <span className="text-sm text-yellow-800 dark:text-yellow-200">
+              Always verify with official state sources
+            </span>
+          </div>
         </div>
       </div>
 

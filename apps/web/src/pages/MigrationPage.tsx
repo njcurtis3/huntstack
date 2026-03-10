@@ -9,6 +9,7 @@ import {
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import { ComposableMap, Geographies, Geography, Annotation } from 'react-simple-maps'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
 import { useThemeStore } from '../stores/themeStore'
 import { getMapColors, getChartColors } from '../lib/themeColors'
@@ -1009,6 +1010,7 @@ function MigrationChat({ speciesName, selectedStates }: {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function MigrationPage() {
+  const navigate = useNavigate()
   const [selectedFlyway, setSelectedFlyway] = useState('')
   const [selectedSpecies, setSelectedSpecies] = useState('')
   const [selectedState, setSelectedState] = useState('')
@@ -1593,13 +1595,26 @@ export function MigrationPage() {
                 spot migration trends, and plan your hunts around real bird activity.
               </p>
             </div>
-            <button
-              onClick={handleShare}
-              className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-white/10 hover:bg-white/20 text-white border border-white/20 mt-1"
-            >
-              <Share2 className="w-4 h-4" />
-              {shareCopied ? 'Link copied!' : 'Share Report'}
-            </button>
+            <div className="flex items-center gap-2 mt-1">
+              <button
+                onClick={() => {
+                  const flywayPart = selectedFlyway ? ` in the ${selectedFlyway} flyway` : ''
+                  const speciesPart = selectedSpecies ? ` for ${selectedSpecies}` : ' for waterfowl'
+                  navigate(`/chat?q=${encodeURIComponent(`What's the current migration status${speciesPart}${flywayPart}? Where are the best hunting opportunities right now?`)}`)
+                }}
+                className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-accent-600 hover:bg-accent-700 text-white border border-accent-500"
+              >
+                <MessageSquare className="w-4 h-4" />
+                Ask AI
+              </button>
+              <button
+                onClick={handleShare}
+                className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-white/10 hover:bg-white/20 text-white border border-white/20"
+              >
+                <Share2 className="w-4 h-4" />
+                {shareCopied ? 'Link copied!' : 'Share Report'}
+              </button>
+            </div>
           </div>
         </div>
       </div>

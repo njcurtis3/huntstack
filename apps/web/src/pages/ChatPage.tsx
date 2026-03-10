@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Bot, User, Loader2, Sparkles, ExternalLink, Search, MapPin, FileText, Bird, TreePine, RotateCcw } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { api } from '../lib/api'
 
@@ -18,6 +18,7 @@ interface Message {
   content: string
   sources?: Source[]
   searchResults?: SearchResult[]
+  dataFreshnessNote?: string | null
   timestamp: number // stored as epoch for localStorage serialization
 }
 
@@ -85,6 +86,7 @@ const FALLBACK_SUGGESTIONS = [
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export function ChatPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const session = loadSession()
   const [messages, setMessages] = useState<Message[]>(session.messages)
   const [input, setInput] = useState('')
@@ -102,6 +104,19 @@ export function ChatPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Auto-send if ?q= param is present (deep link from Regulations/Migration pages)
+  const autoSentRef = useRef(false)
+  useEffect(() => {
+    const q = searchParams.get('q')
+    if (q && !autoSentRef.current) {
+      autoSentRef.current = true
+      setSearchParams({}, { replace: true }) // remove param from URL
+      sendMessage(q)
+    }
+  // sendMessage changes on every render so exclude from deps — one-shot on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Load dynamic suggestions from live migration/push-factor data
   useEffect(() => {
@@ -162,18 +177,39 @@ export function ChatPage() {
     setInput('')
     setIsLoading(true)
 
-    // Run AI + keyword search in parallel
+    // Run AI + keyword search + semantic search in parallel
     const searchPromise = api.search(text.trim(), { type: 'all' }).catch(() => null)
+    const semanticPromise = api.semanticSearch(text.trim(), 5).catch(() => null)
     const chatPromise = api.chat(text.trim(), conversationId).catch((err: Error) => ({ error: err }))
 
-    const [searchData, chatData] = await Promise.all([searchPromise, chatPromise])
+    const [searchData, semanticData, chatData] = await Promise.all([searchPromise, semanticPromise, chatPromise])
 
-    const searchResults = searchData
-      ? (searchData as { results: SearchResult[] }).results?.slice(0, 4)
-      : undefined
+    // Merge keyword + semantic results, deduplicated by title
+    const keywordResults: SearchResult[] = searchData
+      ? (searchData as { results: SearchResult[] }).results ?? []
+      : []
+    const semanticResults: SearchResult[] = semanticData
+      ? (semanticData as { results: Array<{ content: string; metadata: Record<string, unknown> }> }).results
+          .map((r, i) => ({
+            type: (r.metadata?.category as string) ?? 'regulation',
+            id: `sem-${i}`,
+            title: (r.metadata?.title as string) ?? 'Regulation excerpt',
+            snippet: r.content.slice(0, 200),
+            stateCode: r.metadata?.state_code as string | undefined,
+          }))
+      : []
+    // Merge: keyword first, then semantic extras not already represented by title
+    const seenTitles = new Set(keywordResults.map(r => r.title.toLowerCase()))
+    const merged = [
+      ...keywordResults,
+      ...semanticResults.filter(r => !seenTitles.has(r.title.toLowerCase())),
+    ].slice(0, 5)
+    const searchResults = merged.length ? merged : undefined
 
     let content: string
     let sources: Source[] | undefined
+
+    let dataFreshnessNote: string | null = null
 
     if ('error' in chatData) {
       const err = chatData.error as Error
@@ -181,9 +217,10 @@ export function ChatPage() {
         ? 'The AI service is not configured yet. Please set the TOGETHER_API_KEY in your .env file to enable the chat assistant.'
         : 'Sorry, something went wrong. Please try again.'
     } else {
-      const cd = chatData as { response: string; sources: Source[]; conversationId: string }
+      const cd = chatData as { response: string; sources: Source[]; conversationId: string; dataFreshnessNote?: string | null }
       content = cd.response
       sources = cd.sources
+      dataFreshnessNote = cd.dataFreshnessNote ?? null
       if (cd.conversationId) setConversationId(cd.conversationId)
     }
 
@@ -193,6 +230,7 @@ export function ChatPage() {
       content,
       sources,
       searchResults: searchResults?.length ? searchResults : undefined,
+      dataFreshnessNote,
       timestamp: Date.now(),
     }
     setMessages(prev => [...prev, assistantMsg])
@@ -370,6 +408,13 @@ export function ChatPage() {
                           ))}
                         </div>
                       </div>
+                    )}
+
+                    {/* Data freshness */}
+                    {message.role === 'assistant' && message.dataFreshnessNote && (
+                      <p className="text-xs italic" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                        {message.dataFreshnessNote}
+                      </p>
                     )}
                   </div>
 
