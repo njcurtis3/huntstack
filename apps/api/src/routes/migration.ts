@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { getPushFactorsForStates } from '../lib/weather.js'
 import { generateChatResponse, isConfigured } from '../lib/together.js'
+import { getEBirdRegionalCounts, STATE_FLYWAY } from '../lib/ebird.js'
 
 const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
 
@@ -246,6 +247,39 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
+    // eBird community context — statewide observation totals to supplement refuge data
+    let ebirdContext = ''
+    if (statesInData.length > 0 && process.env.EBIRD_API_KEY) {
+      try {
+        const regionalCounts = await getEBirdRegionalCounts(statesInData)
+
+        // Aggregate per state: sum current and previous across all species
+        const stateAgg = new Map<string, { current: number; previous: number }>()
+        for (const c of regionalCounts) {
+          if (!stateAgg.has(c.state)) stateAgg.set(c.state, { current: 0, previous: 0 })
+          const agg = stateAgg.get(c.state)!
+          agg.current += c.currentCount
+          agg.previous += c.previousCount ?? 0
+        }
+
+        const lines = [...stateAgg.entries()]
+          .filter(([, v]) => v.current > 0)
+          .sort(([, a], [, b]) => b.current - a.current)
+          .map(([state, v]) => {
+            const delta = v.current - v.previous
+            const pct = v.previous > 0 ? ((delta / v.previous) * 100).toFixed(0) : null
+            const trend = pct !== null ? (delta >= 0 ? `+${pct}%` : `${pct}%`) : 'first observation'
+            return `- ${state}: ${v.current.toLocaleString()} birds community-wide (last 14 days), ${trend} vs prior period`
+          })
+
+        if (lines.length > 0) {
+          ebirdContext = `\n\neBird community observations (last 14 days vs prior 14 days):\n${lines.join('\n')}\nNote: eBird counts are community-reported sightings and supplement official refuge surveys.`
+        }
+      } catch {
+        // eBird context is optional — proceed without it
+      }
+    }
+
     const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
     const systemPrompt = `You are a waterfowl migration analyst writing the weekly intelligence report for HuntStack, a hunting intelligence platform. Write in plain prose — no markdown, no bold text, no bullet points, no headers. Write in a direct, informative style for duck and goose hunters. Be specific about locations, numbers, and trends. Do not be generic.`
 
@@ -255,6 +289,7 @@ Use this survey data:
 ${refugeLines}
 Total birds counted across all reporting locations: ${totalBirds.toLocaleString()}
 ${weatherContext}
+${ebirdContext}
 
 Cover:
 1. Where the highest concentrations are right now and whether numbers are building or declining
@@ -404,6 +439,140 @@ Keep it under 150 words. Be direct and actionable.`
       states,
       species: species ?? null,
       flyway: flyway ?? null,
+    }
+  })
+
+  // Regional Activity — statewide eBird community observation totals with trends
+  app.get('/regional-activity', {
+    schema: {
+      tags: ['migration'],
+      summary: 'State-level eBird community activity levels with trend vs prior 14-day period',
+      querystring: {
+        type: 'object',
+        properties: {
+          flyway: {
+            type: 'string',
+            enum: ['central', 'mississippi', 'pacific', 'atlantic'],
+            description: 'Filter states by flyway',
+          },
+          species: { type: 'string', description: 'Species slug filter (e.g., snow-goose)' },
+          states: { type: 'string', description: 'Comma-separated state codes, e.g. TX,NM,AR. Defaults to all V1 states.' },
+        },
+      },
+    },
+  }, async (request) => {
+    const { flyway, species, states: statesParam } = request.query as {
+      flyway?: string
+      species?: string
+      states?: string
+    }
+
+    const empty = {
+      stateActivity: [],
+      flywayRollup: [],
+      fetchedAt: new Date().toISOString(),
+      source: 'ebird',
+      attribution: 'Community observations via eBird (Cornell Lab of Ornithology)',
+    }
+
+    if (!process.env.EBIRD_API_KEY) return empty
+
+    // Determine target states
+    let targetStates = statesParam
+      ? statesParam.split(',').map(s => s.trim().toUpperCase()).filter(s => s.length === 2)
+      : V1_STATES
+
+    // Apply flyway filter using STATE_FLYWAY lookup
+    if (flyway) {
+      targetStates = targetStates.filter(s => STATE_FLYWAY[s] === flyway)
+    }
+
+    if (targetStates.length === 0) return empty
+
+    const speciesSlugs = species ? [species] : undefined
+    const allCounts = await getEBirdRegionalCounts(targetStates, speciesSlugs)
+
+    // Group by state
+    const stateMap = new Map<string, typeof allCounts>()
+    for (const c of allCounts) {
+      if (!stateMap.has(c.state)) stateMap.set(c.state, [])
+      stateMap.get(c.state)!.push(c)
+    }
+
+    // Build per-state activity cards
+    const LEVEL_ORDER = { high: 0, moderate: 1, low: 2 } as const
+
+    const stateActivity = targetStates
+      .filter(s => stateMap.has(s))
+      .map(stateCode => {
+        const counts = stateMap.get(stateCode)!
+        const totalCurrent = counts.reduce((s, c) => s + c.currentCount, 0)
+        const totalPrevious = counts.reduce((s, c) => s + (c.previousCount ?? 0), 0)
+        const overallDelta = totalCurrent - totalPrevious
+        const overallDeltaPercent = totalPrevious > 0
+          ? Math.round((overallDelta / totalPrevious) * 1000) / 10
+          : null
+
+        const topSpecies = [...counts]
+          .sort((a, b) => b.currentCount - a.currentCount)
+          .slice(0, 3)
+          .map(c => ({
+            species: c.species,
+            speciesName: c.speciesName,
+            count: c.currentCount,
+            trend: c.trend,
+            delta: c.delta,
+            deltaPercent: c.deltaPercent,
+            activityLevel: c.activityLevel,
+          }))
+
+        const dominantActivity: 'high' | 'moderate' | 'low' =
+          counts.some(c => c.activityLevel === 'high') ? 'high' :
+          counts.some(c => c.activityLevel === 'moderate') ? 'moderate' : 'low'
+
+        return {
+          state: stateCode,
+          flyway: STATE_FLYWAY[stateCode] ?? null,
+          totalCurrentCount: totalCurrent,
+          totalPreviousCount: totalPrevious,
+          overallDelta,
+          overallDeltaPercent,
+          activityLevel: dominantActivity,
+          topSpecies,
+          fetchedAt: counts[0]?.fetchedAt ?? new Date().toISOString(),
+        }
+      })
+      .sort((a, b) => {
+        const levelDiff = LEVEL_ORDER[a.activityLevel] - LEVEL_ORDER[b.activityLevel]
+        return levelDiff !== 0 ? levelDiff : b.totalCurrentCount - a.totalCurrentCount
+      })
+
+    // Flyway rollup
+    const flywayTotals = new Map<string, { current: number; previous: number }>()
+    for (const sa of stateActivity) {
+      if (!sa.flyway) continue
+      if (!flywayTotals.has(sa.flyway)) flywayTotals.set(sa.flyway, { current: 0, previous: 0 })
+      const ft = flywayTotals.get(sa.flyway)!
+      ft.current += sa.totalCurrentCount
+      ft.previous += sa.totalPreviousCount
+    }
+
+    const flywayRollup = [...flywayTotals.entries()].map(([fw, totals]) => ({
+      flyway: fw,
+      totalCurrentCount: totals.current,
+      totalPreviousCount: totals.previous,
+      delta: totals.current - totals.previous,
+      deltaPercent: totals.previous > 0
+        ? Math.round(((totals.current - totals.previous) / totals.previous) * 1000) / 10
+        : null,
+    }))
+
+    return {
+      stateActivity,
+      flywayRollup,
+      fetchedAt: new Date().toISOString(),
+      source: 'ebird',
+      attribution: 'Community observations via eBird (Cornell Lab of Ornithology)',
     }
   })
 }

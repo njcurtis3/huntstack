@@ -82,6 +82,40 @@ type RefugeCount = {
   trend: 'increasing' | 'decreasing' | 'stable' | 'new'
 }
 
+type RegionalActivityCard = {
+  state: string
+  flyway: string | null
+  totalCurrentCount: number
+  totalPreviousCount: number
+  overallDelta: number
+  overallDeltaPercent: number | null
+  activityLevel: 'high' | 'moderate' | 'low'
+  topSpecies: Array<{
+    species: string
+    speciesName: string
+    count: number
+    trend: 'increasing' | 'decreasing' | 'stable' | 'new'
+    delta: number | null
+    deltaPercent: number | null
+    activityLevel: 'high' | 'moderate' | 'low'
+  }>
+  fetchedAt: string
+}
+
+type RegionalActivityData = {
+  stateActivity: RegionalActivityCard[]
+  flywayRollup: Array<{
+    flyway: string
+    totalCurrentCount: number
+    totalPreviousCount: number
+    delta: number
+    deltaPercent: number | null
+  }>
+  fetchedAt: string
+  source: string
+  attribution: string
+}
+
 type PushFactor = {
   stateCode: string
   pushScore: number
@@ -390,6 +424,72 @@ function WeatherAlertsPanel({ alerts }: {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+const ACTIVITY_LEVEL_CONFIG = {
+  high:     { label: 'High',     className: 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300' },
+  moderate: { label: 'Moderate', className: 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300' },
+  low:      { label: 'Low',      className: 'bg-earth-100 dark:bg-earth-900/30 text-earth-600 dark:text-earth-400' },
+}
+
+function RegionalActivitySection({ data }: { data: RegionalActivityData }) {
+  if (data.stateActivity.length === 0) return null
+
+  return (
+    <div className="space-y-2">
+      {data.stateActivity.map(card => {
+        const actCfg = ACTIVITY_LEVEL_CONFIG[card.activityLevel]
+        const flywayCls = card.flyway ? (FLYWAY_COLORS[card.flyway] ?? '') : ''
+        const overallTrend = card.overallDelta > 0 ? 'increasing' : card.overallDelta < 0 ? 'decreasing' : 'stable'
+
+        return (
+          <div key={card.state} className="rounded-md border p-3" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-primary))` }}>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-sm" style={{ color: `rgb(var(--color-text-primary))` }}>
+                  {STATE_CODE_TO_NAME[card.state] ?? card.state}
+                </span>
+                {card.flyway && (
+                  <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${flywayCls}`}>
+                    {card.flyway.charAt(0).toUpperCase() + card.flyway.slice(1)}
+                  </span>
+                )}
+                <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${actCfg.className}`}>
+                  {actCfg.label}
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-mono" style={{ color: `rgb(var(--color-text-secondary))` }}>
+                  {card.totalCurrentCount.toLocaleString()} birds
+                </span>
+                <DeltaBadge
+                  trend={overallTrend}
+                  delta={card.overallDelta}
+                  deltaPercent={card.overallDeltaPercent}
+                />
+              </div>
+            </div>
+            {card.topSpecies.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {card.topSpecies.map(sp => (
+                  <div key={sp.species} className="flex items-center justify-between text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                    <span>{sp.speciesName}</span>
+                    <div className="flex items-center gap-2">
+                      <span>{sp.count.toLocaleString()}</span>
+                      <DeltaBadge trend={sp.trend} delta={sp.delta} deltaPercent={sp.deltaPercent} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      <p className="text-xs pt-1" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+        {data.attribution} · Last 14 days vs prior 14 days
+      </p>
     </div>
   )
 }
@@ -1041,6 +1141,9 @@ export function MigrationPage() {
     overallPushScore: number
   } | null>(null)
 
+  const [regionalActivity, setRegionalActivity] = useState<RegionalActivityData | null>(null)
+  const [regionalActivityLoading, setRegionalActivityLoading] = useState(false)
+
   const [weeklySummary, setWeeklySummary] = useState<{
     summary: string
     generatedAt: string
@@ -1199,6 +1302,27 @@ export function MigrationPage() {
     fetchProgression()
     return () => { cancelled = true }
   }, [selectedSpecies, selectedFlyway])
+
+  // Fetch eBird regional activity
+  useEffect(() => {
+    let cancelled = false
+    async function fetchRegionalActivity() {
+      setRegionalActivityLoading(true)
+      try {
+        const data = await api.getMigrationRegionalActivity({
+          flyway: selectedFlyway || undefined,
+          species: selectedSpecies || undefined,
+        })
+        if (!cancelled) setRegionalActivity(data)
+      } catch {
+        // Regional activity is supplemental — silently degrade
+      } finally {
+        if (!cancelled) setRegionalActivityLoading(false)
+      }
+    }
+    fetchRegionalActivity()
+    return () => { cancelled = true }
+  }, [selectedFlyway, selectedSpecies])
 
   // Fetch weather alerts + push factors together once states are known
   useEffect(() => {
@@ -1692,6 +1816,29 @@ export function MigrationPage() {
             )}
           </div>
         </div>
+
+        {/* Regional Activity — eBird community data */}
+        {(regionalActivity || regionalActivityLoading) && (
+          <div className="rounded-lg border" style={{ margin: '100px 0', borderColor: `rgb(var(--color-border-primary))` }}>
+            <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+              <div className="flex items-center gap-2">
+                <span className="text-base font-bold text-white">Regional Activity</span>
+                <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>Community observations</span>
+              </div>
+              <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>via eBird</span>
+            </div>
+            <div className="p-3">
+              {regionalActivityLoading && !regionalActivity ? (
+                <div className="flex items-center gap-2 text-sm py-4" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading community observations...
+                </div>
+              ) : regionalActivity ? (
+                <RegionalActivitySection data={regionalActivity} />
+              ) : null}
+            </div>
+          </div>
+        )}
 
         {/* My Area */}
         <div className="rounded-lg border" style={{ margin: '100px 0', borderColor: `rgb(var(--color-border-primary))` }}>

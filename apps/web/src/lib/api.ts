@@ -580,6 +580,44 @@ class ApiClient {
     })
   }
 
+  async getMigrationRegionalActivity(options?: {
+    flyway?: string
+    species?: string
+    states?: string
+  }) {
+    return this.request<{
+      stateActivity: Array<{
+        state: string
+        flyway: string | null
+        totalCurrentCount: number
+        totalPreviousCount: number
+        overallDelta: number
+        overallDeltaPercent: number | null
+        activityLevel: 'high' | 'moderate' | 'low'
+        topSpecies: Array<{
+          species: string
+          speciesName: string
+          count: number
+          trend: 'increasing' | 'decreasing' | 'stable' | 'new'
+          delta: number | null
+          deltaPercent: number | null
+          activityLevel: 'high' | 'moderate' | 'low'
+        }>
+        fetchedAt: string
+      }>
+      flywayRollup: Array<{
+        flyway: string
+        totalCurrentCount: number
+        totalPreviousCount: number
+        delta: number
+        deltaPercent: number | null
+      }>
+      fetchedAt: string
+      source: string
+      attribution: string
+    }>('/api/migration/regional-activity', { params: options })
+  }
+
   // Hunt Recommendations
   async getHuntRecommendations(options?: {
     species?: string
