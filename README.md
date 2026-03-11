@@ -22,7 +22,7 @@ Organized into four sections:
 Additional features:
 
 - Species-level counts with WoW % change and trend direction
-- eBird integration for TX, KS, NM (supplemental species sightings)
+- **Regional Activity** — eBird statewide community observations for all V1 states (TX, NM, KS, OK, AR, LA, MO) with High/Moderate/Low activity levels, week-over-week trend vs prior 14-day period, and top 3 species per state
 - Cold front and push factor scoring (cold front present, north winds, sub-freezing temps)
 - Flyway flow arrows on AlbersUSA SVG map with magnitude-based direction inference
 - State, species, and flyway filters above the map
@@ -66,7 +66,7 @@ Structured seasons, bag limits, and license requirements for TX, NM, AR, LA, KS,
 | AGFC Aerial Survey | AR | State PDF (LLM extracted) | Biweekly |
 | LDWF Aerial Survey | LA | State PDF (LLM extracted) | Monthly |
 | MWI Statewide | TX, NM, AR, LA, KS, OK | USFWS harvest data | Annual |
-| eBird API | TX, KS, NM | Cornell Lab (supplemental) | On-demand |
+| eBird API | TX, NM, KS, OK, AR, LA, MO | Cornell Lab — statewide + per-refuge community sightings | On-demand (3h cache) |
 
 PDFs (AGFC, LDWF) are extracted with `Meta-Llama-3.1-8B-Instruct-Turbo` via Together.ai.
 
@@ -182,6 +182,7 @@ python -m huntstack_scrapers.scrapers.run refuge_counts --dry-run
 | `GET /api/migration/push-factors` | Weather push factor scores per state (cold fronts, wind, temp) |
 | `GET /api/migration/weekly-summary` | LLM-generated migration narrative (6h cache) |
 | `GET /api/migration/flyway-progression` | Weekly counts by state ordered N→S |
+| `GET /api/migration/regional-activity` | eBird statewide activity levels with trend vs prior 14-day period |
 | `GET /api/hunt/recommendations` | Ranked hunting recommendations by species + location |
 | `GET /api/geo/zip/:zip` | Geocode a US zip code to lat/lng + city/state |
 | `GET /api/geo/search?q=` | Free-text city/place geocode (Nominatim) |
@@ -228,7 +229,7 @@ V1 targets waterfowl hunters in the Central and Mississippi Flyways.
 - [x] Flyway flow visualization — directional arrows on AlbersUSA map with magnitude-based inference
 - [x] Push factor panel — cold fronts, north winds, sub-freezing temps via NOAA
 - [x] AI-generated weekly migration narrative with per-state breakdowns
-- [x] eBird integration — species sightings for TX, KS, NM
+- [x] eBird integration — statewide Regional Activity panel (all V1 states) with activity levels, trend vs prior period, top species per state; per-refuge geo sightings with real delta/trend computation
 - [x] My Area — proximity search (city / zip / GPS) + nearest active refuge list
 - [x] Shareable migration conditions report (`/report`)
 - [x] Where to Hunt — ranked recommendations with migration status + push factor scoring
