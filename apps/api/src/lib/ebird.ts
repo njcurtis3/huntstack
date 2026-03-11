@@ -163,7 +163,7 @@ export async function getEBirdCountsForRefuge(
     url.searchParams.set('back', '28')      // 28 days — fetch both periods in one call
     // No 'cat' filter — eBird's category enum doesn't include 'waterfowl'.
     // Filter client-side via EBIRD_SPECIES whitelist (only waterfowl slugs).
-    url.searchParams.set('maxResults', '500')
+    url.searchParams.set('maxResults', '2000')
 
     const resp = await fetch(url.toString(), {
       headers: {
@@ -176,8 +176,8 @@ export async function getEBirdCountsForRefuge(
 
     const obs: EBirdObservation[] = await resp.json()
 
-    if (obs.length === 500) {
-      console.warn(`[eBird] geo query at ${lat.toFixed(2)},${lng.toFixed(2)} hit maxResults=500 — data may be truncated`)
+    if (obs.length === 2000) {
+      console.warn(`[eBird] geo query at ${lat.toFixed(2)},${lng.toFixed(2)} hit maxResults=2000 — data may be truncated`)
     }
 
     // Split into current (days 1-14) and previous (days 15-28) windows

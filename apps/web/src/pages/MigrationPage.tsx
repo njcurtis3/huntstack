@@ -1818,7 +1818,7 @@ export function MigrationPage() {
         </div>
 
         {/* Regional Activity — eBird community data */}
-        {(regionalActivity || regionalActivityLoading) && (
+        {(regionalActivityLoading || (regionalActivity && regionalActivity.stateActivity.length > 0)) && (
           <div className="rounded-lg border" style={{ margin: '100px 0', borderColor: `rgb(var(--color-border-primary))` }}>
             <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
               <div className="flex items-center gap-2">
