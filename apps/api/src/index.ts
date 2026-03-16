@@ -50,7 +50,7 @@ await app.register(swagger, {
       version: '0.1.0',
     },
     servers: [
-      { url: 'http://localhost:4000', description: 'Development' },
+      { url: 'http://localhost:4001', description: 'Development' },
     ],
     tags: [
       { name: 'health', description: 'Health check endpoints' },
@@ -97,18 +97,45 @@ app.setErrorHandler((error, request, reply) => {
   })
 })
 
-// Start server
-const start = async () => {
+// Graceful shutdown — ensures the TCP socket is released before tsx watch
+// spawns the next process, preventing EADDRINUSE on hot-reload
+const shutdown = async (signal: string) => {
+  app.log.info(`Received ${signal}, shutting down`)
   try {
-    const port = parseInt(process.env.PORT || '4000', 10)
-    const host = process.env.HOST || '0.0.0.0'
-    
-    await app.listen({ port, host })
-    app.log.info(`Server running at http://${host}:${port}`)
-    app.log.info(`API docs available at http://${host}:${port}/docs`)
+    await app.close()
   } catch (err) {
     app.log.error(err)
-    process.exit(1)
+  }
+  process.exit(0)
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))
+
+// Start server — retries on EADDRINUSE to handle the Windows tsx watch
+// race condition where the OS hasn't released the port before the new
+// process spawns (tsx uses TerminateProcess which bypasses signal handlers)
+const start = async () => {
+  const port = parseInt(process.env.PORT || '4001', 10)
+  const host = process.env.HOST || '0.0.0.0'
+  const maxAttempts = 8
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await app.listen({ port, host })
+      app.log.info(`Server running at http://${host}:${port}`)
+      app.log.info(`API docs available at http://${host}:${port}/docs`)
+      return
+    } catch (err: unknown) {
+      const isAddrInUse = (err as NodeJS.ErrnoException).code === 'EADDRINUSE'
+      if (isAddrInUse && attempt < maxAttempts) {
+        const delay = attempt * 300
+        app.log.warn(`Port ${port} in use, retrying in ${delay}ms (attempt ${attempt}/${maxAttempts})`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+      } else {
+        app.log.error(err)
+        process.exit(1)
+      }
+    }
   }
 }
 

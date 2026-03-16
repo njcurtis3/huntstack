@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { ChevronRight, ChevronDown, FileText, AlertCircle, ExternalLink, Loader2, MessageSquare } from 'lucide-react'
+import { ChevronRight, ChevronDown, FileText, AlertCircle, ExternalLink, Loader2, MessageSquare, X } from 'lucide-react'
 import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
 import { api } from '../lib/api'
 import { useThemeStore } from '../stores/themeStore'
@@ -66,6 +66,225 @@ type License = {
   priceNonResident: number | null
   purchaseUrl: string | null
 }
+
+// ─── Compare helpers ─────────────────────────────────────────────────────────
+
+type StateCompareData = {
+  seasons: Season[]
+  licenses: License[]
+  loading: boolean
+  error: string | null
+}
+
+type CompareRow = {
+  label: string
+  values: Record<string, string>
+  differs: boolean
+}
+
+function getDuckSeason(seasons: Season[]): Season | null {
+  return seasons.find(s => {
+    const n = `${s.name} ${s.seasonType || ''}`.toLowerCase()
+    return n.includes('duck') || n.includes('waterfowl') || n.includes('mallard')
+  }) || null
+}
+
+function getSnowGooseSeason(seasons: Season[]): Season | null {
+  return seasons.find(s => {
+    const n = `${s.name} ${s.seasonType || ''}`.toLowerCase()
+    return n.includes('snow') || n.includes('light goose') || n.includes('conservation order')
+  }) || null
+}
+
+function findLicense(licenses: License[], keywords: string[]): License | null {
+  return licenses.find(l => {
+    const n = `${l.name} ${l.licenseType || ''} ${l.description || ''}`.toLowerCase()
+    return keywords.every(kw => n.includes(kw.toLowerCase()))
+  }) || null
+}
+
+function formatDateRange(season: Season | null): string {
+  if (!season) return '—'
+  const start = new Date(season.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const end = new Date(season.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return `${start} – ${end}`
+}
+
+function formatShootingHours(hours: unknown): string {
+  if (!hours) return '—'
+  if (typeof hours === 'string') return hours
+  if (typeof hours === 'object' && hours !== null) {
+    const h = hours as Record<string, unknown>
+    if (h.start && h.end) return `${h.start} – ${h.end}`
+    if (h.description) return String(h.description)
+    if (h.text) return String(h.text)
+  }
+  return '—'
+}
+
+function buildCompareRows(stateCodes: string[], dataMap: Record<string, StateCompareData>): CompareRow[] {
+  function makeRow(label: string, getValue: (code: string) => string): CompareRow {
+    const values: Record<string, string> = {}
+    for (const code of stateCodes) {
+      const d = dataMap[code]
+      values[code] = !d || d.loading ? '…' : d.error ? 'Error' : getValue(code)
+    }
+    const settled = Object.values(values).filter(v => v !== '…' && v !== 'Error' && v !== '—')
+    return { label, values, differs: new Set(settled).size > 1 }
+  }
+
+  return [
+    makeRow('Duck Season', code => formatDateRange(getDuckSeason(dataMap[code]?.seasons || []))),
+    makeRow('Daily Bag Limit', code => {
+      const season = getDuckSeason(dataMap[code]?.seasons || [])
+      const bl = season?.bagLimit as { daily?: number } | null
+      return bl?.daily != null ? `${bl.daily}/day` : '—'
+    }),
+    makeRow('Shooting Hours', code => formatShootingHours(getDuckSeason(dataMap[code]?.seasons || [])?.shootingHours)),
+    makeRow('Snow/Light Goose Season', code => formatDateRange(getSnowGooseSeason(dataMap[code]?.seasons || []))),
+    makeRow('Resident License', code => {
+      const lic = findLicense(dataMap[code]?.licenses || [], ['hunting'])
+        || findLicense(dataMap[code]?.licenses || [], ['resident'])
+      return lic?.priceResident != null ? `$${lic.priceResident.toFixed(2)}` : '—'
+    }),
+    makeRow('Non-Resident License', code => {
+      const lic = findLicense(dataMap[code]?.licenses || [], ['hunting'])
+        || findLicense(dataMap[code]?.licenses || [], ['non-resident'])
+      return lic?.priceNonResident != null ? `$${lic.priceNonResident.toFixed(2)}` : '—'
+    }),
+    makeRow('Federal Duck Stamp', code => {
+      const lic = findLicense(dataMap[code]?.licenses || [], ['duck', 'stamp'])
+        || findLicense(dataMap[code]?.licenses || [], ['federal', 'stamp'])
+      return lic?.priceResident != null ? `$${lic.priceResident.toFixed(2)}` : '—'
+    }),
+    makeRow('State Waterfowl Stamp', code => {
+      const lic = findLicense(dataMap[code]?.licenses || [], ['state', 'waterfowl'])
+        || findLicense(dataMap[code]?.licenses || [], ['state', 'duck'])
+      return lic?.priceResident != null ? `$${lic.priceResident.toFixed(2)}` : '—'
+    }),
+  ]
+}
+
+function CompareTable({ stateCodes, statesList }: { stateCodes: string[], statesList: StateInfo[] }) {
+  const [dataMap, setDataMap] = useState<Record<string, StateCompareData>>({})
+  const cacheKey = [...stateCodes].sort().join(',')
+
+  useEffect(() => {
+    stateCodes.forEach(code => {
+      if (dataMap[code] && !dataMap[code].loading) return
+      setDataMap(prev => ({ ...prev, [code]: { seasons: [], licenses: [], loading: true, error: null } }))
+      Promise.all([
+        api.getStateSeasons(code, { year: 2024 }),
+        api.getStateLicenses(code),
+      ]).then(([seasonsResp, licensesResp]) => {
+        setDataMap(prev => ({
+          ...prev,
+          [code]: {
+            seasons: seasonsResp.seasons as Season[],
+            licenses: licensesResp.licenses as License[],
+            loading: false,
+            error: null,
+          },
+        }))
+      }).catch(err => {
+        setDataMap(prev => ({
+          ...prev,
+          [code]: { seasons: [], licenses: [], loading: false, error: err instanceof Error ? err.message : 'Failed' },
+        }))
+      })
+    })
+  }, [cacheKey]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const rows = useMemo(() => buildCompareRows(stateCodes, dataMap), [stateCodes, dataMap])
+  const anyLoading = stateCodes.some(code => dataMap[code]?.loading)
+
+  return (
+    <div className="card overflow-hidden mb-8">
+      <div
+        className="px-5 py-4 flex items-center justify-between border-b"
+        style={{ borderColor: `rgb(var(--color-border-primary))` }}
+      >
+        <h2 className="text-lg font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
+          State Comparison
+        </h2>
+        {anyLoading && <Loader2 className="w-4 h-4 animate-spin" style={{ color: `rgb(var(--color-text-tertiary))` }} />}
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+            <tr>
+              <th className="text-left p-4 font-medium" style={{ color: `rgb(var(--color-text-secondary))`, minWidth: '160px' }}></th>
+              {stateCodes.map(code => {
+                const info = statesList.find(s => s.code === code)
+                return (
+                  <th key={code} className="text-left p-4 font-medium" style={{ color: `rgb(var(--color-text-secondary))`, minWidth: '160px' }}>
+                    <div className="flex items-center gap-1">
+                      <span style={{ color: `rgb(var(--color-text-primary))` }}>{info?.name || code}</span>
+                      {info?.agencyUrl && (
+                        <a href={info.agencyUrl} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:text-accent-600">
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
+                    </div>
+                    {info?.agencyName && (
+                      <div className="text-xs font-normal mt-0.5" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                        {info.agencyName}
+                      </div>
+                    )}
+                  </th>
+                )
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => (
+              <tr
+                key={row.label}
+                className="border-t"
+                style={{
+                  borderColor: `rgb(var(--color-border-primary))`,
+                  backgroundColor: row.differs ? `rgb(var(--color-bg-secondary))` : undefined,
+                }}
+              >
+                <td className="p-4 text-xs font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>
+                  <div className="flex items-center gap-1.5">
+                    {row.differs && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" title="Values differ" />
+                    )}
+                    {row.label}
+                  </div>
+                </td>
+                {stateCodes.map(code => (
+                  <td key={code} className="p-4" style={{ color: `rgb(var(--color-text-primary))` }}>
+                    {dataMap[code]?.loading
+                      ? <span style={{ color: `rgb(var(--color-text-tertiary))` }}>…</span>
+                      : <span>{row.values[code]}</span>
+                    }
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div
+        className="px-5 py-3 text-xs flex items-center gap-2 border-t"
+        style={{
+          backgroundColor: `rgb(var(--color-bg-secondary))`,
+          color: `rgb(var(--color-text-tertiary))`,
+          borderColor: `rgb(var(--color-border-primary))`,
+        }}
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+        Highlighted rows have differing values across states
+      </div>
+    </div>
+  )
+}
+
+// ─── State detail view (single state) ────────────────────────────────────────
 
 function StateDetailView({ stateCode }: { stateCode: string }) {
   const navigate = useNavigate()
@@ -146,12 +365,10 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
 
   const stateName = stateInfo?.name || stateCode.toUpperCase()
 
-  // Normalize category label: "waterfowl|general" → "Waterfowl / General"
   function formatCategory(cat: string) {
     return cat.split(/[|_-]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' / ')
   }
 
-  // Get unique categories from regulations
   const categories = ['all', ...new Set(regs.map(r => r.category))]
   if (licensesList.length > 0 && !categories.includes('licenses')) {
     categories.push('licenses')
@@ -212,7 +429,6 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-8">
-        {/* Year selector */}
         <select
           value={selectedYear}
           onChange={e => { setSelectedYear(Number(e.target.value)); setSelectedCategory('all') }}
@@ -223,7 +439,6 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
           ))}
         </select>
 
-        {/* Category filters */}
         {categories.length > 1 && (
           <div className="flex gap-2 overflow-x-auto pb-1">
             {categories.map((cat) => (
@@ -243,7 +458,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
         )}
       </div>
 
-      {/* Regulations — grouped by category, collapsed by default */}
+      {/* Regulations */}
       {filteredRegs.length > 0 && (
         <div className="space-y-2 mb-8">
           <h2 className="text-xl font-semibold mb-4" style={{ color: `rgb(var(--color-text-primary))` }}>
@@ -410,6 +625,8 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
   )
 }
 
+// ─── Listing page ─────────────────────────────────────────────────────────────
+
 type StateRegCounts = Record<string, { regulations: number; seasons: number; licenses: number }>
 
 export function RegulationsPage() {
@@ -420,6 +637,9 @@ export function RegulationsPage() {
   const [selectedState, setSelectedState] = useState('')
   const [regCounts, setRegCounts] = useState<StateRegCounts>({})
 
+  const [compareMode, setCompareMode] = useState(false)
+  const [compareStates, setCompareStates] = useState<Set<string>>(new Set())
+
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme)
   const mapColors = getMapColors(resolvedTheme)
 
@@ -429,12 +649,11 @@ export function RegulationsPage() {
         .then(async (data) => {
           const states = data.states as StateInfo[]
           setStatesList(states)
-          // Fetch regulation counts for each state in parallel
           const counts: StateRegCounts = {}
           await Promise.all(states.map(async (s) => {
             try {
               const [regData, seasonsData, licensesData] = await Promise.all([
-                api.getStateRegulations(s.code, { year: 2024 }), // counts shown for current season
+                api.getStateRegulations(s.code, { year: 2024 }),
                 api.getStateSeasons(s.code),
                 api.getStateLicenses(s.code),
               ])
@@ -454,17 +673,39 @@ export function RegulationsPage() {
     }
   }, [state])
 
-  const statesWithData = useMemo(() => {
-    return new Set(statesList.map(s => s.code))
-  }, [statesList])
+  const statesWithData = useMemo(() => new Set(statesList.map(s => s.code)), [statesList])
 
   const handleMapStateClick = useCallback((stateCode: string) => {
-    setSelectedState(prev => prev === stateCode ? '' : stateCode)
-  }, [])
+    if (compareMode) {
+      setCompareStates(prev => {
+        const next = new Set(prev)
+        if (next.has(stateCode)) next.delete(stateCode)
+        else if (next.size < 4) next.add(stateCode)
+        return next
+      })
+    } else {
+      setSelectedState(prev => prev === stateCode ? '' : stateCode)
+    }
+  }, [compareMode])
+
+  function toggleCompareMode(enabled: boolean) {
+    setCompareMode(enabled)
+    setCompareStates(new Set())
+    setSelectedState('')
+  }
+
+  function toggleCompareState(code: string) {
+    setCompareStates(prev => {
+      const next = new Set(prev)
+      if (next.has(code)) next.delete(code)
+      else if (next.size < 4) next.add(code)
+      return next
+    })
+  }
 
   const filtered = useMemo(() => {
     let list = statesList
-    if (selectedState) {
+    if (!compareMode && selectedState) {
       list = list.filter(s => s.code === selectedState)
     }
     if (search) {
@@ -474,11 +715,13 @@ export function RegulationsPage() {
       )
     }
     return list
-  }, [statesList, selectedState, search])
+  }, [statesList, selectedState, compareMode, search])
 
   if (state) {
     return <StateDetailView stateCode={state} />
   }
+
+  const compareStateList = Array.from(compareStates)
 
   return (
     <div>
@@ -501,14 +744,52 @@ export function RegulationsPage() {
           Regulation data is currently limited to select states. We're actively working to expand coverage across all 50 states.
         </div>
 
+        {/* Mode toggle */}
+        <div
+          className="flex gap-1 p-1 rounded-lg mb-6 w-fit"
+          style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}
+        >
+          <button
+            onClick={() => toggleCompareMode(false)}
+            className={`py-2 px-5 rounded-md text-sm font-medium transition-colors ${
+              !compareMode
+                ? 'bg-white dark:bg-earth-900 shadow-sm'
+                : 'hover:bg-earth-100 dark:hover:bg-earth-700'
+            }`}
+            style={{ color: `rgb(var(--color-text-primary))` }}
+          >
+            All States
+          </button>
+          <button
+            onClick={() => toggleCompareMode(true)}
+            className={`py-2 px-5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
+              compareMode
+                ? 'bg-white dark:bg-earth-900 shadow-sm'
+                : 'hover:bg-earth-100 dark:hover:bg-earth-700'
+            }`}
+            style={{ color: `rgb(var(--color-text-primary))` }}
+          >
+            Compare States
+            {compareMode && compareStates.size > 0 && (
+              <span className="bg-accent-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center leading-none">
+                {compareStates.size}
+              </span>
+            )}
+          </button>
+        </div>
+
         {/* US State Map */}
-        <div className="card p-4 mb-8">
+        <div className="card p-4 mb-4">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>
-              Select a state {selectedState && (
+              {compareMode
+                ? `Select states to compare (${compareStates.size}/4)`
+                : 'Select a state'
+              }
+              {!compareMode && selectedState && (
                 <button
                   onClick={() => setSelectedState('')}
-                  className="ml-2 text-xs text-accent-500 hover:text-accent-600 dark:hover:text-accent-400 underline"
+                  className="ml-2 text-xs text-accent-500 hover:text-accent-600 underline"
                 >
                   Clear selection
                 </button>
@@ -519,7 +800,7 @@ export function RegulationsPage() {
                 <span className="w-3 h-3 rounded-sm bg-forest-200 dark:bg-forest-800 inline-block" /> Has data
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-sm bg-accent-500 inline-block" /> Selected
+                <span className="w-3 h-3 rounded-sm bg-accent-500 inline-block" /> {compareMode ? 'Selected' : 'Selected'}
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-3 h-3 rounded-sm inline-block border" style={{ backgroundColor: `rgb(var(--color-bg-secondary))`, borderColor: `rgb(var(--color-border-primary))` }} /> No data
@@ -540,26 +821,27 @@ export function RegulationsPage() {
                   const stateCode = STATE_NAME_TO_CODE[stateName]
                   if (!stateCode) return null
                   const hasData = statesWithData.has(stateCode)
-                  const isSelected = selectedState === stateCode
+                  const isSelected = compareMode ? compareStates.has(stateCode) : selectedState === stateCode
+                  const isClickable = hasData
                   return (
                     <Geography
                       key={geo.rsmKey}
                       geography={geo}
-                      onClick={() => hasData && handleMapStateClick(stateCode)}
+                      onClick={() => isClickable && handleMapStateClick(stateCode)}
                       style={{
                         default: {
                           fill: isSelected ? mapColors.selected : hasData ? mapColors.hasData : mapColors.empty,
                           stroke: mapColors.stroke,
                           strokeWidth: 0.5,
                           outline: 'none',
-                          cursor: hasData ? 'pointer' : 'default',
+                          cursor: isClickable ? 'pointer' : 'default',
                         },
                         hover: {
                           fill: isSelected ? mapColors.selectedHover : hasData ? mapColors.hasDataHover : mapColors.empty,
                           stroke: hasData ? mapColors.selected : mapColors.stroke,
                           strokeWidth: hasData ? 1.5 : 0.5,
                           outline: 'none',
-                          cursor: hasData ? 'pointer' : 'default',
+                          cursor: isClickable ? 'pointer' : 'default',
                         },
                         pressed: {
                           fill: isSelected ? mapColors.selectedHover : hasData ? mapColors.hasDataHover : mapColors.empty,
@@ -576,67 +858,166 @@ export function RegulationsPage() {
           </ComposableMap>
         </div>
 
+        {/* Compare mode: selected state badges */}
+        {compareMode && (
+          <div className="flex items-center gap-2 flex-wrap mb-6 min-h-[32px]">
+            {compareStates.size === 0 ? (
+              <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                Click states on the map or cards below to add them to comparison
+              </p>
+            ) : (
+              <>
+                {compareStateList.map(code => {
+                  const info = statesList.find(s => s.code === code)
+                  return (
+                    <span
+                      key={code}
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border bg-accent-50 dark:bg-accent-900/30 text-accent-700 dark:text-accent-300 border-accent-200 dark:border-accent-700"
+                    >
+                      {info?.name || code}
+                      <button
+                        onClick={() => toggleCompareState(code)}
+                        className="hover:text-accent-900 dark:hover:text-accent-100 transition-colors"
+                        aria-label={`Remove ${info?.name || code}`}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </span>
+                  )
+                })}
+                {compareStates.size < 4 && (
+                  <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                    + add up to {4 - compareStates.size} more
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Comparison table (compare mode, 2+ states selected) */}
+        {compareMode && compareStates.size >= 2 && (
+          <CompareTable stateCodes={compareStateList} statesList={statesList} />
+        )}
+
+        {/* Placeholder when compare mode but not enough states */}
+        {compareMode && compareStates.size < 2 && (
+          <div
+            className="rounded-lg border-2 border-dashed px-6 py-10 text-center mb-8"
+            style={{ borderColor: `rgb(var(--color-border-primary))` }}
+          >
+            <p className="text-sm font-medium mb-1" style={{ color: `rgb(var(--color-text-secondary))` }}>
+              Select at least 2 states to see the comparison
+            </p>
+            <p className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+              Use the map above or check states in the list below
+            </p>
+          </div>
+        )}
+
         {/* Search */}
         <div className="mb-8">
-        <input
-          type="text"
-          placeholder="Search states..."
-          className="input max-w-md"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-8 h-8 animate-spin text-accent-500" />
+          <input
+            type="text"
+            placeholder={compareMode ? 'Filter states...' : 'Search states...'}
+            className="input max-w-md"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
         </div>
-      ) : (
-        <>
-          {/* State Grid */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filtered.map((s) => (
-              <Link
-                key={s.code}
-                to={`/regulations/${s.code.toLowerCase()}`}
-                className="card p-4 hover:border-accent-400 dark:hover:border-accent-500 transition-colors"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-accent-50 dark:bg-accent-900/30 rounded-md flex items-center justify-center">
-                      <FileText className="w-5 h-5 text-accent-500" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>{s.name}</h3>
-                      <p className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>{s.agencyName || 'Wildlife Agency'}</p>
-                    </div>
-                  </div>
-                  <ChevronRight className="w-5 h-5" style={{ color: `rgb(var(--color-text-tertiary))` }} />
-                </div>
-                {regCounts[s.code] && (
-                  <div className="flex gap-3 text-xs pt-2" style={{ color: `rgb(var(--color-text-tertiary))`, borderTop: `1px solid rgb(var(--color-border-primary))` }}>
-                    <span>Regulations: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].regulations}</strong></span>
-                    <span>Seasons: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].seasons}</strong></span>
-                    <span>Licenses: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].licenses}</strong></span>
-                  </div>
-                )}
-              </Link>
-            ))}
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-accent-500" />
           </div>
+        ) : (
+          <>
+            {/* State grid */}
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map((s) => {
+                if (compareMode) {
+                  const isChecked = compareStates.has(s.code)
+                  const isDisabled = !isChecked && compareStates.size >= 4
+                  return (
+                    <div
+                      key={s.code}
+                      onClick={() => !isDisabled && toggleCompareState(s.code)}
+                      className={`card p-4 transition-colors select-none ${
+                        isDisabled
+                          ? 'opacity-40 cursor-not-allowed'
+                          : isChecked
+                          ? 'border-accent-400 dark:border-accent-500 cursor-pointer'
+                          : 'hover:border-earth-300 dark:hover:border-earth-600 cursor-pointer'
+                      }`}
+                      style={isChecked ? { backgroundColor: `rgb(var(--color-bg-secondary))` } : {}}
+                    >
+                      <div className="flex items-center gap-3 mb-3">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          readOnly
+                          className="w-4 h-4 accent-accent-500 flex-shrink-0"
+                          tabIndex={-1}
+                        />
+                        <div className="flex-1 flex items-center justify-between">
+                          <div>
+                            <h3 className="font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>{s.name}</h3>
+                            <p className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>{s.agencyName || 'Wildlife Agency'}</p>
+                          </div>
+                        </div>
+                      </div>
+                      {regCounts[s.code] && (
+                        <div className="flex gap-3 text-xs pt-2" style={{ color: `rgb(var(--color-text-tertiary))`, borderTop: `1px solid rgb(var(--color-border-primary))` }}>
+                          <span>Regs: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].regulations}</strong></span>
+                          <span>Seasons: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].seasons}</strong></span>
+                          <span>Licenses: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].licenses}</strong></span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                }
 
-          {filtered.length === 0 && statesList.length > 0 && (
-            <p className="text-center py-8" style={{ color: `rgb(var(--color-text-secondary))` }}>No states match "{search}"</p>
-          )}
-
-          {statesList.length === 0 && (
-            <div className="text-center py-8 rounded-md" style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}>
-              <p style={{ color: `rgb(var(--color-text-secondary))` }}>No states loaded yet. Run the seed script to populate initial data.</p>
+                return (
+                  <Link
+                    key={s.code}
+                    to={`/regulations/${s.code.toLowerCase()}`}
+                    className="card p-4 hover:border-accent-400 dark:hover:border-accent-500 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-accent-50 dark:bg-accent-900/30 rounded-md flex items-center justify-center">
+                          <FileText className="w-5 h-5 text-accent-500" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>{s.name}</h3>
+                          <p className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>{s.agencyName || 'Wildlife Agency'}</p>
+                        </div>
+                      </div>
+                      <ChevronRight className="w-5 h-5" style={{ color: `rgb(var(--color-text-tertiary))` }} />
+                    </div>
+                    {regCounts[s.code] && (
+                      <div className="flex gap-3 text-xs pt-2" style={{ color: `rgb(var(--color-text-tertiary))`, borderTop: `1px solid rgb(var(--color-border-primary))` }}>
+                        <span>Regulations: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].regulations}</strong></span>
+                        <span>Seasons: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].seasons}</strong></span>
+                        <span>Licenses: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].licenses}</strong></span>
+                      </div>
+                    )}
+                  </Link>
+                )
+              })}
             </div>
-          )}
 
+            {filtered.length === 0 && statesList.length > 0 && (
+              <p className="text-center py-8" style={{ color: `rgb(var(--color-text-secondary))` }}>No states match "{search}"</p>
+            )}
 
-        </>
-      )}
+            {statesList.length === 0 && (
+              <div className="text-center py-8 rounded-md" style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+                <p style={{ color: `rgb(var(--color-text-secondary))` }}>No states loaded yet. Run the seed script to populate initial data.</p>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   )

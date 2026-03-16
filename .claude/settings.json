@@ -18,7 +18,10 @@
       "Bash(npx tsc:*)",
       "Bash(wc -l /c/Users/natha/Desktop/repos/huntstack/apps/web/src/pages/*.tsx)",
       "Bash(powershell -Command \"python -c \"\":*)",
-      "Bash(python -:*)"
+      "Bash(python -:*)",
+      "Bash(ls c:/Users/natha/Desktop/repos/huntstack/.env*)",
+      "Bash(ls c:/Users/natha/Desktop/repos/huntstack/apps/api/.env*)",
+      "Bash(ls c:/Users/natha/Desktop/repos/huntstack/apps/web/.env*)"
     ]
   }
 }

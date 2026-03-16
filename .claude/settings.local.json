@@ -18,7 +18,24 @@
       "Bash(powershell -ExecutionPolicy Bypass -Command \"cd ''c:\\\\Users\\\\natha\\\\Desktop\\\\repos\\\\huntstack\\\\apps\\\\web''; npx tsc --noEmit 2>&1 | Select-Object -First 40\")",
       "WebFetch(domain:api.weather.gov)",
       "Bash(python3:*)",
-      "Bash(python -m huntstack_scrapers.scrapers.fws_arcgis:*)"
+      "Bash(python -m huntstack_scrapers.scrapers.fws_arcgis:*)",
+      "Bash(grep -E \"\\\\.ts$\")",
+      "Bash(wc -l /c/Users/natha/Desktop/repos/huntstack/apps/api/src/routes/*.ts)",
+      "Bash(pnpm --filter web exec tsc --noEmit)",
+      "Bash(pnpm run:*)",
+      "Bash(pnpm install:*)",
+      "Bash(netstat -ano)",
+      "Bash(cmd /c \"netstat -ano | findstr :4000\")",
+      "Bash(cmd /c \"netstat -ano\")",
+      "Bash(cmd /c \"netstat -aon\")",
+      "Bash(tasklist)",
+      "Bash(taskkill /PID 31620 /F)",
+      "Bash(cmd /c \"taskkill /PID 31620 /F\")",
+      "Bash(cmd /c \"netstat -aon | findstr LISTENING | findstr 4000\")",
+      "Bash(cmd /c \"netstat -aon | findstr 4000\")",
+      "Bash(cmd /c \"powershell -command \"\"Get-NetTCPConnection -LocalPort 4000 -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,State,OwningProcess\"\"\")",
+      "Bash(cmd /c \"powershell -command \"\"Get-NetTCPConnection -LocalPort 4000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { $p = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue; Write-Output \\(\\\\\"\"PID: \\\\\"\" + $_.OwningProcess + \\\\\"\" Process: \\\\\"\" + $p.Name + \\\\\"\" Path: \\\\\"\" + $p.Path\\) }\"\"\")",
+      "Bash(cmd /c \"powershell -command \"\"Get-NetTCPConnection -LocalPort 4000 -ErrorAction SilentlyContinue\"\"\")"
     ]
   }
 }
