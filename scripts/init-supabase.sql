@@ -15,9 +15,9 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- (Run after Drizzle migrations)
 -- ===========================================
 
--- Add embedding column with pgvector (768d for BAAI/bge-base-en-v1.5 via Together.ai)
+-- Add embedding column with pgvector (1024d for intfloat/multilingual-e5-large-instruct via Together.ai)
 ALTER TABLE document_chunks
-ADD COLUMN IF NOT EXISTS embedding vector(768);
+ADD COLUMN IF NOT EXISTS embedding vector(1024);
 
 -- Create index for vector similarity search
 CREATE INDEX IF NOT EXISTS document_chunks_embedding_idx
@@ -31,7 +31,7 @@ WITH (lists = 100);
 
 -- Function to search documents by vector similarity
 CREATE OR REPLACE FUNCTION search_documents(
-  query_embedding vector(768),
+  query_embedding vector(1024),
   match_count int DEFAULT 10,
   filter_state text DEFAULT NULL,
   filter_category text DEFAULT NULL

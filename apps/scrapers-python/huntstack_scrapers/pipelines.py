@@ -356,7 +356,7 @@ class DatabasePipeline:
 
 
 TOGETHER_API_URL = "https://api.together.xyz/v1/embeddings"
-EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
+EMBEDDING_MODEL = "intfloat/multilingual-e5-large-instruct"
 
 
 class EmbeddingPipeline:

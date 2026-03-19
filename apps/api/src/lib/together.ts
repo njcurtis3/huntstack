@@ -1,7 +1,7 @@
 import Together from 'together-ai'
 
-const EMBEDDING_MODEL = 'BAAI/bge-base-en-v1.5'
-const CHAT_MODEL = 'meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo'
+const EMBEDDING_MODEL = 'intfloat/multilingual-e5-large-instruct'
+const CHAT_MODEL = 'Qwen/Qwen3.5-9B'
 
 let _client: Together | null = null
 

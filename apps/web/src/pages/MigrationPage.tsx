@@ -175,42 +175,63 @@ function getAnomaly(count: number, deltaPercent: number | null, previousCount: n
 }
 
 // ─── Migration Index Score ────────────────────────────────────────────────────
-// Composite 0–100 score: trend (25) + volume delta (25) + weather push (25) + anomaly (25)
+// Composite 0–100 score: trend (25) + volume (20) + weather (15) + eBird community (25) + anomaly (15)
 
 type MigrationIndexResult = {
   score: number
   label: 'Quiet' | 'Active' | 'Strong' | 'Peak Movement'
   labelColor: string
+  components: {
+    trend: number     // 0-25
+    volume: number    // 0-20
+    weather: number   // 0-15
+    ebird: number     // 0-25
+    anomaly: number   // 0-15
+  }
 }
 
 function computeMigrationIndex(
   counts: Array<{ trend: string; anomaly: AnomalyType; deltaPercent: number | null }>,
   overallPushScore: number,
+  stateActivity?: Array<{ activityLevel: 'high' | 'moderate' | 'low' }>,
 ): MigrationIndexResult {
-  if (counts.length === 0) return { score: 0, label: 'Quiet', labelColor: 'text-earth-500 dark:text-earth-400' }
+  const empty: MigrationIndexResult = {
+    score: 0, label: 'Quiet', labelColor: 'text-earth-500 dark:text-earth-400',
+    components: { trend: 0, volume: 0, weather: 0, ebird: 0, anomaly: 0 },
+  }
+  if (counts.length === 0) return empty
 
   const withData = counts.filter(c => c.trend !== 'new')
 
   // Trend component: % of refuges increasing (0–25)
   const increasing = withData.filter(c => c.trend === 'increasing').length
-  const trendScore = withData.length > 0 ? Math.round((increasing / withData.length) * 25) : 0
+  const trend = withData.length > 0 ? Math.round((increasing / withData.length) * 25) : 0
 
-  // Volume delta component: average positive deltaPercent capped at 25
+  // Volume delta component: average positive deltaPercent (0–20)
   const posDeltas = withData.filter(c => c.deltaPercent !== null && c.deltaPercent > 0)
   const avgDelta = posDeltas.length > 0
     ? posDeltas.reduce((s, c) => s + (c.deltaPercent ?? 0), 0) / posDeltas.length
     : 0
-  const volumeScore = Math.min(25, Math.round((avgDelta / 60) * 25))
+  const volume = Math.min(20, Math.round((avgDelta / 60) * 20))
 
-  // Weather push component: pushScore 0–3 → 0–25
-  const weatherScore = Math.round((overallPushScore / 3) * 25)
+  // Weather push component: pushScore 0–3 → 0–15
+  const weather = Math.round((overallPushScore / 3) * 15)
 
-  // Anomaly component: spikes add, drops subtract
+  // eBird community activity: high=2pts, moderate=1pt per state, max 25
+  const totalStates = stateActivity?.length ?? 0
+  let ebird = 0
+  if (totalStates > 0) {
+    const highCount = stateActivity!.filter(s => s.activityLevel === 'high').length
+    const modCount = stateActivity!.filter(s => s.activityLevel === 'moderate').length
+    ebird = Math.min(25, Math.round(((highCount * 2 + modCount * 1) / (totalStates * 2)) * 25))
+  }
+
+  // Anomaly bonus: spikes add, drops subtract — no artificial baseline (0–15)
   const spikes = counts.filter(c => c.anomaly === 'spike').length
   const drops = counts.filter(c => c.anomaly === 'drop').length
-  const anomalyScore = Math.max(0, Math.min(25, 12 + spikes * 6 - drops * 4))
+  const anomaly = Math.max(0, Math.min(15, spikes * 5 - drops * 3))
 
-  const total = Math.min(100, trendScore + volumeScore + weatherScore + anomalyScore)
+  const total = Math.min(100, trend + volume + weather + ebird + anomaly)
 
   let label: MigrationIndexResult['label']
   let labelColor: string
@@ -219,7 +240,7 @@ function computeMigrationIndex(
   else if (total >= 26) { label = 'Active'; labelColor = 'text-amber-600 dark:text-amber-400' }
   else { label = 'Quiet'; labelColor = 'text-earth-500 dark:text-earth-400' }
 
-  return { score: total, label, labelColor }
+  return { score: total, label, labelColor, components: { trend, volume, weather, ebird, anomaly } }
 }
 
 // ─── Movement Direction Detection ─────────────────────────────────────────────
@@ -490,6 +511,101 @@ function RegionalActivitySection({ data }: { data: RegionalActivityData }) {
       <p className="text-xs pt-1" style={{ color: `rgb(var(--color-text-tertiary))` }}>
         {data.attribution} · Last 14 days vs prior 14 days
       </p>
+    </div>
+  )
+}
+
+// ─── Migration Index Panel ────────────────────────────────────────────────────
+
+function MigrationIndexPanel({ index, selectedFlyway, selectedSpecies }: {
+  index: MigrationIndexResult
+  selectedFlyway: string
+  selectedSpecies: string
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  const barColor = index.score >= 76 ? 'bg-red-500' : index.score >= 51 ? 'bg-orange-400' : index.score >= 26 ? 'bg-amber-400' : 'bg-earth-400'
+
+  const components = [
+    { label: 'Refuge Trends', value: index.components.trend, max: 25 },
+    { label: 'Bird Volume', value: index.components.volume, max: 20 },
+    { label: 'Weather Push', value: index.components.weather, max: 15 },
+    { label: 'Community Activity', value: index.components.ebird, max: 25 },
+    { label: 'Anomalies', value: index.components.anomaly, max: 15 },
+  ]
+
+  const filterLabel = [
+    selectedFlyway ? selectedFlyway.charAt(0).toUpperCase() + selectedFlyway.slice(1) + ' Flyway' : null,
+    selectedSpecies ? selectedSpecies.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : null,
+  ].filter(Boolean).join(' · ') || 'All Flyways · All Species'
+
+  return (
+    <div className="card p-4">
+      <button
+        className="w-full flex items-center justify-between"
+        onClick={() => setExpanded(e => !e)}
+      >
+        <div className="flex items-center gap-3">
+          <Bird className="w-5 h-5 text-accent-500" />
+          <div className="text-left">
+            <h2 className="text-sm font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
+              Migration Index
+            </h2>
+            <p className={`text-xs font-medium ${index.labelColor}`}>
+              {index.score}/100 — {index.label}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {/* Score bar preview */}
+          <div className="w-16 h-1.5 rounded-full bg-earth-200 dark:bg-earth-700 overflow-hidden">
+            <div className={`h-full rounded-full ${barColor}`} style={{ width: `${index.score}%` }} />
+          </div>
+          {expanded
+            ? <ChevronUp className="w-4 h-4" style={{ color: `rgb(var(--color-text-tertiary))` }} />
+            : <ChevronDown className="w-4 h-4" style={{ color: `rgb(var(--color-text-tertiary))` }} />
+          }
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="mt-4 pt-4 border-t" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+          {/* Score + label */}
+          <div className="flex items-end gap-3 mb-4">
+            <span className={`text-5xl font-bold leading-none ${index.labelColor}`}>{index.score}</span>
+            <div className="mb-1">
+              <p className={`text-lg font-semibold ${index.labelColor}`}>{index.label}</p>
+              <p className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>{filterLabel}</p>
+            </div>
+          </div>
+
+          {/* Component bars */}
+          <div className="space-y-2 mb-4">
+            {components.map(c => (
+              <div key={c.label} className="flex items-center gap-3">
+                <span className="text-xs w-36 shrink-0" style={{ color: `rgb(var(--color-text-secondary))` }}>{c.label}</span>
+                <div className="flex-1 h-2 rounded-full bg-earth-200 dark:bg-earth-700 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${barColor}`}
+                    style={{ width: `${(c.value / c.max) * 100}%` }}
+                  />
+                </div>
+                <span className="text-xs w-10 text-right tabular-nums" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                  {c.value}/{c.max}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Threshold legend */}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+            <span className="text-earth-400">Quiet &lt;26</span>
+            <span className="text-amber-500">Active 26–50</span>
+            <span className="text-orange-500">Strong 51–75</span>
+            <span className="text-red-500">Peak 76+</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1442,8 +1558,12 @@ export function MigrationPage() {
 
   // Session B computed values — all client-side from already-fetched data
   const migrationIndex = useMemo(() =>
-    computeMigrationIndex(enrichedCounts, pushFactorsData?.overallPushScore ?? 0),
-    [enrichedCounts, pushFactorsData]
+    computeMigrationIndex(
+      enrichedCounts,
+      pushFactorsData?.overallPushScore ?? 0,
+      regionalActivity?.stateActivity,
+    ),
+    [enrichedCounts, pushFactorsData, regionalActivity]
   )
 
   const movementDirection = useMemo(() =>
@@ -1585,7 +1705,6 @@ export function MigrationPage() {
   const latestDate = filteredCounts.length > 0
     ? new Date(Math.max(...filteredCounts.map(c => new Date(c.surveyDate).getTime())))
     : null
-  const anomalyCount = enrichedCounts.filter(c => c.anomaly !== null).length
 
   // Historical chart data
   const chartData = useMemo(() => {
@@ -1799,6 +1918,11 @@ export function MigrationPage() {
             <span className="text-base font-bold text-white">Quick Intel</span>
           </div>
           <div className="p-3 space-y-3">
+            <MigrationIndexPanel
+              index={migrationIndex}
+              selectedFlyway={selectedFlyway}
+              selectedSpecies={selectedSpecies}
+            />
             {weatherAlerts.length > 0 && <WeatherAlertsPanel alerts={weatherAlerts} />}
             {pushFactorsData && (
               <PushFactorsPanel
@@ -2223,7 +2347,6 @@ export function MigrationPage() {
                     {migrationIndex.label}
                   </p>
                 </div>
-                {/* Score bar */}
                 <div className="mt-2 h-1.5 rounded-full bg-earth-200 dark:bg-earth-700 overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${
@@ -2234,12 +2357,6 @@ export function MigrationPage() {
                     style={{ width: `${migrationIndex.score}%` }}
                   />
                 </div>
-                {anomalyCount > 0 && (
-                  <p className="text-xs mt-1.5 text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                    <Zap className="w-3 h-3" />
-                    {anomalyCount} anomal{anomalyCount === 1 ? 'y' : 'ies'} detected
-                  </p>
-                )}
               </div>
             </div>
 

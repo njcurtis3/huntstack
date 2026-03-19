@@ -21,7 +21,20 @@
       "Bash(python -:*)",
       "Bash(ls c:/Users/natha/Desktop/repos/huntstack/.env*)",
       "Bash(ls c:/Users/natha/Desktop/repos/huntstack/apps/api/.env*)",
-      "Bash(ls c:/Users/natha/Desktop/repos/huntstack/apps/web/.env*)"
+      "Bash(ls c:/Users/natha/Desktop/repos/huntstack/apps/web/.env*)",
+      "WebFetch(domain:docs.together.ai)",
+      "WebFetch(domain:api.together.ai)",
+      "WebFetch(domain:docs.together.xyz)",
+      "WebFetch(domain:www.together.ai)",
+      "Bash(python -c \":*)",
+      "Read(//c/Users/natha/AppData/Local/Temp/claude/c--Users-natha-Desktop-repos-huntstack/753713ae-072c-4baf-a4fe-fc421cf12498/tasks/**)",
+      "Bash(reg query:*)",
+      "Bash(netsh int:*)",
+      "Read(//c/Users/natha/Desktop/repos/huntstack/apps/scrapers-python/**)",
+      "Bash(tasklist /FI 'IMAGENAME eq python.exe')",
+      "Bash(tasklist /FI 'IMAGENAME eq curl.exe' 2)",
+      "Bash(/dev/null tasklist:*)",
+      "Bash(netstat -anb)"
     ]
   }
 }

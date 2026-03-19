@@ -12,20 +12,29 @@ import os
 import sys
 import json
 import time
-import requests
 import psycopg2
 from dotenv import load_dotenv
+
+# Force UTF-8 output so non-ASCII chars in document titles don't crash on Windows
+sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
+# Force IPv4 in urllib3 before importing requests
+# (IPv6 is unreachable on this machine — sets AF_INET instead of AF_UNSPEC)
+import urllib3.util.connection
+urllib3.util.connection.HAS_IPV6 = False
+import requests
 
 # Add parent dirs so we can import from the package
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from huntstack_scrapers.pipelines import clean_text
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", ".env"))
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 TOGETHER_API_KEY = os.environ["TOGETHER_API_KEY"]
 TOGETHER_API_URL = "https://api.together.xyz/v1/embeddings"
-EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
+EMBEDDING_MODEL = "intfloat/multilingual-e5-large-instruct"
 
 CHUNK_SIZE = 600
 CHUNK_OVERLAP = 100
@@ -50,23 +59,38 @@ def chunk_text(text: str) -> list[str]:
     return chunks
 
 
+# Persistent session — reuses TCP connections instead of opening one per chunk
+_session: requests.Session | None = None
+
+
+def get_session() -> requests.Session:
+    global _session
+    if _session is None:
+        _session = requests.Session()
+        _session.headers.update({
+            "Authorization": f"Bearer {TOGETHER_API_KEY}",
+            "Content-Type": "application/json",
+        })
+    return _session
+
+
 def generate_embedding(text: str) -> list[float] | None:
-    """Generate embedding via Together.ai."""
-    try:
-        resp = requests.post(
-            TOGETHER_API_URL,
-            headers={
-                "Authorization": f"Bearer {TOGETHER_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={"model": EMBEDDING_MODEL, "input": text},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        return resp.json()["data"][0]["embedding"]
-    except Exception as e:
-        print(f"  Embedding error: {e}")
-        return None
+    """Generate embedding via Together.ai (IPv4-forced, connection-reusing session)."""
+    for attempt in range(1, 5):
+        try:
+            resp = get_session().post(
+                TOGETHER_API_URL,
+                json={"model": EMBEDDING_MODEL, "input": text},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            return resp.json()["data"][0]["embedding"]
+        except Exception as e:
+            wait = attempt * 2
+            print(f"  Embedding error (attempt {attempt}/4): {e} — retrying in {wait}s")
+            time.sleep(wait)
+    print(f"  Embedding failed after 4 attempts, skipping chunk")
+    return None
 
 
 def main():
@@ -78,13 +102,14 @@ def main():
     before_count = cur.fetchone()[0]
     print(f"Before: {before_count} chunks")
 
-    # Load all documents
+    # Load documents that don't yet have chunks (resume-safe)
     cur.execute("""
         SELECT d.id, d.title, d.content, d.source_url, d.document_type,
                s.code as state_code
         FROM documents d
         LEFT JOIN states s ON s.id = d.state_id
         WHERE d.content IS NOT NULL AND LENGTH(d.content) > 0
+          AND d.id NOT IN (SELECT DISTINCT document_id FROM document_chunks)
         ORDER BY d.id
     """)
     documents = cur.fetchall()
