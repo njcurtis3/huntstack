@@ -116,7 +116,10 @@ huntstack/
 │   ├── db/                         # Drizzle schema & migrations
 │   ├── shared/                     # Zod schemas, shared utilities
 │   └── types/                      # Shared TypeScript types
-└── scripts/                        # Database init SQL
+├── scripts/                        # Seed scripts, scraper automation
+│   ├── run-refuge-counts.ps1       # Weekly scraper (Windows Task Scheduler)
+│   └── logs/                       # Scraper run logs (auto-pruned 30d)
+└── .github/workflows/ci.yml        # CI: typecheck + build on every PR
 ```
 
 ---
@@ -152,7 +155,7 @@ Run `scripts/init-supabase.sql` in the Supabase SQL Editor.
 ```bash
 pnpm dev          # Start API + frontend in parallel
 pnpm dev:web      # Frontend only — http://localhost:3000
-pnpm dev:api      # API only    — http://localhost:4000
+pnpm dev:api      # API only    — http://localhost:4001
 ```
 
 ### Scrapers
@@ -195,7 +198,7 @@ python -m huntstack_scrapers.scrapers.run refuge_counts --dry-run
 | `GET /api/regulations` | State regulations with filters |
 | `GET /api/species` | Species catalog |
 
-Swagger docs at `http://localhost:4000/docs` when running locally.
+Swagger docs at `http://localhost:4001/docs` when running locally.
 
 ---
 
@@ -208,9 +211,9 @@ SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_KEY=
 TOGETHER_API_KEY=
 EBIRD_API_KEY=
-VITE_API_URL=http://localhost:4000
+VITE_API_URL=http://localhost:4001
 VITE_MAPTILER_KEY=...
-PORT=4000
+PORT=4001
 CORS_ORIGIN=http://localhost:3000
 ```
 
@@ -236,13 +239,16 @@ V1 targets waterfowl hunters in the Central and Mississippi Flyways.
 - [x] AI Chat — RAG over structured data + document embeddings
 - [x] Regulation & License Intelligence — TX, NM, AR, LA, KS, OK
 - [x] Geocoding API — zip lookup, city search, reverse geocode (Nominatim)
+- [x] State comparison tool — cross-state season/regulation comparison
 - [x] Dark / light mode
+- [x] CI pipeline — GitHub Actions typecheck + build on every PR
+- [x] Automated weekly scraper — Windows Task Scheduler, every Monday 6am
 
 ### Planned
 
 - [ ] Push notifications ("Snow geese numbers jumped at Loess Bluffs")
 - [ ] User accounts + saved locations
-- [ ] Outfitter directory
+- [ ] Outfitter directory expansion (14 TX outfitters live; other states pending)
 - [ ] More state scraper coverage (KS, NM live sources)
 - [ ] Offline PWA support
 

@@ -66,7 +66,9 @@
       "WebFetch(domain:migrationtracker.org)",
       "WebFetch(domain:www.wildlife.state.nm.us)",
       "Bash(git -C /c/Users/natha/Desktop/repos/huntstack status)",
-      "Bash(git -C /c/Users/natha/Desktop/repos/huntstack log --oneline -5)"
+      "Bash(git -C /c/Users/natha/Desktop/repos/huntstack log --oneline -5)",
+      "Bash(git -C /c/Users/natha/Desktop/repos/huntstack log --oneline -10)",
+      "Read(//mnt/c/Users/natha/Desktop/repos/**)"
     ]
   },
   "hooks": {

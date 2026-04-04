@@ -54,312 +54,297 @@ If HuntStack replaces that fragmented workflow, we win.
 
 ## 3 Killer Features
 
-These are the differentiators that make HuntStack unique:
-
-### Killer Feature #1: "Where should I hunt this weekend?"
+### Killer Feature #1: "Where should I hunt this weekend?" — ✅ LIVE
 
 Example query: *"Snow geese within 3 hours of Amarillo"*
 
 Output includes:
-- Top regions ranked by opportunity
-- Migration activity (based on counts)
+- Top regions ranked by opportunity (multi-factor scoring: bird activity, weather, push factors, open seasons, migration status)
+- Migration activity (based on refuge counts)
 - Recent refuge reports
 - Weather alignment
-- Public land options
 - Active seasons
 - License requirements
 
-**This is the holy grail. No app does this.**
+**Implemented via `/api/hunt/recommendations`**
 
-### Killer Feature #2: Migration Intelligence Dashboard
+### Killer Feature #2: Migration Intelligence Dashboard — ✅ LIVE
 
-For waterfowl, show:
-- Refuge counts (weekly)
-- Historical trends
-- Weather fronts vs movement correlation
-- Flyway progression
-- "Birds arriving / leaving" signals
+For waterfowl:
+- Refuge counts (weekly surveys from 6 live sources)
+- Historical MWI trends (annual surveys)
+- Push factor scoring (cold fronts, wind, temperature drop)
+- Flyway progression (N→S time series)
+- eBird community observation integration
+- LLM-generated weekly intelligence narrative
 
-**If this works, waterfowl hunters will check it weekly. This is the category-defining feature.**
+**Implemented via `/api/migration/*` and `/api/refuges/*`**
 
-### Killer Feature #3: Regulation + License Intelligence (LLM)
+### Killer Feature #3: Regulation + License Intelligence (LLM) — ✅ LIVE
 
 Instead of PDFs, users ask: *"What do I need to hunt NM conservation order?"*
 
-Response includes:
-- Federal stamp requirements
-- State license requirements
-- HIP registration
-- Electronic calls allowed?
-- Shooting hours
-- Plug requirements
+Response includes structured data on seasons, licenses, bag limits, shooting hours, stamp requirements — powered by RAG over scraped regulation documents.
 
-**This saves real frustration.**
+**Implemented via `/api/chat` (RAG) and `/api/regulations/*`**
 
 ---
 
-## User Types
+## Current Build Status (as of April 2026)
 
-### 1. Hunters (Primary Consumer)
-Individual hunters seeking comprehensive planning and research tools.
+### ✅ Complete — V1 Core
 
-**Needs:**
-- Find hunting locations by species, state, and season
-- Access current regulations (federal and state)
-- Discover and compare outfitters
-- View migratory bird flyway data and tracking information
-- Plan hunts with maps, weather, and season data
-- Obtain license requirements and application deadlines
-- Query all aggregated data via natural language (LLM)
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Refuge count ingestion | Complete | 800+ rows, 6 live sources (OK, AR, MO, LA, TX) |
+| Migration dashboard | Complete | Flyway progression, push factors, weekly LLM report |
+| eBird integration | Complete | Regional activity with 14-day trend comparison |
+| RAG chat | Complete | Semantic search + LLM via Together.ai |
+| Regulations/seasons/licenses | Complete | TX fully populated; NM, AR, LA, KS, OK seeded |
+| Hunt recommendations | Complete | Multi-factor scored, geolocation-aware |
+| Weather integration | Complete | NOAA forecasts, alerts, hunting conditions |
+| Outfitter directory | Complete | 14 verified TX outfitters |
+| State comparison tool | Complete | Cross-state season/regulation comparison |
+| Full-text + semantic search | Complete | Both keyword and vector search |
+| CI pipeline | Complete | GitHub Actions: typecheck + build on every PR |
+| Weekly scraper automation | Complete | Windows Task Scheduler, every Monday 6am |
 
-### 2. Outfitters (Business/Provider)
-Professional hunting guides and outfitting services seeking visibility and regulatory compliance.
+### 🔄 In Progress / Next
 
-**Needs:**
-- List their services by location and hunt types offered
-- Access latest regulatory updates affecting their operations
-- Monitor license and permit requirement changes
-- Receive alerts on federal/state regulation changes
-- Manage their business profile and service offerings
-- Connect with potential clients (hunters)
+| Feature | Status | Notes |
+|---------|--------|-------|
+| NM refuge data | In progress | Central flyway refuges added |
+| Additional state regulations | Ongoing | Priority: KS, OK deeper population |
+| MapPage | Stub | MapLibre GL set up, placeholder only |
+| Test suite | Not started | `pnpm test` wired, no test files yet |
+| Background job queue | Deferred | BullMQ + Redis declared but unwired; not needed at current scale |
 
----
+### ❌ Explicitly Out of Scope (V1)
 
-## Core Feature Domains
-
-### A. Migratory Bird Hunting
-- **Flyway Data**: Pacific, Central, Mississippi, Atlantic flyway tracking
-- **Species Information**: Waterfowl, doves, woodcock, rails, snipe, etc.
-- **Migration Tracking**: Real-time and historical migration pattern data
-- **Federal Frameworks**: USFWS migratory bird hunting frameworks
-- **State Seasons**: State-specific season dates, bag limits, shooting hours
-- **Harvest Data**: Historical harvest statistics by species and region
-
-### B. Big Game Hunting
-- **Species Coverage**: Deer (whitetail, mule), elk, moose, bear, pronghorn, wild boar, mountain lion, bighorn sheep, etc.
-- **Unit/Zone Maps**: State game management units and hunting zones
-- **Draw/Tag Systems**: Application deadlines, point systems, draw odds
-- **Population Data**: Herd counts, success rates by unit
-- **Trophy Data**: Record books, quality metrics by area
-
-### C. Regulations & Licensing
-- **Federal Regulations**: Migratory bird frameworks, endangered species, federal lands rules
-- **State Regulations**: All 50 states' hunting regulations
-- **License Requirements**: Resident/non-resident, species-specific licenses
-- **Stamps & Permits**: Federal duck stamp, state stamps, special permits
-- **Season Dates**: Comprehensive season calendar with alerts
-- **Regulation Change Tracking**: Automated monitoring and alerts for updates
-
-### D. Location & Mapping
-- **Public Lands**: National forests, BLM, wildlife refuges, state WMAs
-- **Access Points**: Trailheads, boat ramps, parking areas
-- **Private Land Programs**: Walk-in hunting areas, WIHA, iWIHA equivalents
-- **Terrain Data**: Topographic overlays, habitat types
-- **Weather Integration**: Forecasts, historical weather patterns
-- **GPS Integration**: Waypoints, tracks, hunt planning tools
-
-### E. Outfitter Directory
-- **Business Profiles**: Contact info, services, pricing ranges
-- **Hunt Types Offered**: Species, methods (guided, semi-guided, DIY support)
-- **Location Coverage**: States/regions served
-- **Availability Calendar**: Booking windows, season availability
-- **Reviews & Ratings**: Hunter feedback system
-- **Verification Status**: Licensed/insured verification badges
-
-### F. LLM Query Interface
-- **Natural Language Search**: "Where can I hunt elk in Colorado in October?"
-- **Data Synthesis**: Combine regulations, locations, and seasons into actionable answers
-- **Personalized Recommendations**: Based on user preferences and history
-- **Regulation Interpretation**: Plain-language explanations of complex rules
-- **Trip Planning Assistance**: Multi-factor hunt planning support
-
----
-
-## Data Sources (Open Source / Public)
-
-### Federal Sources
-- **USFWS** (U.S. Fish & Wildlife Service): Migratory bird frameworks, federal regulations
-- **USGS Bird Banding Laboratory**: Bird tracking and banding data
-- **BLM** (Bureau of Land Management): Public land boundaries and access
-- **USFS** (U.S. Forest Service): National forest maps and regulations
-- **Data.gov**: Federal hunting and wildlife datasets
-
-### State Sources
-- **State Fish & Game/Wildlife Agencies**: All 50 states
-  - Regulations PDFs/APIs
-  - Season dates
-  - License systems
-  - Harvest reports
-  - Game management unit maps
-
-### Third-Party Open Data
-- **eBird** (Cornell Lab): Bird observation and migration data
-- **iNaturalist**: Species observation data
-- **OpenStreetMap**: Base mapping data
-- **NOAA**: Weather and climate data
-- **Movebank**: Animal tracking data (where available)
-
----
-
-## Technical Requirements
-
-### Data Architecture
-- Normalized database schema for regulations, species, locations, outfitters
-- Versioned regulation storage (track changes over time)
-- Geospatial data support (PostGIS or equivalent)
-- Full-text search capability
-- Vector embeddings for LLM-powered semantic search
-
-### API Design
-- RESTful API for core data access
-- GraphQL consideration for complex queries
-- Real-time updates via WebSocket for alerts
-- Rate limiting and authentication
-
-### LLM Integration
-- RAG (Retrieval-Augmented Generation) architecture
-- Document chunking and embedding pipeline
-- Context-aware query processing
-- Citation/source attribution in responses
-- Guardrails for accuracy and safety
-
-### Frontend Requirements
-- Responsive web application (mobile-first)
-- Interactive mapping interface
-- Search and filter capabilities
-- User dashboards (Hunter vs Outfitter views)
-- Offline capability for field use (PWA)
-
-### Data Freshness
-- Automated scraping/API polling for regulation updates
-- Change detection and alerting system
-- Data provenance tracking (source, date, version)
-- Manual review workflow for critical updates
-
----
-
-## Development Guidelines
-
-### Code Standards
-- TypeScript for type safety (frontend and backend where applicable)
-- Comprehensive error handling
-- Logging and observability
-- Unit and integration testing
-- API documentation (OpenAPI/Swagger)
-
-### Security Considerations
-- Authentication for user accounts
-- Authorization (Hunter vs Outfitter permissions)
-- Data validation and sanitization
-- Rate limiting and abuse prevention
-- PII protection for user data
-
-### Performance Targets
-- Sub-second search results
-- Map rendering < 2 seconds
-- LLM responses < 5 seconds
-- Mobile performance optimization
-- CDN for static assets
-
-### Accessibility
-- WCAG 2.1 AA compliance
-- Screen reader compatibility
-- Keyboard navigation
-- Color contrast requirements
-
----
-
-## Product Roadmap
-
-### V1 - Planning Intelligence for Waterfowl (Build Now)
-
-**Goal**: Replace the fragmented workflow of Google + state websites + PDFs + Facebook groups + refuge reports
-
-#### Core Data
-
-- State seasons (structured, not PDF links)
-- Conservation orders
-- License requirements
-- Refuge bird counts (CSV ingestion)
-- Basic public hunting areas
-- Weather API integration
-
-#### Core Features
-
-- LLM search over structured data
-- "Where to hunt" by species + location
-- Migration dashboard (simple charts)
-- State comparison tool
-
-#### Explicitly NOT in V1
-
-- Offline maps
+- Offline maps / GPS tracking
 - Property boundaries
-- GPS tracking
-
-**Stay out of OnX territory.**
-
-#### Priority States (Waterfowl Focus)
-
-- Texas, New Mexico (conservation order, Central Flyway)
-- Arkansas, Louisiana (Mississippi Flyway)
-- Kansas, Oklahoma (Central Flyway)
+- Big game (defer until waterfowl is solid)
 
 ---
 
-### V2 - Expansion (When V1 Gets Traction)
+## Tech Stack
 
-- Public land layers (from state GIS)
-- Distance filters ("within 3 hours of...")
-- Outfitter directory
-- Trip planning (save locations, notes)
-- Notifications: "Snow geese numbers jumped in Clovis"
+### Backend — `apps/api/`
+- **Runtime**: Node.js 22, TypeScript 5.5
+- **Framework**: Fastify 4 with plugins: cors, helmet, jwt, rate-limit, swagger
+- **Database**: PostgreSQL via Supabase, Drizzle ORM 0.32
+- **LLM / Embeddings**: Together.ai SDK 0.9 (`Qwen` for chat, `multilingual-e5-large` for embeddings)
+- **External APIs**: eBird (Cornell Lab), NOAA Weather
+- **Validation**: Zod 3.23
+
+### Frontend — `apps/web/`
+- **Framework**: React 18 + Vite 5, TypeScript 5.5
+- **Routing**: React Router 6
+- **State**: Zustand 4 + TanStack Query 5
+- **Maps**: MapLibre GL 4 + react-map-gl 7 (MapTiler basemap)
+- **Charts**: Recharts 3, react-simple-maps 3 (US map)
+- **Styling**: Tailwind CSS 3
+- **Auth**: Supabase JS 2
+
+### Data Pipeline — `apps/scrapers-python/`
+- **Framework**: Scrapling 0.4 (replaced Scrapy)
+- **PDF extraction**: pdfplumber
+- **LLM extraction**: Together.ai `meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo`
+- **Entry point**: `python -m huntstack_scrapers.scrapers.run {refuge_counts|state_regulations}`
+
+### Infrastructure
+- **Database**: Supabase (PostgreSQL + pgvector for embeddings)
+- **Monorepo**: pnpm workspaces
+- **CI**: GitHub Actions (typecheck + build on push/PR to main)
+- **Scraper schedule**: Windows Task Scheduler, every Monday 6am
 
 ---
 
-### V3 - Moat Phase (Become Infrastructure)
-
-This is where HuntStack becomes hard to compete with:
-
-- Predictive migration models
-- Weather-movement correlation analysis
-- User harvest reports (crowdsourced)
-- Data export to OnX / HuntStand
-- API for outfitters
-
----
-
-### Big Game Expansion (Future)
-
-After waterfowl is solid:
-
-- Colorado, Montana, Wyoming (elk, deer)
-- Draw/tag systems and odds
-- Unit-by-unit success rates
-- Wisconsin, Michigan (whitetail)
-
----
-
-## File Structure Convention
+## Project Structure
 
 ```
-/src
-  /api          # Backend API routes and controllers
-  /services     # Business logic and data processing
-  /models       # Database models and schemas
-  /lib          # Shared utilities and helpers
-  /components   # Frontend UI components
-  /pages        # Frontend page components/routes
-  /hooks        # Custom React hooks
-  /stores       # State management
-  /types        # TypeScript type definitions
-  /data         # Static data, seed files, schemas
-    /scrapers   # Data ingestion scripts
-    /embeddings # Vector embedding pipelines
-/tests          # Test files mirroring src structure
-/docs           # Additional documentation
-/scripts        # Build, deploy, maintenance scripts
+huntstack/
+├── apps/
+│   ├── web/                      # React + Vite frontend
+│   │   └── src/
+│   │       ├── components/       # Reusable UI components
+│   │       ├── pages/            # Route pages (10 pages)
+│   │       ├── hooks/            # Custom React hooks
+│   │       ├── stores/           # Zustand state stores
+│   │       └── lib/              # Utilities (api.ts, supabase.ts)
+│   ├── api/                      # Fastify backend
+│   │   └── src/
+│   │       ├── routes/           # 11 route modules
+│   │       ├── services/         # Business logic
+│   │       └── lib/              # Utilities (weather, geo, etc.)
+│   └── scrapers-python/          # Python scrapers (Scrapling, pdfplumber)
+│       └── huntstack_scrapers/
+│           ├── scrapers/         # run.py, refuge_counts.py, state_regulations.py
+│           ├── parsers/          # Per-source parsers
+│           ├── extractors/       # llm.py, pdf.py
+│           ├── sources.py        # WATERFOWL_SOURCES registry
+│           ├── pipelines.py      # DB + embedding pipelines
+│           └── species_mapping.py
+├── packages/
+│   ├── db/                       # Drizzle schema & migrations (12 tables)
+│   ├── shared/                   # Shared utilities & Zod validation
+│   └── types/                    # Shared TypeScript types
+├── scripts/                      # Seed scripts, data validation utilities
+│   ├── run-refuge-counts.ps1     # Weekly scraper (Task Scheduler)
+│   └── logs/                     # Scraper run logs (auto-pruned 30d)
+└── .github/workflows/ci.yml      # CI: typecheck + build
 ```
+
+---
+
+## API Routes Reference
+
+| Module | Endpoints | Description |
+|--------|-----------|-------------|
+| `health` | `GET /health`, `GET /health/ready` | Status + DB readiness |
+| `search` | `GET /`, `POST /semantic` | Full-text and vector search |
+| `species` | `GET /`, `GET /:id`, `GET /:id/regulations`, `GET /:id/migration` | Species data + seasons |
+| `regulations` | `GET /states`, `GET /:state`, `GET /:state/seasons`, `GET /:state/licenses` | Structured regulations |
+| `refuges` | `GET /`, `GET /:id/counts`, `GET /migration/dashboard` | Refuge counts + migration data |
+| `migration` | `GET /push-factors`, `GET /weekly-summary`, `GET /flyway-progression`, `GET /regional-activity` | Migration intelligence |
+| `hunt` | `GET /recommendations` | Multi-factor scored hunt recommendations |
+| `weather` | `GET /forecast/:refugeId`, `GET /alerts`, `GET /hunting-conditions/:refugeId` | NOAA weather |
+| `geo` | `GET /zip/:zip`, `GET /search`, `GET /reverse` | Geocoding via OpenStreetMap |
+| `outfitters` | `GET /`, `GET /:id` | Outfitter directory |
+| `chat` | `POST /` | RAG-powered AI chat |
+
+---
+
+## Database Schema (12 Tables)
+
+| Table | Purpose |
+|-------|---------|
+| `profiles` | User accounts (Supabase auth) |
+| `species` | Huntable species with flyway/migration data |
+| `states` | State agency info and regulation URLs |
+| `regulations` | Full regulation text, versioned by year |
+| `seasons` | Season dates, bag limits, shooting hours |
+| `licenses` | License types, pricing, requirements |
+| `outfitters` | Business profiles, hunt types, pricing |
+| `reviews` | Hunter reviews of outfitters |
+| `locations` | Public hunting areas with geospatial data |
+| `refugeCounts` | Weekly + annual bird count surveys |
+| `documents` | Source documents for RAG pipeline |
+| `documentChunks` | Chunked text with pgvector embeddings |
+
+> **IMPORTANT**: Do NOT use `drizzle-kit push` — it will attempt to DROP the `embedding` column (pgvector) from `documentChunks`. Use raw SQL for schema changes.
+
+---
+
+## Frontend Pages (10 Pages)
+
+| Page | Route | Description |
+|------|-------|-------------|
+| `HomePage` | `/` | Hero, stats dashboard, feature overview |
+| `MigrationPage` | `/migration` | Interactive dashboard: map, counts, flyway charts, push factors |
+| `MigrationReportPage` | `/migration/report` | LLM weekly intelligence narrative |
+| `ChatPage` | `/chat` | Multi-turn RAG AI chat with localStorage history |
+| `WhereToHuntPage` | `/where-to-hunt` | Scored hunt recommendations with geolocation |
+| `RegulationsPage` | `/regulations` | US map + state selector, seasons/licenses by species |
+| `OutfittersPage` | `/outfitters` | Search/filter by state, species, price |
+| `SearchPage` | `/search` | Full-text search across all data |
+| `MapPage` | `/map` | MapLibre GL map (placeholder) |
+| `NotFoundPage` | `*` | 404 |
+
+---
+
+## Scraper Sources (WATERFOWL_SOURCES)
+
+| Source | State | Type | Frequency |
+|--------|-------|------|-----------|
+| Washita NWR | OK | FWS HTML | Weekly |
+| Salt Plains NWR | OK | FWS HTML | Weekly |
+| Arkansas AGFC Aerial Survey | AR | PDF index (Google Drive) | Biweekly |
+| Loess Bluffs NWR | MO | FWS PDF list | Weekly |
+| Clarence Cannon NWR | MO | FWS HTML (wide format) | Weekly |
+| Louisiana LDWF Aerial Survey | LA | PDF list | Monthly |
+| Texas TPWD Midwinter Survey | TX | Excel files | Annual |
+
+Run all: `python -m huntstack_scrapers.scrapers.run refuge_counts`
+Run one: `python -m huntstack_scrapers.scrapers.run refuge_counts --source "Washita National Wildlife Refuge"`
+Dry run: `python -m huntstack_scrapers.scrapers.run refuge_counts --dry-run`
+
+> **NOTE**: `loess_bluffs_pdf.py` URL generator is hardcoded to Oct 2025–Apr 2026 season. Update each season.
+
+---
+
+## Commands Reference
+
+```bash
+# Install dependencies (run from root)
+pnpm install
+
+# Development
+pnpm dev              # Start all dev servers in parallel
+pnpm dev:web          # Frontend only (http://localhost:3000)
+pnpm dev:api          # Backend only (http://localhost:4001)
+
+# Build
+pnpm build            # Build all packages
+pnpm build:web        # Build frontend only
+pnpm build:api        # Build backend only
+
+# Database — use raw SQL for schema changes, NOT drizzle-kit push
+pnpm db:generate      # Generate Drizzle migration files
+pnpm db:migrate       # Run migrations
+pnpm db:studio        # Open Drizzle Studio GUI
+
+# Scrapers (run from apps/scrapers-python/)
+python -m huntstack_scrapers.scrapers.run refuge_counts
+python -m huntstack_scrapers.scrapers.run state_regulations --state TX
+python -m huntstack_scrapers.scrapers.run refuge_counts --dry-run
+
+# Seed scripts (run from repo root)
+pnpm tsx scripts/seed.ts
+pnpm tsx scripts/seed-waterfowl.ts
+pnpm tsx scripts/seed-refuges.ts
+```
+
+---
+
+## Environment Variables
+
+```
+DATABASE_URL              # Supabase PostgreSQL pooler connection
+SUPABASE_URL              # Supabase project URL
+SUPABASE_ANON_KEY         # Supabase anon key
+SUPABASE_SERVICE_KEY      # Supabase service role key
+VITE_SUPABASE_URL         # Frontend: Supabase URL
+VITE_SUPABASE_ANON_KEY    # Frontend: Supabase anon key
+VITE_API_URL              # Frontend: API base URL
+VITE_MAPTILER_KEY         # MapTiler API key for basemap
+REDIS_URL                 # Redis (declared, not active — localhost:6379)
+TOGETHER_API_KEY          # Together.ai (LLM + embeddings)
+EBIRD_API_KEY             # eBird Cornell Lab API
+PORT                      # API port (default: 4001)
+HOST                      # API host (default: 0.0.0.0)
+NODE_ENV                  # development | production
+LOG_LEVEL                 # info
+CORS_ORIGIN               # http://localhost:3000
+```
+
+---
+
+## Development Automation
+
+### Claude Code Hooks (`.claude/settings.json`)
+- **After any Edit/Write**: runs `tsc --noEmit` on the API package (async, ~3s)
+- **After editing scrapers-python files**: runs Python `ast.parse()` syntax check (instant)
+
+### CI (`.github/workflows/ci.yml`)
+- Runs on every push and PR to `main`
+- **typecheck job**: `tsc --noEmit` on both API and web (hard failure)
+- **build job**: full production build of both packages
+
+### Weekly Scraper (`scripts/run-refuge-counts.ps1`)
+- Windows Task Scheduler, every Monday at 6:00 AM
+- Logs to `scripts/logs/refuge-counts-YYYY-MM-DD.log`
+- Auto-prunes logs older than 30 days
 
 ---
 
@@ -372,6 +357,50 @@ After waterfowl is solid:
 | Core differentiator | Pre-hunt intelligence | "HuntStack tells you WHERE to hunt. OnX helps you get there." |
 | V1 target users | Waterfowl hunters | Plan around refuge counts, weather fronts, migration timing |
 | GPS/offline features | Defer to later phases | Not core to value proposition, competitors own this space |
+| Scraper framework | Scrapling (replaced Scrapy) | Scrapy deleted; Scrapling is simpler and maintained |
+| LLM provider | Together.ai | Embeddings + chat in one API; cost-effective at V1 scale |
+| Schema changes | Raw SQL only | drizzle-kit push drops pgvector embedding column |
+| Job queue (BullMQ) | Deferred | Not needed at current scale; Redis not running locally |
+| Scraper scheduling | Windows Task Scheduler | Local cron — needs .env credentials, can't run in cloud |
+
+---
+
+## Product Roadmap
+
+### V1 - Planning Intelligence for Waterfowl — 🟢 Substantially Complete
+
+Core data pipeline, migration intelligence, RAG chat, hunt recommendations, regulations, and weather are all live. Priority states (TX, NM, AR, LA, KS, OK) are seeded.
+
+**Remaining V1 work:**
+- Deepen KS/OK regulation data
+- Add NM refuge count sources
+- Build out test suite
+- Mobile polish
+
+### V2 - Expansion (When V1 Gets Traction)
+
+- Public land layers (from state GIS)
+- Distance filters ("within 3 hours of...")
+- Outfitter directory expansion (beyond TX)
+- Trip planning (save locations, notes)
+- Push notifications: "Snow geese numbers jumped in Clovis"
+- BullMQ background job queue (on-demand data refresh)
+
+### V3 - Moat Phase (Become Infrastructure)
+
+- Predictive migration models
+- Weather-movement correlation analysis
+- User harvest reports (crowdsourced)
+- Data export to OnX / HuntStand
+- API for outfitters
+
+### Big Game Expansion (Future)
+
+After waterfowl is solid:
+- Colorado, Montana, Wyoming (elk, deer)
+- Draw/tag systems and odds
+- Unit-by-unit success rates
+- Wisconsin, Michigan (whitetail)
 
 ---
 
@@ -381,106 +410,32 @@ After waterfowl is solid:
 2. **Data Update Frequency**: How often to check for regulation changes?
 3. **User-Generated Content**: Allow hunt reports, location tips?
 4. **Liability Considerations**: Disclaimers for regulation accuracy?
-5. **Offline Data**: What data to cache for offline field use?
-
----
-
-## Commands Reference
-
-```bash
-# Install dependencies (run from root)
-pnpm install
-
-# Development - run all services
-pnpm dev              # Start all dev servers in parallel
-pnpm dev:web          # Frontend only (http://localhost:3000)
-pnpm dev:api          # Backend only (http://localhost:4000)
-
-# Build
-pnpm build            # Build all packages
-pnpm build:web        # Build frontend only
-pnpm build:api        # Build backend only
-
-# Database (requires DATABASE_URL in .env)
-pnpm db:generate      # Generate Drizzle migrations
-pnpm db:push          # Push schema to database
-pnpm db:studio        # Open Drizzle Studio GUI
-
-# Scrapers
-pnpm scrape           # Start Node.js scraper worker
-cd apps/scrapers-python && scrapy crawl colorado_regulations  # Run specific spider
-
-# Testing & Linting
-pnpm lint             # Lint all packages
-pnpm test             # Run all tests
-```
-
----
-
-## Project Structure
-
-```
-huntstack/
-├── apps/
-│   ├── web/                 # React + Vite frontend
-│   │   └── src/
-│   │       ├── components/  # Reusable UI components
-│   │       ├── pages/       # Route pages
-│   │       ├── hooks/       # Custom React hooks
-│   │       ├── stores/      # Zustand state stores
-│   │       └── lib/         # Utilities (api, supabase)
-│   ├── api/                 # Fastify backend
-│   │   └── src/
-│   │       ├── routes/      # API endpoints
-│   │       ├── services/    # Business logic
-│   │       └── lib/         # Utilities
-│   ├── scrapers-node/       # Node.js scrapers (Cheerio, Playwright)
-│   └── scrapers-python/     # Python scrapers (Scrapy, pdfplumber)
-├── packages/
-│   ├── db/                  # Drizzle schema & migrations
-│   ├── shared/              # Shared utilities & validation
-│   └── types/               # Shared TypeScript types
-└── scripts/                 # Database init, deployment scripts
-```
-
----
-
-## Environment Setup
-
-1. Copy `.env.example` to `.env`
-2. Create Supabase project and add credentials
-3. Run `scripts/init-supabase.sql` in Supabase SQL Editor
-4. Get MapTiler API key for maps
-5. Add Anthropic & OpenAI API keys
+5. **Test Strategy**: What to prioritize first — API integration tests or scraper unit tests?
 
 ---
 
 ## Notes for Claude Code
 
-When working on this project:
+### Critical Constraints
+1. **Never use `drizzle-kit push`** — drops the `embedding` pgvector column. Use raw SQL.
+2. **Scrapy is deleted** — use Scrapling scrapers only (`apps/scrapers-python/`)
+3. **No `Co-Authored-By` in commits** — user preference
+4. **`gh` CLI not installed** — use GitHub API via curl if needed, or prompt user
 
 ### Strategic Priorities
-
-1. **Waterfowl first** - V1 focuses on waterfowl/migratory bird hunters
-2. **Pre-hunt intelligence** - We help hunters decide WHERE to hunt, not navigate in the field
-3. **Don't build maps** - Avoid GPS, offline maps, property boundaries (OnX territory)
-4. **Replace fragmented workflow** - Target the Google + PDFs + Facebook groups research process
+1. **Waterfowl first** — V1 focuses on waterfowl/migratory bird hunters
+2. **Pre-hunt intelligence** — help hunters decide WHERE to hunt, not navigate in the field
+3. **Don't build maps** — avoid GPS, offline maps, property boundaries (OnX territory)
+4. **Replace fragmented workflow** — target the Google + PDFs + Facebook groups research process
 
 ### Development Guidelines
-
-1. **Prioritize data accuracy** - Hunting regulations have legal implications
-2. **Source attribution** - Always track where data comes from
-3. **Incremental development** - Build state-by-state, feature-by-feature
-4. **Test with real scenarios** - Use actual hunting planning use cases (e.g., "snow geese near Amarillo")
-5. **Mobile-first** - Hunters use phones for research
-6. **Plain language** - Regulations are complex; simplify for users
-7. **Type safety** - Use shared types from `@huntstack/types`
-8. **Validation** - Use Zod schemas from `@huntstack/shared`
-
-### V1 Focus Areas
-
-- Structured regulation data (not PDF links)
-- Refuge bird count ingestion
-- Migration dashboard
-- LLM-powered "where should I hunt?" queries
-- State-by-state season comparison
+1. **Prioritize data accuracy** — hunting regulations have legal implications
+2. **Source attribution** — always track where data comes from
+3. **Incremental development** — build state-by-state, feature-by-feature
+4. **Test with real scenarios** — use actual hunting planning use cases (e.g., "snow geese near Amarillo")
+5. **Mobile-first** — hunters use phones for research
+6. **Plain language** — regulations are complex; simplify for users
+7. **Type safety** — use shared types from `@huntstack/types`
+8. **Validation** — use Zod schemas from `@huntstack/shared`
+9. **Windows environment** — use `powershell -Command "..."` for Python commands
+10. **Drizzle JSONB quirk** — metadata stored as double-encoded strings; use `name LIKE` or app-level filtering instead of `->>'key'` extraction
