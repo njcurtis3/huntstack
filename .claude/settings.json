@@ -27,14 +27,56 @@
       "WebFetch(domain:docs.together.xyz)",
       "WebFetch(domain:www.together.ai)",
       "Bash(python -c \":*)",
-      "Read(//c/Users/natha/AppData/Local/Temp/claude/c--Users-natha-Desktop-repos-huntstack/753713ae-072c-4baf-a4fe-fc421cf12498/tasks/**)",
       "Bash(reg query:*)",
       "Bash(netsh int:*)",
       "Read(//c/Users/natha/Desktop/repos/huntstack/apps/scrapers-python/**)",
       "Bash(tasklist /FI 'IMAGENAME eq python.exe')",
-      "Bash(tasklist /FI 'IMAGENAME eq curl.exe' 2)",
-      "Bash(/dev/null tasklist:*)",
-      "Bash(netstat -anb)"
+      "Bash(netstat -anb)",
+      "Skill(schedule)",
+      "Skill(schedule:*)",
+      "Bash(ls /c/Users/natha/Desktop/repos/huntstack/apps/scrapers-python/.env*)",
+      "Bash(ls /c/Users/natha/Desktop/repos/huntstack/apps/api/.eslint* /c/Users/natha/Desktop/repos/huntstack/apps/web/.eslint* /c/Users/natha/Desktop/repos/huntstack/apps/api/eslint* /c/Users/natha/Desktop/repos/huntstack/apps/web/eslint*)",
+      "Bash(apps/api/node_modules/.bin/tsc -p apps/api/tsconfig.json)",
+      "Bash(echo \"api exit: $?\")",
+      "Bash(apps/web/node_modules/.bin/tsc -b apps/web/tsconfig.json --noEmit)",
+      "Bash(echo \"web exit: $?\")",
+      "Bash(apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.app.json --noEmit)",
+      "Bash(echo \"web-app exit: $?\")",
+      "Bash(ls /c/Users/natha/Desktop/repos/huntstack/apps/web/tsconfig*.json)",
+      "Bash(apps/web/node_modules/.bin/tsc -p apps/web/tsconfig.json)",
+      "Bash(git -C /c/Users/natha/Desktop/repos/huntstack remote get-url origin)",
+      "Bash(apps/api/node_modules/.bin/tsc --noEmit -p apps/api/tsconfig.json)",
+      "Bash(git -C /c/Users/natha/Desktop/repos/huntstack diff --stat HEAD)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "apps/api/node_modules/.bin/tsc --noEmit -p apps/api/tsconfig.json 2>&1 | tail -15",
+            "shell": "bash",
+            "timeout": 30,
+            "statusMessage": "Type-checking API...",
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(python -c \"import sys,json; d=json.load(sys.stdin); print(d.get('tool_input',{}).get('file_path') or d.get('tool_response',{}).get('filePath',''))\"); if echo \"$FILE\" | grep -q 'scrapers-python'; then python -c \"import ast; ast.parse(open(r'$FILE').read()); print('[OK] Python syntax valid: ' + '$FILE'.split('/')[-1])\" 2>&1; fi",
+            "shell": "bash",
+            "timeout": 10,
+            "statusMessage": "Checking Python syntax...",
+            "async": true
+          }
+        ]
+      }
     ]
   }
 }

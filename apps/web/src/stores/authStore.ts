@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { getUser, getSession, onAuthStateChange, signIn, signOut, signUp } from '../lib/supabase'
+import { getUser, onAuthStateChange, signIn, signOut, signUp } from '../lib/supabase'
 
 interface User {
   id: string
@@ -24,7 +24,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       user: null,
       isLoading: true,
       isAuthenticated: false,
@@ -80,7 +80,7 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      register: async (email: string, password: string, userType = 'hunter') => {
+      register: async (email: string, password: string, _userType = 'hunter') => {
         set({ isLoading: true })
         try {
           const { error } = await signUp(email, password)

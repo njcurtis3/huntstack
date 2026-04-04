@@ -92,8 +92,7 @@ export function HomePage() {
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="grid grid-cols-2 md:grid-cols-4 divide-x"
-            style={{ divideColor: `rgb(var(--color-border-primary))` }}
-          >
+            >
             {stats.map((stat) => (
               <div key={stat.label} className="px-6 first:pl-0 last:pr-0 text-center">
                 <div className="text-2xl font-bold text-forest-500 dark:text-forest-400">{stat.value}</div>

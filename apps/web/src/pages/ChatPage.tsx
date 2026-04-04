@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, User, Loader2, Sparkles, ExternalLink, Search, MapPin, FileText, Bird, TreePine, RotateCcw } from 'lucide-react'
+import { Send, Bot, User, Sparkles, ExternalLink, Search, MapPin, FileText, Bird, TreePine, RotateCcw } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { api } from '../lib/api'

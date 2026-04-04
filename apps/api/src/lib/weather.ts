@@ -462,7 +462,7 @@ function computeHuntingRating(
 function generateHuntingNotes(
   current: ForecastPeriod,
   next12: ForecastPeriod[],
-  windMph: number,
+  _windMph: number,
   windCat: string,
 ): string[] {
   const notes: string[] = []

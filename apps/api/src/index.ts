@@ -84,7 +84,7 @@ await app.register(migrationRoutes, { prefix: '/api/migration' })
 await app.register(geoRoutes, { prefix: '/api/geo' })
 
 // Global error handler
-app.setErrorHandler((error, request, reply) => {
+app.setErrorHandler((error, _request, reply) => {
   app.log.error(error)
   
   const statusCode = error.statusCode || 500
