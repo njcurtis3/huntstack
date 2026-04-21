@@ -31,6 +31,7 @@ type StateInfo = {
   agencyUrl: string | null
   regulationsUrl: string | null
   licenseUrl: string | null
+  lastScraped: string | null
 }
 
 type Regulation = {
@@ -396,7 +397,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
         <span style={{ color: `rgb(var(--color-text-primary))` }}>{stateName}</span>
       </nav>
 
-      <div className="flex items-start justify-between mb-8">
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>
             {stateName} Hunting Regulations
@@ -408,6 +409,11 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
                   {stateInfo.agencyName} <ExternalLink className="w-3 h-3" />
                 </a>
               ) : stateInfo.agencyName}
+            </p>
+          )}
+          {stateInfo?.lastScraped && (
+            <p className="mt-1 text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+              Data last updated {new Date(stateInfo.lastScraped).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
             </p>
           )}
         </div>

@@ -183,28 +183,6 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
     }
   })
 
-  // Get conversation history
-  app.get('/history/:conversationId', {
-    schema: {
-      tags: ['chat'],
-      summary: 'Get conversation history',
-      params: {
-        type: 'object',
-        properties: {
-          conversationId: { type: 'string' },
-        },
-        required: ['conversationId'],
-      },
-    },
-  }, async (request) => {
-    const { conversationId } = request.params as { conversationId: string }
-
-    // TODO: Fetch from database/Redis
-    return {
-      conversationId,
-      messages: [],
-    }
-  })
 }
 
 // ─── Entity extraction ───────────────────────────────────────────────────────

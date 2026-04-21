@@ -1,4 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
+import { getDb } from '../lib/db.js'
+import { sql } from 'drizzle-orm'
 
 export const healthRoutes: FastifyPluginAsync = async (app) => {
   app.get('/health', {
@@ -37,14 +39,32 @@ export const healthRoutes: FastifyPluginAsync = async (app) => {
             redis: { type: 'string' },
           },
         },
+        503: {
+          type: 'object',
+          properties: {
+            status: { type: 'string' },
+            database: { type: 'string' },
+            redis: { type: 'string' },
+          },
+        },
       },
     },
-  }, async () => {
-    // TODO: Add actual database and redis checks
-    return {
-      status: 'ok',
-      database: 'ok', // Will check Supabase connection
-      redis: 'ok',    // Will check Redis connection
+  }, async (_request, reply) => {
+    let database = 'ok'
+
+    try {
+      const db = getDb()
+      await db.execute(sql`SELECT 1`)
+    } catch {
+      database = 'error'
     }
+
+    const status = database === 'ok' ? 'ok' : 'degraded'
+
+    if (status !== 'ok') {
+      return reply.status(503).send({ status, database, redis: 'disabled' })
+    }
+
+    return { status, database, redis: 'disabled' }
   })
 }

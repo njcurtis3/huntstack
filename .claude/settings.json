@@ -68,7 +68,10 @@
       "Bash(git -C /c/Users/natha/Desktop/repos/huntstack status)",
       "Bash(git -C /c/Users/natha/Desktop/repos/huntstack log --oneline -5)",
       "Bash(git -C /c/Users/natha/Desktop/repos/huntstack log --oneline -10)",
-      "Read(//mnt/c/Users/natha/Desktop/repos/**)"
+      "Read(//mnt/c/Users/natha/Desktop/repos/**)",
+      "Bash(grep -n \"sm:\\\\|md:\\\\|lg:\\\\|xl:\" /c/Users/natha/Desktop/repos/huntstack/apps/web/src/pages/*.tsx)",
+      "Bash(apps/api/node_modules/.bin/tsc --noEmit -p apps/api/tsconfig.json)",
+      "Bash(apps/web/node_modules/.bin/tsc --noEmit -p apps/web/tsconfig.json)"
     ]
   },
   "hooks": {

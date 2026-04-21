@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4001'
 
 interface FetchOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>

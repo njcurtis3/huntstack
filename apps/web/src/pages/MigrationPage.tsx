@@ -1826,7 +1826,7 @@ export function MigrationPage() {
       {/* Header */}
       <div className="bg-earth-900 dark:bg-[#0d1117] text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-start justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
               <div className="flex items-center gap-3 mb-3">
                 <Bird className="w-8 h-8" />
@@ -1838,7 +1838,7 @@ export function MigrationPage() {
                 spot migration trends, and plan your hunts around real bird activity.
               </p>
             </div>
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-2 sm:mt-1 flex-shrink-0">
               <button
                 onClick={() => {
                   const flywayPart = selectedFlyway ? ` in the ${selectedFlyway} flyway` : ''
