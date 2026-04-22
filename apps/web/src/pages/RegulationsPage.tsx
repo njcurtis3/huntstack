@@ -83,6 +83,119 @@ type CompareRow = {
   differs: boolean
 }
 
+// ─── Season grouping ─────────────────────────────────────────────────────────
+
+const SPECIAL_TYPES = new Set(['conservation-order', 'youth', 'special', 'special-youth', 'special youth', 'falconry', 'late', 'teal', 'free'])
+const SPECIAL_KEYWORDS = /youth|veteran|military|conservation.?order|falconry|only|late.?season|special/i
+
+function classifySeason(season: Season): 'duck' | 'goose' | 'dove' | 'other' | 'special' {
+  const n = `${season.name} ${season.seasonType || ''}`.toLowerCase()
+  // Special seasons first — overrides everything
+  if (SPECIAL_TYPES.has((season.seasonType || '').toLowerCase()) || SPECIAL_KEYWORDS.test(season.name)) {
+    return 'special'
+  }
+  if (/duck|teal|merganser|mallard|pintail|redhead|canvasback|scaup|bufflehead|widgeon|wigeon|shoveler|gadwall|divers?|harlequin|wood.?duck|mottled|dusky/.test(n)) return 'duck'
+  if (/goose|geese|crane|specklebelly|whitefront|white.?front|brant|light.?geese|dark.?geese/.test(n)) return 'goose'
+  if (/dove|pigeon/.test(n)) return 'dove'
+  return 'other'
+}
+
+const GROUP_CONFIG: { key: 'duck' | 'goose' | 'dove' | 'other' | 'special'; label: string }[] = [
+  { key: 'duck',    label: 'Ducks' },
+  { key: 'goose',   label: 'Geese & Cranes' },
+  { key: 'dove',    label: 'Dove & Pigeon' },
+  { key: 'other',   label: 'Other Migratory' },
+  { key: 'special', label: 'Special Seasons' },
+]
+
+function SeasonTable({ seasons }: { seasons: Season[] }) {
+  const bagFmt = (bl: unknown) => {
+    const b = bl as { daily?: number; season?: number } | null
+    if (!b) return '-'
+    const parts = []
+    if (b.daily != null) parts.push(`${b.daily}/day`)
+    if (b.season != null) parts.push(`${b.season}/season`)
+    return parts.length ? parts.join(', ') : '-'
+  }
+  return (
+    <table className="w-full text-sm">
+      <thead style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+        <tr>
+          <th className="text-left p-3 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Season</th>
+          <th className="text-left p-3 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Dates</th>
+          <th className="text-left p-3 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Bag Limit</th>
+          <th className="text-left p-3 font-medium hidden md:table-cell" style={{ color: `rgb(var(--color-text-secondary))` }}>Restrictions</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+        {seasons.map(season => (
+          <tr key={season.id}>
+            <td className="p-3 font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>{season.name}</td>
+            <td className="p-3 whitespace-nowrap" style={{ color: `rgb(var(--color-text-secondary))` }}>
+              {new Date(season.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              {' – '}
+              {new Date(season.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </td>
+            <td className="p-3 whitespace-nowrap" style={{ color: `rgb(var(--color-text-secondary))` }}>{bagFmt(season.bagLimit)}</td>
+            <td className="p-3 hidden md:table-cell" style={{ color: `rgb(var(--color-text-secondary))` }}>{season.restrictions || '-'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function SeasonGroups({ seasons }: { seasons: Season[] }) {
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set())
+
+  const grouped = useMemo(() => {
+    const map: Record<string, Season[]> = { duck: [], goose: [], dove: [], other: [], special: [] }
+    for (const s of seasons) map[classifySeason(s)].push(s)
+    return map
+  }, [seasons])
+
+  const toggle = (key: string) => setOpenGroups(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return next
+  })
+
+  return (
+    <div className="space-y-3">
+      {GROUP_CONFIG.map(({ key, label }) => {
+        const group = grouped[key]
+        if (!group || group.length === 0) return null
+        const isOpen = openGroups.has(key)
+        const isSpecial = key === 'special'
+        return (
+          <div key={key} className="card overflow-hidden">
+            <button
+              onClick={() => toggle(key)}
+              className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-earth-50 dark:hover:bg-earth-800/50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <ChevronDown className={`w-4 h-4 transition-transform flex-shrink-0 ${isOpen ? '' : '-rotate-90'}`} style={{ color: `rgb(var(--color-text-tertiary))` }} />
+                <span className={`font-semibold ${isSpecial ? 'text-amber-600 dark:text-amber-400' : ''}`} style={isSpecial ? undefined : { color: `rgb(var(--color-text-primary))` }}>
+                  {label}
+                </span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                  {group.length}
+                </span>
+              </div>
+            </button>
+            {isOpen && (
+              <div style={{ borderTop: `1px solid rgb(var(--color-border-primary))` }}>
+                <SeasonTable seasons={group} />
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function getDuckSeason(seasons: Season[]): Season | null {
   return seasons.find(s => {
     const n = `${s.name} ${s.seasonType || ''}`.toLowerCase()
@@ -515,37 +628,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
       {selectedCategory === 'all' && seasonsList.length > 0 && (
         <div className="space-y-6 mb-8">
           <h2 className="text-xl font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>Seasons</h2>
-          <div className="card overflow-hidden">
-            <table className="w-full text-sm">
-              <thead style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}>
-                <tr>
-                  <th className="text-left p-4 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Season</th>
-                  <th className="text-left p-4 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Type</th>
-                  <th className="text-left p-4 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Dates</th>
-                  <th className="text-left p-4 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Bag Limit</th>
-                  <th className="text-left p-4 font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>Restrictions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
-                {seasonsList.map((season) => {
-                  const bagLimit = season.bagLimit as { daily?: number; season?: number } | null
-                  return (
-                    <tr key={season.id}>
-                      <td className="p-4 font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>{season.name}</td>
-                      <td className="p-4 capitalize" style={{ color: `rgb(var(--color-text-secondary))` }}>{season.seasonType || '-'}</td>
-                      <td className="p-4" style={{ color: `rgb(var(--color-text-secondary))` }}>
-                        {new Date(season.startDate).toLocaleDateString()} - {new Date(season.endDate).toLocaleDateString()}
-                      </td>
-                      <td className="p-4" style={{ color: `rgb(var(--color-text-secondary))` }}>
-                        {bagLimit ? `${bagLimit.daily ?? '-'}/day, ${bagLimit.season ?? '-'}/season` : '-'}
-                      </td>
-                      <td className="p-4" style={{ color: `rgb(var(--color-text-secondary))` }}>{season.restrictions || '-'}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <SeasonGroups seasons={seasonsList} />
         </div>
       )}
 

@@ -99,23 +99,25 @@ Response includes structured data on seasons, licenses, bag limits, shooting hou
 | Refuge count ingestion | Complete | 800+ rows, 6 live sources (OK, AR, MO, LA, TX) |
 | Migration dashboard | Complete | Flyway progression, push factors, weekly LLM report |
 | eBird integration | Complete | Regional activity with 14-day trend comparison |
-| RAG chat | Complete | Semantic search + LLM via Together.ai |
+| RAG chat | Complete | Semantic search + LLM via Together.ai (`Qwen2.5-7B-Instruct-Turbo`) |
 | Regulations/seasons/licenses | Complete | TX fully populated; NM, AR, LA, KS, OK seeded |
 | Hunt recommendations | Complete | Multi-factor scored, geolocation-aware |
 | Weather integration | Complete | NOAA forecasts, alerts, hunting conditions |
-| Outfitter directory | Complete | 14 verified TX outfitters |
+| Outfitter directory | Complete | 14 verified TX outfitters; other states gated with "coming soon" |
 | State comparison tool | Complete | Cross-state season/regulation comparison |
 | Full-text + semantic search | Complete | Both keyword and vector search |
 | CI pipeline | Complete | GitHub Actions: typecheck + build on every PR |
 | Weekly scraper automation | Complete | Windows Task Scheduler, every Monday 6am |
+| NM refuge data | Complete | Central flyway refuges added |
+| Beta readiness fixes | Complete | Error boundary, health check, .env.example, mobile headers, port fix |
 
 ### 🔄 In Progress / Next
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| NM refuge data | In progress | Central flyway refuges added |
-| Additional state regulations | Ongoing | Priority: KS, OK deeper population |
-| MapPage | Stub | MapLibre GL set up, placeholder only |
+| Regulation scraper URLs | Needs fix | TX, AR, NM, KS, OK source sites restructured — see `plans/Finish-Killer-Feature-3.md` |
+| Additional state regulations | Ongoing | Priority: KS, OK deeper population; scraper URLs must be fixed first |
+| MapPage | Gated | "Coming Soon" overlay with redirect to Where to Hunt; MapLibre wired but unused |
 | Test suite | Not started | `pnpm test` wired, no test files yet |
 | Background job queue | Deferred | BullMQ + Redis declared but unwired; not needed at current scale |
 

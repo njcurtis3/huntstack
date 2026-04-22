@@ -1583,10 +1583,16 @@ export function MigrationPage() {
     latestDate: string
     topAnomaly: AnomalyType
     dominantStatus: MigrationStatus
+    isStale: boolean
     items: EnrichedCount[]
   }
 
   const refugeGroups = useMemo((): RefugeGroup[] => {
+    const today = new Date()
+    const isOffSeason = today.getMonth() >= 2
+    const staleThresholdMs = isOffSeason
+      ? new Date(today.getFullYear(), 1, 1).getTime() // Feb 1 of current year
+      : Date.now() - 60 * 24 * 60 * 60 * 1000
     const map = new Map<string, EnrichedCount[]>()
     for (const item of sortedCounts) {
       const arr = map.get(item.refugeId) ?? []
@@ -1598,8 +1604,9 @@ export function MigrationPage() {
       const totalBirds = items.reduce((s, c) => s + (c.count || 0), 0)
       const latestDate = items.reduce((best, c) =>
         c.surveyDate > best ? c.surveyDate : best, items[0].surveyDate)
-      const topAnomaly: AnomalyType = items.some(c => c.anomaly === 'spike') ? 'spike'
-        : items.some(c => c.anomaly === 'drop') ? 'drop' : null
+      const isStale = new Date(latestDate).getTime() < staleThresholdMs
+      const topAnomaly: AnomalyType = !isStale && items.some(c => c.anomaly === 'spike') ? 'spike'
+        : !isStale && items.some(c => c.anomaly === 'drop') ? 'drop' : null
       // Dominant status: pick the status that appears most, preferring interesting ones
       const statusPriority: MigrationStatus[] = ['arriving', 'first_survey', 'building', 'peak', 'declining', 'departing', null]
       const dominantStatus = statusPriority.find(s => items.some(c => c.migrationStatus === s)) ?? null
@@ -1613,6 +1620,7 @@ export function MigrationPage() {
         latestDate,
         topAnomaly,
         dominantStatus,
+        isStale,
         items,
       }
     })
@@ -1623,11 +1631,13 @@ export function MigrationPage() {
     state: string
     stateName: string
     totalBirds: number
+    freshTotalBirds: number
     refugeCount: number
     speciesCount: number
     latestDate: string
     topAnomaly: AnomalyType
     dominantStatus: MigrationStatus
+    allStale: boolean
     refuges: RefugeGroup[]
   }
 
@@ -1640,24 +1650,29 @@ export function MigrationPage() {
     }
     return Array.from(map.entries()).map(([state, refuges]) => {
       const totalBirds = refuges.reduce((s, r) => s + r.totalBirds, 0)
+      const freshTotalBirds = refuges.filter(r => !r.isStale).reduce((s, r) => s + r.totalBirds, 0)
+      const allStale = refuges.every(r => r.isStale)
       const speciesCount = new Set(refuges.flatMap(r => r.items.map(i => i.species))).size
       const latestDate = refuges.reduce((best, r) => r.latestDate > best ? r.latestDate : best, refuges[0].latestDate)
-      const topAnomaly: AnomalyType = refuges.some(r => r.topAnomaly === 'spike') ? 'spike'
-        : refuges.some(r => r.topAnomaly === 'drop') ? 'drop' : null
+      const freshRefuges = refuges.filter(r => !r.isStale)
+      const topAnomaly: AnomalyType = freshRefuges.some(r => r.topAnomaly === 'spike') ? 'spike'
+        : freshRefuges.some(r => r.topAnomaly === 'drop') ? 'drop' : null
       const statusPriority: MigrationStatus[] = ['arriving', 'first_survey', 'building', 'peak', 'declining', 'departing', null]
-      const dominantStatus = statusPriority.find(s => refuges.some(r => r.dominantStatus === s)) ?? null
+      const dominantStatus = statusPriority.find(s => freshRefuges.some(r => r.dominantStatus === s)) ?? null
       return {
         state,
         stateName: STATE_CODE_TO_NAME[state] ?? state,
         totalBirds,
+        freshTotalBirds,
         refugeCount: refuges.length,
         speciesCount,
         latestDate,
         topAnomaly,
         dominantStatus,
+        allStale,
         refuges,
       }
-    }).sort((a, b) => b.totalBirds - a.totalBirds)
+    }).sort((a, b) => b.freshTotalBirds - a.freshTotalBirds)
   }, [refugeGroups])
 
   // Fetch weather for visible refuges (staggered)
@@ -1699,12 +1714,27 @@ export function MigrationPage() {
     return () => { cancelled = true }
   }, [filteredCounts])
 
-  // Summary stats
-  const totalBirds = filteredCounts.reduce((sum, c) => sum + (c.count || 0), 0)
-  const refugeCount = new Set(filteredCounts.map(c => c.refugeName)).size
+  // Staleness: data from the previous duck season (before ~Feb 1) is not actionable
+  // once we're in the off-season (March+). Use a season-aware cutoff:
+  //   - If today is March 1 or later, anything before Feb 1 of this year is previous-season
+  //   - Otherwise fall back to a 60-day rolling window
+  const now = new Date()
+  const staleThreshold = (() => {
+    const isOffSeason = now.getMonth() >= 2 // March (0-indexed) or later
+    if (isOffSeason) {
+      return new Date(now.getFullYear(), 1, 1) // Feb 1 of current year
+    }
+    return new Date(Date.now() - 60 * 24 * 60 * 60 * 1000) // 60-day rolling window in-season
+  })()
+  const freshCounts = filteredCounts.filter(c => new Date(c.surveyDate) >= staleThreshold)
+
+  // Summary stats — use only fresh counts so stale data doesn't inflate totals
+  const totalBirds = freshCounts.reduce((sum, c) => sum + (c.count || 0), 0)
+  const refugeCount = new Set(freshCounts.map(c => c.refugeName)).size
   const latestDate = filteredCounts.length > 0
     ? new Date(Math.max(...filteredCounts.map(c => new Date(c.surveyDate).getTime())))
     : null
+  const hasStaleData = filteredCounts.length > freshCounts.length
 
   // Historical chart data
   const chartData = useMemo(() => {
@@ -1761,9 +1791,10 @@ export function MigrationPage() {
     const scoredStates = stateGroups.map(sg => {
       const pf = pushFactors.find(p => p.stateCode === sg.state)
       const pushScore = pf?.pushScore ?? 0
-      const isArriving = sg.dominantStatus === 'arriving' || sg.dominantStatus === 'building'
-      const hasSpike = sg.topAnomaly === 'spike'
-      const score = sg.totalBirds + (pushScore * 5000) + (isArriving ? 10000 : 0) + (hasSpike ? 8000 : 0)
+      const isArriving = !sg.allStale && (sg.dominantStatus === 'arriving' || sg.dominantStatus === 'building')
+      const hasSpike = !sg.allStale && sg.topAnomaly === 'spike'
+      // Score on fresh birds only — stale data doesn't influence where to hunt this weekend
+      const score = sg.freshTotalBirds + (pushScore * 5000) + (isArriving ? 10000 : 0) + (hasSpike ? 8000 : 0)
       return { ...sg, pushScore, isArriving, hasSpike, compositeScore: score }
     }).sort((a, b) => b.compositeScore - a.compositeScore)
 
@@ -1774,29 +1805,36 @@ export function MigrationPage() {
     let reasoning: string
     let urgency: 'high' | 'medium' | 'low'
 
-    if (overallPush >= 2 && top.isArriving) {
+    const birdCount = top.freshTotalBirds > 0 ? top.freshTotalBirds : top.totalBirds
+    const staleNote = top.allStale ? ' (most recent survey data is 90+ days old — verify before planning a trip)' : ''
+
+    if (top.allStale || stateGroups.every(sg => sg.allStale)) {
+      action = `Season data is outdated`
+      reasoning = `Most recent refuge surveys are from the previous season. Check back when fall surveys resume (typically October).`
+      urgency = 'low'
+    } else if (overallPush >= 2 && top.isArriving) {
       action = `Hunt ${top.stateName} this weekend`
-      reasoning = `Cold front pushing birds south with numbers actively arriving. ${top.totalBirds.toLocaleString()} birds counted — conditions are stacking up.`
+      reasoning = `Cold front pushing birds south with numbers actively arriving. ${birdCount.toLocaleString()} birds counted — conditions are stacking up.`
       urgency = 'high'
     } else if (top.hasSpike) {
       action = `Get to ${top.stateName} now`
-      reasoning = `Anomalous spike detected — ${top.totalBirds.toLocaleString()} birds, well above recent averages. This window may be short.`
+      reasoning = `Anomalous spike detected — ${birdCount.toLocaleString()} birds, well above recent averages. This window may be short.`
       urgency = 'high'
-    } else if (top.isArriving && top.totalBirds > 5000) {
+    } else if (top.isArriving && birdCount > 5000) {
       action = `${top.stateName} is heating up`
-      reasoning = `Numbers are building (${top.totalBirds.toLocaleString()} birds) with an arriving trend. Worth positioning now before peak.`
+      reasoning = `Numbers are building (${birdCount.toLocaleString()} birds) with an arriving trend. Worth positioning now before peak.`
       urgency = 'medium'
-    } else if (overallPush >= 1 && top.totalBirds > 1000) {
+    } else if (overallPush >= 1 && birdCount > 1000) {
       action = `Watch ${top.stateName} over the next 48 hours`
-      reasoning = `Push conditions developing. Current count: ${top.totalBirds.toLocaleString()} — movement likely incoming.`
+      reasoning = `Push conditions developing. Current count: ${birdCount.toLocaleString()}${staleNote} — movement likely incoming.`
       urgency = 'medium'
     } else if (migrationIndex.score >= 50) {
       action = `${top.stateName} offers the best opportunity right now`
-      reasoning = `${top.totalBirds.toLocaleString()} birds on the ground across ${top.refugeCount} refuges. Migration Index at ${migrationIndex.score}/100.`
+      reasoning = `${birdCount.toLocaleString()} birds on the ground across ${top.refugeCount} refuges. Migration Index at ${migrationIndex.score}/100.`
       urgency = 'medium'
     } else {
       action = `Activity is slow — patience required`
-      reasoning = `${top.stateName} leads with ${top.totalBirds.toLocaleString()} birds, but movement is limited. Monitor push factors for change.`
+      reasoning = `${top.stateName} leads with ${birdCount.toLocaleString()} birds, but movement is limited. Monitor push factors for change.`
       urgency = 'low'
     }
 
@@ -2323,8 +2361,13 @@ export function MigrationPage() {
             {/* Summary Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               <div className="card p-4">
-                <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>Total Birds Counted</p>
-                <p className="text-2xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>{totalBirds.toLocaleString()}</p>
+                <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                  Total Birds Counted
+                  {hasStaleData && <span className="ml-1 text-xs text-earth-400 dark:text-earth-500">(recent surveys only)</span>}
+                </p>
+                <p className="text-2xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>
+                  {totalBirds > 0 ? totalBirds.toLocaleString() : '—'}
+                </p>
               </div>
               <div className="card p-4">
                 <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>Refuges Reporting</p>
@@ -2510,6 +2553,13 @@ export function MigrationPage() {
                           isStateSpike ? 'ring-2 ring-amber-400 dark:ring-amber-500' : ''
                         } ${isStateDrop ? 'ring-2 ring-red-400 dark:ring-red-500' : ''}`}
                       >
+                        {/* Stale data warning */}
+                        {sg.allStale && (
+                          <div className="flex items-center gap-1.5 text-xs font-medium text-earth-600 dark:text-earth-400 bg-earth-100 dark:bg-earth-800/40 px-5 py-1.5">
+                            <AlertCircle className="w-3 h-3" />
+                            Previous season data — not included in current snapshot totals
+                          </div>
+                        )}
                         {/* State-level anomaly banner */}
                         {isStateSpike && (
                           <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 px-5 py-1.5">

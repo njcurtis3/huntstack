@@ -37,8 +37,6 @@ STATE_SOURCES = {
             "https://tpwd.texas.gov/regulations/outdoor-annual/hunting/migratory-game-bird-regulations",
             "https://tpwd.texas.gov/regulations/outdoor-annual/regs/animals/duck",
             "https://tpwd.texas.gov/regulations/outdoor-annual/regs/animals/goose",
-            "https://tpwd.texas.gov/regulations/outdoor-annual/regs/animals/crane",
-            "https://tpwd.texas.gov/regulations/outdoor-annual/regs/animals/teal",
             "https://tpwd.texas.gov/regulations/outdoor-annual/regs/animals/dove",
             "https://tpwd.texas.gov/regulations/outdoor-annual/hunting/migratory-game-bird-regulations/stamps-permits-and-certification",
             "https://tpwd.texas.gov/regulations/outdoor-annual/licenses",
@@ -84,6 +82,7 @@ STATE_SOURCES = {
         "start_urls": [
             "https://ksoutdoors.gov/Hunting/Migratory-Birds",
             "https://ksoutdoors.gov/Hunting/Migratory-Birds/Ducks",
+            "https://ksoutdoors.gov/Hunting/Migratory-Birds/Geese/REGULATIONS",
         ],
         "allowed_domains": ["ksoutdoors.gov"],
         "link_keywords": ["migratory", "waterfowl", "duck", "goose"],
