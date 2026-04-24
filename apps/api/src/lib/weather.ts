@@ -440,7 +440,9 @@ export async function getPushFactorsForStates(
       const subFreezing = subFreezingCount > majority
       const avgTemp = Math.round(tempSum / n)
 
-      const pushScore = (coldFrontPresent ? 1 : 0) + (northWind ? 1 : 0) + (subFreezing ? 1 : 0)
+      // coldFrontIncoming contributes 0.5 — real signal for hunters planning 48h out,
+      // but weighted less than a front that is currently present (1.0)
+      const pushScore = (coldFrontPresent ? 1 : 0) + (coldFrontIncoming ? 0.5 : 0) + (northWind ? 1 : 0) + (subFreezing ? 1 : 0)
 
       return {
         stateCode,
@@ -461,9 +463,10 @@ export async function getPushFactorsForStates(
     .filter((r): r is PromiseFulfilledResult<StatePushFactor> => r.status === 'fulfilled')
     .map(r => r.value)
 
-  // Replace misleading max() with a list of states actually showing high push
+  // Replace misleading max() with a list of states actually showing meaningful push
+  // Threshold 1.5: at minimum two signals present (e.g. north wind + incoming front)
   const highPushStates = pushFactors
-    .filter(f => f.pushScore >= 2)
+    .filter(f => f.pushScore >= 1.5)
     .sort((a, b) => b.pushScore - a.pushScore)
     .map(f => f.stateCode)
 

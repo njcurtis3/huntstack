@@ -22,8 +22,9 @@ const WEATHER_SCORES: Record<string, number> = {
   poor: 0,
 }
 
-// pushScore 0–3 → migration pressure score 0–10
-const PUSH_SCORES: Record<number, number> = { 0: 0, 1: 4, 2: 7, 3: 10 }
+// pushScore 0–3.5 → migration pressure score 0–10
+// coldFrontIncoming adds 0.5, so half-point values are possible
+const PUSH_SCORES: Record<number, number> = { 0: 0, 0.5: 2, 1: 4, 1.5: 5, 2: 7, 2.5: 8, 3: 10, 3.5: 10 }
 
 // migrationStatus → score 0–10
 const MIGRATION_STATUS_SCORES: Record<string, number> = {

@@ -85,6 +85,12 @@ function computeTrend(delta: number, deltaPercent: number | null): 'increasing' 
   return delta > 0 ? 'increasing' : 'decreasing'
 }
 
+// Activity level thresholds — applied to per-species counts within a 14-day window.
+// These are intentionally conservative starting points, not statistically derived.
+// eBird data is never persisted to DB so we can't calibrate offline.
+// To recalibrate: log live API responses for a full season and derive p50/p75/p90
+// breakpoints per species per state. Snow geese counts run much higher than
+// diving ducks, so per-species thresholds would be more accurate long-term.
 function computeActivityLevel(count: number): 'high' | 'moderate' | 'low' {
   if (count >= 5000) return 'high'
   if (count >= 500) return 'moderate'

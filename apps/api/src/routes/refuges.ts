@@ -285,7 +285,10 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
       .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof getEBirdCountsForRefuge>>> => r.status === 'fulfilled')
       .flatMap(r => r.value)
 
-    // Get historical MWI trends (annual totals by state)
+    // Historical MWI (Midwinter Index) trends — annual population totals 2006–2016.
+    // Used by MigrationPage to render the long-term population trend chart.
+    // This is intentionally a separate signal from weekly refuge counts —
+    // it shows multi-year population trajectory, not current season activity.
     const historicalTrends = await db.execute(sql`
       SELECT
         EXTRACT(YEAR FROM rc.survey_date)::integer as year,
