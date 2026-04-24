@@ -84,6 +84,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build db package
+        run: pnpm --filter @huntstack/db build
+
       - name: Build API
         run: pnpm --filter @huntstack/api build
 
