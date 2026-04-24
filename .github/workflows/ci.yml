@@ -26,6 +26,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build db package
+        run: pnpm --filter @huntstack/db build
+
       - name: Type check API
         run: pnpm --filter @huntstack/api exec tsc --noEmit
 
@@ -51,6 +54,9 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Build db package
+        run: pnpm --filter @huntstack/db build
 
       - name: Lint API
         run: pnpm --filter @huntstack/api lint
