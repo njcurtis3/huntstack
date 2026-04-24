@@ -333,6 +333,7 @@ export interface StatePushFactor {
   temperature: number | null
   temperatureUnit: string | null
   activeAlerts: Array<{ event: string; severity: string; headline: string | null }>
+  refugesSampled: number
 }
 
 const NORTH_DIRECTIONS = new Set(['N', 'NW', 'NNW', 'NNE', 'NE'])
@@ -359,18 +360,20 @@ function detectColdFront(periods: { temperature: number }[]): {
 
 /**
  * Fetch push factors (cold front, north wind, sub-freezing) for a list of states.
- * Requires a DB-provided map of state → representative refuge center point.
+ * Accepts a map of state → ALL known refuge center points (not just one).
+ * Signals are majority-voted across all refuge forecasts for the state, producing
+ * a more geographically representative push score than a single-point query.
  * Both hunt.ts and migration.ts use this shared helper.
  */
 export async function getPushFactorsForStates(
   stateCodes: string[],
-  refugeByState: Map<string, { lat: number; lng: number }>,
-): Promise<{ pushFactors: StatePushFactor[]; overallPushScore: number }> {
+  refugesByState: Map<string, { lat: number; lng: number }[]>,
+): Promise<{ pushFactors: StatePushFactor[]; highPushStates: string[] }> {
   const results = await Promise.allSettled(
     stateCodes.map(async (stateCode): Promise<StatePushFactor> => {
-      const cp = refugeByState.get(stateCode)
-      const [forecast, alerts] = await Promise.all([
-        cp ? getForecast(cp.lat, cp.lng) : Promise.resolve(null),
+      const coords = refugesByState.get(stateCode) ?? []
+      const [forecasts, alerts] = await Promise.all([
+        Promise.all(coords.map(cp => getForecast(cp.lat, cp.lng))),
         getAlerts(stateCode),
       ])
 
@@ -379,17 +382,58 @@ export async function getPushFactorsForStates(
         .slice(0, 3)
         .map(a => ({ event: a.event, severity: a.severity, headline: a.headline }))
 
-      if (!forecast || forecast.length === 0) {
-        return { stateCode, pushScore: 0, coldFrontPresent: false, coldFrontIncoming: false, windDirection: null, windIsFromNorth: false, temperature: null, temperatureUnit: null, activeAlerts: migrationAlerts }
+      // Filter to forecasts that returned data
+      const validForecasts = forecasts.filter((f): f is ForecastPeriod[] => f !== null && f.length > 0)
+
+      if (validForecasts.length === 0) {
+        return { stateCode, pushScore: 0, coldFrontPresent: false, coldFrontIncoming: false, windDirection: null, windIsFromNorth: false, temperature: null, temperatureUnit: null, activeAlerts: migrationAlerts, refugesSampled: 0 }
       }
 
-      const current = forecast.find(p => p.isDaytime) ?? forecast[0]
-      const { coldFrontPresent, coldFrontIncoming } = detectColdFront(forecast)
-      const northWind = isNorthWind(current.windDirection)
-      const subFreezing = current.temperature < 32
+      // Majority-vote each binary signal across all sampled refuges
+      let coldFrontPresentCount = 0
+      let coldFrontIncomingCount = 0
+      let northWindCount = 0
+      let subFreezingCount = 0
+      let tempSum = 0
+      let representativeWindDir: string | null = null
+      let representativeTempUnit: string | null = null
+
+      for (const forecast of validForecasts) {
+        const current = forecast.find(p => p.isDaytime) ?? forecast[0]
+        const { coldFrontPresent, coldFrontIncoming } = detectColdFront(forecast)
+        if (coldFrontPresent) coldFrontPresentCount++
+        if (coldFrontIncoming) coldFrontIncomingCount++
+        if (isNorthWind(current.windDirection)) northWindCount++
+        if (current.temperature < 32) subFreezingCount++
+        tempSum += current.temperature
+        // Use the first valid forecast's wind/unit as representative display values
+        if (!representativeWindDir) representativeWindDir = current.windDirection
+        if (!representativeTempUnit) representativeTempUnit = current.temperatureUnit
+      }
+
+      const n = validForecasts.length
+      const majority = n / 2  // >50% of refuges must show signal for it to count
+
+      const coldFrontPresent = coldFrontPresentCount > majority
+      const coldFrontIncoming = !coldFrontPresent && coldFrontIncomingCount > majority
+      const northWind = northWindCount > majority
+      const subFreezing = subFreezingCount > majority
+      const avgTemp = Math.round(tempSum / n)
+
       const pushScore = (coldFrontPresent ? 1 : 0) + (northWind ? 1 : 0) + (subFreezing ? 1 : 0)
 
-      return { stateCode, pushScore, coldFrontPresent, coldFrontIncoming, windDirection: current.windDirection, windIsFromNorth: northWind, temperature: current.temperature, temperatureUnit: current.temperatureUnit, activeAlerts: migrationAlerts }
+      return {
+        stateCode,
+        pushScore,
+        coldFrontPresent,
+        coldFrontIncoming,
+        windDirection: representativeWindDir,
+        windIsFromNorth: northWind,
+        temperature: avgTemp,
+        temperatureUnit: representativeTempUnit,
+        activeAlerts: migrationAlerts,
+        refugesSampled: n,
+      }
     })
   )
 
@@ -397,8 +441,13 @@ export async function getPushFactorsForStates(
     .filter((r): r is PromiseFulfilledResult<StatePushFactor> => r.status === 'fulfilled')
     .map(r => r.value)
 
-  const overallPushScore = pushFactors.length > 0 ? Math.max(...pushFactors.map(f => f.pushScore)) : 0
-  return { pushFactors, overallPushScore }
+  // Replace misleading max() with a list of states actually showing high push
+  const highPushStates = pushFactors
+    .filter(f => f.pushScore >= 2)
+    .sort((a, b) => b.pushScore - a.pushScore)
+    .map(f => f.stateCode)
+
+  return { pushFactors, highPushStates }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

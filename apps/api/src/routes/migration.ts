@@ -74,9 +74,9 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
     const db = getDb()
     const stateList = stateCodes.map(s => `'${s}'`).join(', ')
 
-    // Get one representative refuge centerPoint per state
+    // Get ALL refuge centerPoints per state for multi-point push scoring
     const refugeRows = await db.execute(sql`
-      SELECT DISTINCT ON (s.code)
+      SELECT
         s.code AS state_code,
         l.center_point
       FROM locations l
@@ -88,17 +88,20 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
       ORDER BY s.code, l.name
     `)
 
-    const refugeByState = new Map<string, { lat: number; lng: number }>()
+    const refugesByState = new Map<string, { lat: number; lng: number }[]>()
     for (const row of refugeRows as unknown as Array<{ state_code: string; center_point: unknown }>) {
       const cp = row.center_point as { lat: number; lng: number } | null
-      if (cp) refugeByState.set(row.state_code, cp)
+      if (cp) {
+        if (!refugesByState.has(row.state_code)) refugesByState.set(row.state_code, [])
+        refugesByState.get(row.state_code)!.push(cp)
+      }
     }
 
-    const { pushFactors, overallPushScore } = await getPushFactorsForStates(stateCodes, refugeByState)
+    const { pushFactors, highPushStates } = await getPushFactorsForStates(stateCodes, refugesByState)
 
     return {
       pushFactors,
-      overallPushScore,
+      highPushStates,
       fetchedAt: new Date().toISOString(),
     }
   })
@@ -212,7 +215,7 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
     if (statesInData.length > 0) {
       try {
         const refugePoints = await db.execute(sql`
-          SELECT DISTINCT ON (s.code)
+          SELECT
             s.code AS state_code, l.center_point
           FROM locations l
           JOIN states s ON l.state_id = s.id
@@ -223,13 +226,16 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
           ORDER BY s.code, l.name
         `)
 
-        const refugeByState = new Map<string, { lat: number; lng: number }>()
+        const refugesByState = new Map<string, { lat: number; lng: number }[]>()
         for (const row of refugePoints as unknown as Array<{ state_code: string; center_point: unknown }>) {
           const cp = row.center_point as { lat: number; lng: number } | null
-          if (cp) refugeByState.set(row.state_code, cp)
+          if (cp) {
+            if (!refugesByState.has(row.state_code)) refugesByState.set(row.state_code, [])
+            refugesByState.get(row.state_code)!.push(cp)
+          }
         }
 
-        const { pushFactors } = await getPushFactorsForStates(statesInData, refugeByState)
+        const { pushFactors } = await getPushFactorsForStates(statesInData, refugesByState)
         const weatherLines = pushFactors.map(pf => {
           const signals = [
             pf.coldFrontPresent && 'cold front present',

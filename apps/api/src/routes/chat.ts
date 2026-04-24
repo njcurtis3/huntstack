@@ -583,7 +583,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
           const stateFilter = sql`st.code IN (${sql.join(targetStates.map(c => sql`${c}`), sql`, `)})`
 
           const refugeRows = await db.execute(sql`
-            SELECT DISTINCT ON (st.code)
+            SELECT
               st.code AS state_code,
               l.center_point
             FROM locations l
@@ -595,13 +595,16 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
             ORDER BY st.code, l.name
           `)
 
-          const refugeByState = new Map<string, { lat: number; lng: number }>()
+          const refugesByState = new Map<string, { lat: number; lng: number }[]>()
           for (const row of refugeRows as unknown as Array<{ state_code: string; center_point: unknown }>) {
             const cp = row.center_point as { lat: number; lng: number } | null
-            if (cp) refugeByState.set(row.state_code, cp)
+            if (cp) {
+              if (!refugesByState.has(row.state_code)) refugesByState.set(row.state_code, [])
+              refugesByState.get(row.state_code)!.push(cp)
+            }
           }
 
-          const { pushFactors } = await getPushFactorsForStates(targetStates, refugeByState)
+          const { pushFactors } = await getPushFactorsForStates(targetStates, refugesByState)
           result.pushFactors = pushFactors.map(pf => ({
             stateCode: pf.stateCode,
             pushScore: pf.pushScore,

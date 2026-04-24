@@ -178,11 +178,12 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
     // ── Step 2: Query open seasons + fetch push factors in parallel ─────────
     const openSeasonMap = new Map<string, SeasonRow>()
 
-    // Build refugeByState map for push factor fetches (one point per state)
-    const refugeByState = new Map<string, { lat: number; lng: number }>()
+    // Build refugesByState map — collect ALL refuge coords per state for multi-point push scoring
+    const refugesByState = new Map<string, { lat: number; lng: number }[]>()
     for (const row of uniqueRows) {
-      if (row.center_point && !refugeByState.has(row.state_code)) {
-        refugeByState.set(row.state_code, row.center_point)
+      if (row.center_point) {
+        if (!refugesByState.has(row.state_code)) refugesByState.set(row.state_code, [])
+        refugesByState.get(row.state_code)!.push(row.center_point)
       }
     }
 
@@ -213,7 +214,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         }
       })(),
       // Push factors for all relevant states
-      getPushFactorsForStates(stateCodes, refugeByState),
+      getPushFactorsForStates(stateCodes, refugesByState),
     ])
 
     // Build per-state push factor lookup
