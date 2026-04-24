@@ -78,9 +78,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build shared packages
-        run: pnpm --filter @huntstack/types build --if-present && pnpm --filter @huntstack/shared build --if-present
-
       - name: Build API
         run: pnpm --filter @huntstack/api build
 
