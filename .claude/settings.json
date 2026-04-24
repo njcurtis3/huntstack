@@ -83,7 +83,11 @@
       "Bash(git -C /c/Users/natha/Desktop/repos/huntstack show 89c3d89:apps/api/src/routes/health.ts)",
       "Bash(git -C /c/Users/natha/Desktop/repos/huntstack show 89c3d89:apps/web/src/pages/MigrationPage.tsx)",
       "Bash(git -C /c/Users/natha/Desktop/repos/huntstack diff HEAD~1..HEAD --stat)",
-      "Read(//c/Users/natha/AppData/Local/Temp/claude/c--Users-natha-Desktop-repos-huntstack/ac03cb19-6db1-4d38-a24c-60e6bcab3d50/tasks/**)"
+      "Read(//c/Users/natha/AppData/Local/Temp/claude/c--Users-natha-Desktop-repos-huntstack/ac03cb19-6db1-4d38-a24c-60e6bcab3d50/tasks/**)",
+      "Bash(pnpm --filter @huntstack/api add -D typescript-eslint)",
+      "Bash(pnpm --filter @huntstack/api lint)",
+      "Bash(pnpm --filter @huntstack/web lint)",
+      "Bash(pnpm --version)"
     ]
   },
   "hooks": {

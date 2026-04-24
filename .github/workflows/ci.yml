@@ -32,10 +32,36 @@ jobs:
       - name: Type check Web
         run: pnpm --filter @huntstack/web exec tsc --noEmit
 
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    needs: typecheck
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint API
+        run: pnpm --filter @huntstack/api lint
+
+      - name: Lint Web
+        run: pnpm --filter @huntstack/web lint
+
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: typecheck
+    needs: [typecheck, lint]
 
     steps:
       - uses: actions/checkout@v4

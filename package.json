@@ -30,9 +30,10 @@
   "author": "",
   "license": "UNLICENSED",
   "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=8.0.0"
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
   },
+  "packageManager": "pnpm@10.28.2",
   "devDependencies": {
     "dotenv": "^16.6.1",
     "tsx": "^4.21.0"

@@ -2579,7 +2579,7 @@ export function MigrationPage() {
                           className="w-full text-left p-5 hover:bg-earth-50 dark:hover:bg-earth-800/30 transition-colors"
                           onClick={() => setExpandedStates(prev => {
                             const next = new Set(prev)
-                            next.has(sg.state) ? next.delete(sg.state) : next.add(sg.state)
+                            if (next.has(sg.state)) { next.delete(sg.state) } else { next.add(sg.state) }
                             return next
                           })}
                         >
@@ -2656,7 +2656,7 @@ export function MigrationPage() {
                                     className="w-full text-left p-5 hover:bg-earth-50 dark:hover:bg-earth-800/30 transition-colors"
                                     onClick={() => setExpandedRefuges(prev => {
                                       const next = new Set(prev)
-                                      next.has(group.refugeId) ? next.delete(group.refugeId) : next.add(group.refugeId)
+                                      if (next.has(group.refugeId)) { next.delete(group.refugeId) } else { next.add(group.refugeId) }
                                       return next
                                     })}
                                   >

@@ -1,0 +1,10 @@
+[build]
+builder = "nixpacks"
+buildCommand = "npm install -g pnpm@10.28.2 && pnpm install --frozen-lockfile && pnpm --filter @huntstack/api build"
+
+[deploy]
+startCommand = "pnpm --filter @huntstack/api start"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3

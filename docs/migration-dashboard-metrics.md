@@ -2,7 +2,7 @@
 
 This document explains exactly how every metric on the Migration Dashboard is calculated. It is written for developers and technical stakeholders who need to understand or modify the underlying logic.
 
-Last updated: 2026-04-22
+Last updated: 2026-04-24
 
 ---
 
@@ -79,65 +79,50 @@ NOAA Weather API (no API key required). Two-step resolution:
 1. `GET /points/{lat},{lng}` — resolves grid coordinates (WFO/x/y) for a given location
 2. `GET /gridpoints/{wfo}/{x},{y}/forecast` — retrieves the standard (non-hourly) forecast
 
-One representative refuge coordinate per state is used (first refuge alphabetically with a known `center_point`). Grid points are cached permanently; forecasts are cached for 2 hours.
+All refuge coordinates with known `center_point` are used per state — not just one. NOAA forecasts are fetched in parallel for every refuge in the state, and signals are majority-voted across all results. This prevents large states (e.g. TX with 9 refuges spanning the panhandle to the coast) from being misrepresented by a single location. Grid points are cached permanently; forecasts are cached for 2 hours.
 
-### Three binary signals
+### Signals
 
-Each state receives three binary checks:
+Each state receives four signal checks, evaluated per refuge and majority-voted (>50% of refuges must show the signal for it to count at the state level):
 
 #### 1. Cold Front Present
 
-Compares the max temperature of forecast periods 1–2 against the min temperature of periods 3–4 (each period is ~12 hours):
-
-```
-coldFrontPresent = max(periods[0..1].temp) - min(periods[2..3].temp) >= 10°F
-```
-
-A >=10°F drop within the next two forecast periods indicates a front is currently passing through.
+A >=10°F peak-to-trough temperature drop is detected within the next 24 hours, where the peak precedes the trough in time (genuine drop, not a recovery). Uses `startTime` timestamps from NOAA forecast periods — not array index positions.
 
 #### 2. Cold Front Incoming (48-hour)
 
-Only evaluated if no front is currently present. Looks at the wider 8-period window:
-
-```
-coldFrontIncoming = max(periods[0..3].temp) - min(periods[4..7].temp) >= 10°F
-```
-
-This signals a front arriving within ~48 hours.
+Only evaluated if no front is currently present. Same >=10°F drop logic applied to the 24–48h window. Contributes 0.5 to push score (vs 1.0 for a present front) — real signal for hunters planning ahead, weighted less than current conditions.
 
 #### 3. North Wind
 
-The current daytime forecast period's wind direction is checked against a fixed set:
+The current daytime forecast period's wind direction is checked against:
 
 ```
 NORTH_DIRECTIONS = { N, NW, NNW, NNE, NE }
 ```
 
-North wind is a reliable indicator that birds are being pushed south ahead of or behind a front.
+North wind reliably indicates birds are being pushed south ahead of or behind a front.
 
 #### 4. Sub-freezing Temperature
 
-```
-subFreezing = current daytime temperature < 32°F
-```
+Average temperature across all sampled refuges in the state is below 32°F.
 
 ### Push score
 
-Each true signal adds 1 point. Push score range: 0–3.
+Signal contributions:
 
 ```
-pushScore = (coldFrontPresent ? 1 : 0) + (northWind ? 1 : 0) + (subFreezing ? 1 : 0)
+pushScore = (coldFrontPresent ? 1.0 : 0)
+          + (coldFrontIncoming ? 0.5 : 0)
+          + (northWind ? 1.0 : 0)
+          + (subFreezing ? 1.0 : 0)
 ```
 
-Note: `coldFrontIncoming` is reported separately but does NOT add to the push score — it is informational only.
+Push score range: 0–3.5. The `refugesSampled` field on each state result shows how many refuge forecasts backed the score.
 
-### Overall push score
+### High push states
 
-The dashboard reports the maximum push score across all states (not an average):
-
-```
-overallPushScore = max(pushScore for all states)
-```
+Rather than a single overall score, the response includes `highPushStates` — an ordered list of state codes where `pushScore >= 1.5`, sorted descending by score. A threshold of 1.5 means at minimum two signals are present (e.g. north wind + incoming front).
 
 ### Active alerts
 
@@ -229,7 +214,7 @@ trend = stable if abs(deltaPercent) < 5%, else increasing/decreasing
 | >= 500 | `moderate` |
 | < 500 | `low` |
 
-These thresholds apply to per-species counts within a state.
+These thresholds apply to per-species counts within a state. They are intentionally conservative starting points, not statistically derived — eBird data is live-fetched and never persisted to the DB, so offline calibration against historical distributions is not possible. To recalibrate properly: log live API responses across a full season and derive p50/p75/p90 breakpoints per species per state (Snow Geese counts run significantly higher than diving ducks, so per-species thresholds would be more accurate long-term).
 
 ### State-level rollup
 
@@ -299,6 +284,29 @@ Output target: under 150 words, no markdown formatting, plain prose.
 ### Caching
 
 Generated summaries are cached in-memory for 6 hours per `flyway + species` key combination. The `?refresh=true` query parameter bypasses the cache and forces regeneration.
+
+---
+
+## 7. Historical MWI Trends
+
+The dashboard response includes `historicalTrends[]` — annual population totals from the Midwinter Index (MWI) survey, covering 2006–2016.
+
+### Purpose
+
+This is a distinct signal from weekly refuge counts. It shows multi-year population trajectory at the state level, not current season activity. Used by `MigrationPage` to render the long-term population trend chart.
+
+### How it is queried
+
+```sql
+WHERE rc.survey_type = 'mwi_annual'
+GROUP BY EXTRACT(YEAR FROM rc.survey_date), s.code, sp.slug
+```
+
+Returns one row per year/state/species combination with total count summed across all locations for that state.
+
+### Interpretation note
+
+MWI data ends at 2016 — it reflects long-term baseline population levels, not recent trends. A declining MWI trend for a species is a population-level signal, not a reason to avoid hunting a state this season.
 
 ---
 
