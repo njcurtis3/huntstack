@@ -342,19 +342,39 @@ function isNorthWind(dir: string): boolean {
   return NORTH_DIRECTIONS.has(dir.toUpperCase().trim())
 }
 
-function detectColdFront(periods: { temperature: number }[]): {
+function detectColdFront(periods: { temperature: number; startTime: string }[]): {
   coldFrontPresent: boolean
   coldFrontIncoming: boolean
 } {
-  if (periods.length < 4) return { coldFrontPresent: false, coldFrontIncoming: false }
-  const short = periods.slice(0, 4)
-  const shortMax = Math.max(...short.slice(0, 2).map(p => p.temperature))
-  const shortMin = Math.min(...short.slice(2).map(p => p.temperature))
-  const coldFrontPresent = shortMax - shortMin >= 10
-  const long = periods.slice(0, Math.min(8, periods.length))
-  const longMax = Math.max(...long.slice(0, 4).map(p => p.temperature))
-  const longMin = Math.min(...long.slice(4).map(p => p.temperature))
-  const coldFrontIncoming = !coldFrontPresent && long.length >= 6 && longMax - longMin >= 10
+  if (periods.length < 2) return { coldFrontPresent: false, coldFrontIncoming: false }
+
+  const now = Date.now()
+
+  // Bucket periods by how far their startTime is from now
+  const within24h  = periods.filter(p => new Date(p.startTime).getTime() - now <= 24 * 60 * 60 * 1000)
+  const within48h  = periods.filter(p => new Date(p.startTime).getTime() - now <= 48 * 60 * 60 * 1000)
+
+  // Present: a >=10°F peak-to-trough drop occurs entirely within the next 24 hours.
+  // Max must precede min in time (genuine drop, not a recovery).
+  let coldFrontPresent = false
+  if (within24h.length >= 2) {
+    const maxTemp = Math.max(...within24h.map(p => p.temperature))
+    const minTemp = Math.min(...within24h.map(p => p.temperature))
+    const maxIdx  = within24h.findIndex(p => p.temperature === maxTemp)
+    const minIdx  = within24h.findIndex(p => p.temperature === minTemp)
+    coldFrontPresent = maxTemp - minTemp >= 10 && maxIdx < minIdx
+  }
+
+  // Incoming: a >=10°F drop is visible in the 24–48h window but not yet present.
+  let coldFrontIncoming = false
+  if (!coldFrontPresent && within48h.length >= 2) {
+    const maxTemp = Math.max(...within48h.map(p => p.temperature))
+    const minTemp = Math.min(...within48h.map(p => p.temperature))
+    const maxIdx  = within48h.findIndex(p => p.temperature === maxTemp)
+    const minIdx  = within48h.findIndex(p => p.temperature === minTemp)
+    coldFrontIncoming = maxTemp - minTemp >= 10 && maxIdx < minIdx
+  }
+
   return { coldFrontPresent, coldFrontIncoming }
 }
 
@@ -539,11 +559,10 @@ function generateHuntingNotes(
     notes.push('High precipitation chance — gear accordingly')
   }
 
-  // Cold front detection: look for >10°F temp drop in next 12 hours
-  if (next12.length >= 6) {
-    const maxTemp = Math.max(...next12.slice(0, 4).map(p => p.temperature))
-    const minTemp = Math.min(...next12.slice(4).map(p => p.temperature))
-    if (maxTemp - minTemp >= 10) {
+  // Cold front detection: >=10°F drop where peak precedes trough in the next 12h window
+  if (next12.length >= 2) {
+    const { coldFrontPresent } = detectColdFront(next12)
+    if (coldFrontPresent) {
       notes.push('Cold front arriving — prime hunting conditions expected')
     }
   }
