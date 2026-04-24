@@ -1,6 +1,6 @@
 [build]
 builder = "nixpacks"
-buildCommand = "pnpm install --frozen-lockfile && pnpm --filter @huntstack/api build"
+buildCommand = "pnpm install --frozen-lockfile && pnpm --filter @huntstack/db build && pnpm --filter @huntstack/api build"
 
 [deploy]
 startCommand = "pnpm --filter @huntstack/api start"

@@ -87,7 +87,8 @@
       "Bash(pnpm --filter @huntstack/api add -D typescript-eslint)",
       "Bash(pnpm --filter @huntstack/api lint)",
       "Bash(pnpm --filter @huntstack/web lint)",
-      "Bash(pnpm --version)"
+      "Bash(pnpm --version)",
+      "Bash(pnpm --filter @huntstack/db build)"
     ]
   },
   "hooks": {
