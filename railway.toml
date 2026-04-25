@@ -4,7 +4,7 @@ buildCommand = "pnpm install --frozen-lockfile && pnpm --filter @huntstack/db bu
 
 [deploy]
 startCommand = "pnpm --filter @huntstack/api start"
-healthcheckPath = "/health"
+healthcheckPath = "/api/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
