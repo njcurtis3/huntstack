@@ -88,7 +88,9 @@
       "Bash(pnpm --filter @huntstack/api lint)",
       "Bash(pnpm --filter @huntstack/web lint)",
       "Bash(pnpm --version)",
-      "Bash(pnpm --filter @huntstack/db build)"
+      "Bash(pnpm --filter @huntstack/db build)",
+      "Bash(node -e \"console.log\\(new Date\\(\\).toLocaleString\\('en-US', {timeZone: 'America/Chicago', dateStyle: 'full', timeStyle: 'long'}\\)\\)\")",
+      "Bash(xargs -n1 basename)"
     ]
   },
   "hooks": {

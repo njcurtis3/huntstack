@@ -91,6 +91,18 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
         properties: {
           message: { type: 'string', description: 'User question' },
           conversationId: { type: 'string', description: 'Optional conversation ID for context' },
+          history: {
+            type: 'array',
+            description: 'Prior conversation turns (last N messages)',
+            items: {
+              type: 'object',
+              properties: {
+                role: { type: 'string', enum: ['user', 'assistant'] },
+                content: { type: 'string' },
+              },
+              required: ['role', 'content'],
+            },
+          },
         },
         required: ['message'],
       },
@@ -117,9 +129,10 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
       },
     },
   }, async (request, reply) => {
-    const { message, conversationId } = request.body as {
+    const { message, conversationId, history } = request.body as {
       message: string
       conversationId?: string
+      history?: Array<{ role: 'user' | 'assistant'; content: string }>
     }
 
     if (!isConfigured()) {
@@ -142,7 +155,7 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
       // Step 3: Build system prompt with both context types
       const structuredText = formatStructuredContext(structuredCtx)
       const systemPrompt = buildSystemPrompt(vectorContext, structuredText)
-      const responseText = await generateChatResponse(message, systemPrompt)
+      const responseText = await generateChatResponse(message, systemPrompt, history)
 
       // Step 4: Merge sources from both retrievals
       const allSources = [

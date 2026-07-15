@@ -32,6 +32,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 export async function generateChatResponse(
   userMessage: string,
   systemPrompt: string,
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>,
 ): Promise<string> {
   const client = getClient()
   const response = await client.chat.completions.create({
@@ -39,6 +40,7 @@ export async function generateChatResponse(
     max_tokens: 1024,
     messages: [
       { role: 'system', content: systemPrompt },
+      ...(history ?? []),
       { role: 'user', content: userMessage },
     ],
   })

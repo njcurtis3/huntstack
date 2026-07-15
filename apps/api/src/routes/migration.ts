@@ -72,8 +72,6 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
       : V1_STATES
 
     const db = getDb()
-    const stateList = stateCodes.map(s => `'${s}'`).join(', ')
-
     // Get ALL refuge centerPoints per state for multi-point push scoring
     const refugeRows = await db.execute(sql`
       SELECT
@@ -84,7 +82,7 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
       WHERE l.location_type = 'wildlife_refuge'
         AND l.center_point IS NOT NULL
         AND l.name NOT LIKE '% - Statewide MWI'
-        AND s.code IN (${sql.raw(stateList)})
+        AND s.code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})
       ORDER BY s.code, l.name
     `)
 
@@ -121,11 +119,14 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
       },
     },
   }, async (request, reply) => {
-    const { flyway, species, refresh } = request.query as {
+    const { flyway, species, refresh: refreshParam } = request.query as {
       flyway?: string
       species?: string
-      refresh?: boolean
+      refresh?: string | boolean
     }
+    // Query string values arrive as strings regardless of schema type declaration.
+    // Explicitly parse so ?refresh=false does not bypass the cache.
+    const refresh = refreshParam === true || refreshParam === 'true'
 
     const cacheKey = `summary:${flyway || 'all'}:${species || 'all'}`
 
@@ -209,7 +210,6 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
 
     // Also fetch push factors for weather context
     const statesInData = [...new Set(rows.map(r => r.state_code))]
-    const stateList = statesInData.map(s => `'${s}'`).join(', ')
     let weatherContext = ''
 
     if (statesInData.length > 0) {
@@ -222,7 +222,7 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
           WHERE l.location_type = 'wildlife_refuge'
             AND l.center_point IS NOT NULL
             AND l.name NOT LIKE '% - Statewide MWI'
-            AND s.code IN (${sql.raw(stateList)})
+            AND s.code IN (${sql.join(statesInData.map(c => sql`${c}`), sql`, `)})
           ORDER BY s.code, l.name
         `)
 

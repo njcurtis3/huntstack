@@ -177,10 +177,14 @@ export function ChatPage() {
     setInput('')
     setIsLoading(true)
 
+    // Build history from prior messages (before current user message is in state).
+    // Limit to last 6 messages (3 turns) to stay well within token budget.
+    const history = messages.slice(-6).map(m => ({ role: m.role, content: m.content }))
+
     // Run AI + keyword search + semantic search in parallel
     const searchPromise = api.search(text.trim(), { type: 'all' }).catch(() => null)
     const semanticPromise = api.semanticSearch(text.trim(), 5).catch(() => null)
-    const chatPromise = api.chat(text.trim(), conversationId).catch((err: Error) => ({ error: err }))
+    const chatPromise = api.chat(text.trim(), conversationId, history).catch((err: Error) => ({ error: err }))
 
     const [searchData, semanticData, chatData] = await Promise.all([searchPromise, semanticPromise, chatPromise])
 

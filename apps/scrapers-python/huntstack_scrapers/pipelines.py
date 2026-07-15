@@ -461,34 +461,37 @@ class EmbeddingPipeline:
         try:
             import psycopg2
 
-            with psycopg2.connect(db_url) as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        SELECT id FROM documents WHERE source_url = %s
-                    """, (item.get("url"),))
+            conn = psycopg2.connect(db_url)
+            try:
+                with conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            SELECT id FROM documents WHERE source_url = %s
+                        """, (item.get("url"),))
 
-                    result = cur.fetchone()
-                    if not result:
-                        return
+                        result = cur.fetchone()
+                        if not result:
+                            return
 
-                    document_id = result[0]
+                        document_id = result[0]
 
-                    cur.execute("""
-                        INSERT INTO document_chunks (document_id, chunk_index, content, embedding, token_count, metadata)
-                        VALUES (%s, %s, %s, %s::vector, %s, %s)
-                        ON CONFLICT DO NOTHING
-                    """, (
-                        document_id,
-                        index,
-                        chunk,
-                        str(embedding),
-                        len(chunk.split()),
-                        json.dumps({
-                            "state_code": item.get("state_code"),
-                            "source_url": item.get("url"),
-                        }),
-                    ))
-                    conn.commit()
+                        cur.execute("""
+                            INSERT INTO document_chunks (document_id, chunk_index, content, embedding, token_count, metadata)
+                            VALUES (%s, %s, %s, %s::vector, %s, %s)
+                            ON CONFLICT DO NOTHING
+                        """, (
+                            document_id,
+                            index,
+                            chunk,
+                            str(embedding),
+                            len(chunk.split()),
+                            json.dumps({
+                                "state_code": item.get("state_code"),
+                                "source_url": item.get("url"),
+                            }),
+                        ))
+            finally:
+                conn.close()
 
         except Exception as e:
             spider.logger.error(f"Error storing chunk: {e}")

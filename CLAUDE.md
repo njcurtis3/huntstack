@@ -423,6 +423,7 @@ After waterfowl is solid:
 2. **Scrapy is deleted** — use Scrapling scrapers only (`apps/scrapers-python/`)
 3. **No `Co-Authored-By` in commits** — user preference
 4. **`gh` CLI not installed** — use GitHub API via curl if needed, or prompt user
+5. **Keep `CURRENT_STATE.md` and `CONSTRAINTS.md` up to date** — after any code change (new/changed routes, schema, dependencies, deploy config, scraper sources, ports, auth, etc.), update the relevant sections of both docs in the same session as the change. They are point-in-time snapshots verified against the code, not living specs like this file — stale entries are worse than missing ones, so prefer editing over leaving them to drift.
 
 ### Strategic Priorities
 1. **Waterfowl first** — V1 focuses on waterfowl/migratory bird hunters

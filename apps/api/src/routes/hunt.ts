@@ -118,7 +118,6 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
     // ── Step 1: Latest counts per location+species via CTE ──────────────────
     // Filter out MWI annual rows (historical only, not indicative of current activity)
     // Filter to wildlife_refuge type for relevance
-    const stateList = stateCodes.map(s => `'${s}'`).join(', ')
     const speciesFilter = speciesSlug
       ? sql`AND sp.slug = ${speciesSlug}`
       : sql`AND sp.category = 'waterfowl'`
@@ -147,7 +146,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         WHERE l.location_type = 'wildlife_refuge'
           AND l.name NOT LIKE '% - Statewide MWI'
           AND rc.survey_type != 'mwi_annual'
-          AND s.code IN (${sql.raw(stateList)})
+          AND s.code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})
           ${speciesFilter}
       )
       SELECT
@@ -203,7 +202,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
           FROM seasons se
           JOIN states s ON se.state_id = s.id
           JOIN species sp ON se.species_id = sp.id
-          WHERE s.code IN (${sql.raw(stateList)})
+          WHERE s.code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})
             AND se.year = ${targetYear}
             AND se.start_date <= ${targetDateStr}::date
             AND se.end_date >= ${targetDateStr}::date

@@ -425,7 +425,11 @@ class ApiClient {
   }
 
   // Chat
-  async chat(message: string, conversationId?: string) {
+  async chat(
+    message: string,
+    conversationId?: string,
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>,
+  ) {
     return this.request<{
       response: string
       sources: Array<{ title: string; url?: string; snippet: string }>
@@ -433,12 +437,8 @@ class ApiClient {
       dataFreshnessNote?: string | null
     }>('/api/chat', {
       method: 'POST',
-      body: JSON.stringify({ message, conversationId }),
+      body: JSON.stringify({ message, conversationId, history }),
     })
-  }
-
-  async getChatHistory(conversationId: string) {
-    return this.request(`/api/chat/history/${conversationId}`)
   }
 
   // Weather
