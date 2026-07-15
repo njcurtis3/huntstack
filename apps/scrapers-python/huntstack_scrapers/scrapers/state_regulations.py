@@ -225,9 +225,13 @@ class StateRegulationsScraper:
             log.error(f"pdfplumber failed: {e}")
             return ""
 
+    @staticmethod
+    def _strip_www(host: str) -> str:
+        return host[4:] if host.startswith("www.") else host
+
     def _is_allowed_domain(self, url: str, allowed_domains: list[str]) -> bool:
-        host = urlparse(url).netloc.lstrip("www.")
-        return any(host == d.lstrip("www.") or host.endswith("." + d.lstrip("www.")) for d in allowed_domains)
+        host = self._strip_www(urlparse(url).netloc)
+        return any(host == self._strip_www(d) or host.endswith("." + self._strip_www(d)) for d in allowed_domains)
 
     def _is_relevant_link(self, href: str, keywords: list[str]) -> bool:
         # Strip fragment and query string — compare path only

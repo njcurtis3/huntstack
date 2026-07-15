@@ -7,7 +7,7 @@
     "dev": "pnpm run --parallel dev",
     "dev:web": "pnpm --filter @huntstack/web dev",
     "dev:api": "pnpm --filter @huntstack/api dev",
-    "build": "pnpm run --parallel build",
+    "build": "pnpm --filter @huntstack/db build && pnpm run --parallel build:api build:web",
     "build:web": "pnpm --filter @huntstack/web build",
     "build:api": "pnpm --filter @huntstack/api build",
     "lint": "pnpm run --parallel lint",
@@ -16,7 +16,6 @@
     "db:migrate": "pnpm --filter @huntstack/db migrate",
     "db:push": "pnpm --filter @huntstack/db push",
     "db:studio": "pnpm --filter @huntstack/db studio",
-    "scrape:node": "pnpm --filter @huntstack/scrapers-node start",
     "scrape:python": "cd apps/scrapers-python && python -m scrapy crawl",
     "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules"
   },

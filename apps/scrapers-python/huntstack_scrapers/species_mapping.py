@@ -14,7 +14,6 @@ SPECIES_ALIASES: dict[str, str] = {
     "teal": "green-winged-teal",
     "green-winged teal": "green-winged-teal",
     "blue-winged teal": "blue-winged-teal",
-    "cinnamon teal": "green-winged-teal",
     "pintail": "pintail",
     "northern pintail": "pintail",
     "wood duck": "wood-duck",
