@@ -4,39 +4,19 @@
 //   2. /gridpoints/{wfo}/{x},{y}/forecast/hourly → hourly forecast
 // User-Agent header required by NOAA.
 
+import { BoundedCache } from './cache.js'
+
 const NOAA_BASE = 'https://api.weather.gov'
 const USER_AGENT = '(HuntStack, huntstack.app)'
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 
-interface CacheEntry<T> {
-  data: T
-  expiresAt: number // 0 = permanent
-}
-
-const gridPointCache = new Map<string, CacheEntry<GridPoint>>()
-const forecastCache = new Map<string, CacheEntry<ForecastPeriod[]>>()
-const alertsCache = new Map<string, CacheEntry<WeatherAlert[]>>()
+const gridPointCache = new BoundedCache<GridPoint>()
+const forecastCache = new BoundedCache<ForecastPeriod[]>()
+const alertsCache = new BoundedCache<WeatherAlert[]>()
 
 const FORECAST_TTL = 2 * 60 * 60 * 1000  // 2 hours
 const ALERTS_TTL = 30 * 60 * 1000         // 30 minutes
-
-function getCached<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
-  const entry = cache.get(key)
-  if (!entry) return null
-  if (entry.expiresAt !== 0 && Date.now() > entry.expiresAt) {
-    cache.delete(key)
-    return null
-  }
-  return entry.data
-}
-
-function setCache<T>(cache: Map<string, CacheEntry<T>>, key: string, data: T, ttlMs: number): void {
-  cache.set(key, {
-    data,
-    expiresAt: ttlMs === 0 ? 0 : Date.now() + ttlMs,
-  })
-}
 
 // ─── NOAA response types ──────────────────────────────────────────────────────
 
@@ -189,7 +169,7 @@ async function noaaFetch<T>(url: string): Promise<T> {
 
 export async function getGridPoint(lat: number, lng: number): Promise<GridPoint | null> {
   const key = `${lat.toFixed(4)},${lng.toFixed(4)}`
-  const cached = getCached(gridPointCache, key)
+  const cached = gridPointCache.get(key)
   if (cached) return cached
 
   try {
@@ -202,7 +182,7 @@ export async function getGridPoint(lat: number, lng: number): Promise<GridPoint 
       state: data.properties.relativeLocation.properties.state,
       timeZone: data.properties.timeZone,
     }
-    setCache(gridPointCache, key, gp, 0) // permanent
+    gridPointCache.set(key, gp, 0) // permanent
     return gp
   } catch (err) {
     console.error('NOAA getGridPoint error:', err)
@@ -215,7 +195,7 @@ export async function getForecast(lat: number, lng: number): Promise<ForecastPer
   if (!gp) return null
 
   const key = `forecast:${gp.wfo}/${gp.x},${gp.y}`
-  const cached = getCached(forecastCache, key)
+  const cached = forecastCache.get(key)
   if (cached) return cached
 
   try {
@@ -223,7 +203,7 @@ export async function getForecast(lat: number, lng: number): Promise<ForecastPer
       `${NOAA_BASE}/gridpoints/${gp.wfo}/${gp.x},${gp.y}/forecast`
     )
     const periods = mapPeriods(data.properties.periods)
-    setCache(forecastCache, key, periods, FORECAST_TTL)
+    forecastCache.set(key, periods, FORECAST_TTL)
     return periods
   } catch (err) {
     console.error('NOAA getForecast error:', err)
@@ -236,7 +216,7 @@ export async function getHourlyForecast(lat: number, lng: number): Promise<Forec
   if (!gp) return null
 
   const key = `hourly:${gp.wfo}/${gp.x},${gp.y}`
-  const cached = getCached(forecastCache, key)
+  const cached = forecastCache.get(key)
   if (cached) return cached
 
   try {
@@ -244,7 +224,7 @@ export async function getHourlyForecast(lat: number, lng: number): Promise<Forec
       `${NOAA_BASE}/gridpoints/${gp.wfo}/${gp.x},${gp.y}/forecast/hourly`
     )
     const periods = mapPeriods(data.properties.periods)
-    setCache(forecastCache, key, periods, FORECAST_TTL)
+    forecastCache.set(key, periods, FORECAST_TTL)
     return periods
   } catch (err) {
     console.error('NOAA getHourlyForecast error:', err)
@@ -254,7 +234,7 @@ export async function getHourlyForecast(lat: number, lng: number): Promise<Forec
 
 export async function getAlerts(stateCode: string): Promise<WeatherAlert[]> {
   const key = `alerts:${stateCode.toUpperCase()}`
-  const cached = getCached(alertsCache, key)
+  const cached = alertsCache.get(key)
   if (cached) return cached
 
   try {
@@ -275,7 +255,7 @@ export async function getAlerts(stateCode: string): Promise<WeatherAlert[]> {
         areaDesc: f.properties.areaDesc,
         senderName: f.properties.senderName,
       }))
-    setCache(alertsCache, key, alerts, ALERTS_TTL)
+    alertsCache.set(key, alerts, ALERTS_TTL)
     return alerts
   } catch (err) {
     console.error('NOAA getAlerts error:', err)

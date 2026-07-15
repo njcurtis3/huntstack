@@ -89,16 +89,17 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
       body: {
         type: 'object',
         properties: {
-          message: { type: 'string', description: 'User question' },
-          conversationId: { type: 'string', description: 'Optional conversation ID for context' },
+          message: { type: 'string', description: 'User question', minLength: 1, maxLength: 4000 },
+          conversationId: { type: 'string', description: 'Optional conversation ID for context', maxLength: 200 },
           history: {
             type: 'array',
             description: 'Prior conversation turns (last N messages)',
+            maxItems: 20,
             items: {
               type: 'object',
               properties: {
                 role: { type: 'string', enum: ['user', 'assistant'] },
-                content: { type: 'string' },
+                content: { type: 'string', maxLength: 4000 },
               },
               required: ['role', 'content'],
             },

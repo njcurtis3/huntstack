@@ -233,7 +233,8 @@ class RefugeCountsScraper:
 
     def _handle_excel_index(self, source: dict) -> list[dict]:
         """Download Excel files from a pre-fetched URL list and parse each."""
-        excel_urls = source.get("excel_urls", [])
+        excel_urls_fn = source.get("excel_urls_fn")
+        excel_urls = excel_urls_fn() if excel_urls_fn else source.get("excel_urls", [])
         parser_fn = source.get("excel_parser")
 
         log.info(f"Processing {len(excel_urls)} Excel URLs for {source['name']}")
@@ -273,7 +274,8 @@ class RefugeCountsScraper:
 
     def _handle_pdf_url_list(self, source: dict) -> list[dict]:
         """Try a list of candidate PDF URLs — HEAD check then download."""
-        pdf_urls = source.get("pdf_urls", [])
+        pdf_urls_fn = source.get("pdf_urls_fn")
+        pdf_urls = pdf_urls_fn() if pdf_urls_fn else source.get("pdf_urls", [])
         parser_fn = source.get("pdf_parser")
 
         log.info(f"Trying {len(pdf_urls)} candidate PDF URLs for {source['name']}")

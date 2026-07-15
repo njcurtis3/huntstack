@@ -94,7 +94,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         },
       },
     },
-  }, async (request) => {
+  }, async (request, reply) => {
     const query = request.query as {
       species?: string
       states?: string
@@ -111,6 +111,10 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
     const stateCodes = query.states
       ? query.states.split(',').map(s => s.trim().toUpperCase()).filter(s => s.length === 2)
       : V1_STATES
+
+    if (query.states && stateCodes.length === 0) {
+      return reply.status(400).send({ error: true, message: 'states parameter must contain at least one valid 2-letter state code' })
+    }
 
     const speciesSlug = query.species || null
     const limit = Math.min(query.limit || 10, 25)

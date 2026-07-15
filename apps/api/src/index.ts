@@ -67,9 +67,13 @@ await app.register(swagger, {
     ],
   },
 })
-await app.register(swaggerUi, {
-  routePrefix: '/docs',
-})
+// Swagger UI exposes the full API surface — keep it out of production
+const docsEnabled = process.env.NODE_ENV !== 'production'
+if (docsEnabled) {
+  await app.register(swaggerUi, {
+    routePrefix: '/docs',
+  })
+}
 
 // Register routes
 await app.register(healthRoutes, { prefix: '/api' })
@@ -124,7 +128,9 @@ const start = async () => {
     try {
       await app.listen({ port, host })
       app.log.info(`Server running at http://${host}:${port}`)
-      app.log.info(`API docs available at http://${host}:${port}/docs`)
+      if (docsEnabled) {
+        app.log.info(`API docs available at http://${host}:${port}/docs`)
+      }
       return
     } catch (err: unknown) {
       const isAddrInUse = (err as NodeJS.ErrnoException).code === 'EADDRINUSE'

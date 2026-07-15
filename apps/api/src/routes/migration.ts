@@ -64,12 +64,16 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
         },
       },
     },
-  }, async (request) => {
+  }, async (request, reply) => {
     const { states: statesParam } = request.query as { states?: string }
 
     const stateCodes = statesParam
       ? statesParam.split(',').map(s => s.trim().toUpperCase()).filter(s => s.length === 2)
       : V1_STATES
+
+    if (statesParam && stateCodes.length === 0) {
+      return reply.status(400).send({ error: true, message: 'states parameter must contain at least one valid 2-letter state code' })
+    }
 
     const db = getDb()
     // Get ALL refuge centerPoints per state for multi-point push scoring

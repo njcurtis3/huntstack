@@ -395,7 +395,7 @@ class EmbeddingPipeline:
             chunks = self._chunk_text(content)
 
             for i, chunk in enumerate(chunks):
-                embedding = self._generate_embedding(chunk)
+                embedding = self._generate_embedding(chunk, spider)
 
                 if embedding:
                     self._store_chunk(item, i, chunk, embedding, spider)
@@ -431,7 +431,7 @@ class EmbeddingPipeline:
 
         return chunks
 
-    def _generate_embedding(self, text: str) -> list[float] | None:
+    def _generate_embedding(self, text: str, spider) -> list[float] | None:
         """Generate embedding using Together.ai."""
         try:
             response = requests.post(
@@ -450,6 +450,7 @@ class EmbeddingPipeline:
             data = response.json()
             return data["data"][0]["embedding"]
         except Exception as e:
+            spider.logger.error(f"Error generating embedding: {e}")
             return None
 
     def _store_chunk(self, item: dict, index: int, chunk: str, embedding: list[float], spider):

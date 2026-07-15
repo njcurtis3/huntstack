@@ -5,6 +5,22 @@ const NOMINATIM_SEARCH = 'https://nominatim.openstreetmap.org/search'
 const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse'
 const USER_AGENT = 'HuntStack/1.0 (huntstack.app)'
 
+// Nominatim's usage policy caps unauthenticated use at ~1 req/sec per app,
+// enforced by IP ban — serialize all outbound calls with a minimum gap.
+const NOMINATIM_MIN_INTERVAL_MS = 1100
+let nominatimLastRequestAt = 0
+let nominatimQueue: Promise<void> = Promise.resolve()
+
+async function nominatimFetch(url: string): Promise<Response> {
+  nominatimQueue = nominatimQueue.then(async () => {
+    const wait = NOMINATIM_MIN_INTERVAL_MS - (Date.now() - nominatimLastRequestAt)
+    if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait))
+    nominatimLastRequestAt = Date.now()
+  })
+  await nominatimQueue
+  return fetch(url, { headers: { 'User-Agent': USER_AGENT } })
+}
+
 function parseNominatimAddress(match: Record<string, unknown>): { lat: number; lng: number; city: string; state: string } {
   const addr = (match.address ?? {}) as Record<string, string>
   const city = addr.city ?? addr.town ?? addr.village ?? addr.county ?? ''
@@ -34,7 +50,7 @@ export const geoRoutes: FastifyPluginAsync = async (app) => {
 
     let res: Response
     try {
-      res = await fetch(url.toString(), { headers: { 'User-Agent': USER_AGENT } })
+      res = await nominatimFetch(url.toString())
     } catch {
       return reply.status(502).send({ error: 'Geocoding service unavailable' })
     }
@@ -64,7 +80,7 @@ export const geoRoutes: FastifyPluginAsync = async (app) => {
 
     let res: Response
     try {
-      res = await fetch(url.toString(), { headers: { 'User-Agent': USER_AGENT } })
+      res = await nominatimFetch(url.toString())
     } catch {
       return reply.status(502).send({ error: 'Geocoding service unavailable' })
     }
@@ -93,7 +109,7 @@ export const geoRoutes: FastifyPluginAsync = async (app) => {
 
     let res: Response
     try {
-      res = await fetch(url.toString(), { headers: { 'User-Agent': USER_AGENT } })
+      res = await nominatimFetch(url.toString())
     } catch {
       return reply.status(502).send({ error: 'Geocoding service unavailable' })
     }

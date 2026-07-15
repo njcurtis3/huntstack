@@ -79,7 +79,9 @@ WATERFOWL_SOURCES = [
         "url": "https://www.wlf.louisiana.gov/page/aerial-waterfowl-surveys",
         "source_type": "pdf_url_list",
         "survey_type": "aerial_monthly",
-        "pdf_urls": fetch_ldwf_pdf_urls(),
+        # Resolved lazily at scrape time (see refuge_counts.py) — not called here,
+        # since importing this module must not trigger live HTTP requests.
+        "pdf_urls_fn": fetch_ldwf_pdf_urls,
         "pdf_parser": parse_ldwf_pdf,
     },
 
@@ -90,7 +92,9 @@ WATERFOWL_SOURCES = [
         "url": "https://tpwd.texas.gov/huntwild/wild/game_management/waterfowl/",
         "source_type": "excel_index",
         "survey_type": "annual_midwinter",
-        "excel_urls": fetch_tpwd_excel_urls(),
+        # Resolved lazily at scrape time (see refuge_counts.py) — not called here,
+        # since importing this module must not trigger live HTTP requests.
+        "excel_urls_fn": fetch_tpwd_excel_urls,
         "excel_parser": parse_tpwd_excel,
     },
 ]

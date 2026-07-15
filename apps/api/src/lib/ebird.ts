@@ -7,33 +7,16 @@
 // API docs: https://documenter.getpostman.com/view/664302/S1ENwy59
 // Auth: X-eBirdApiToken header (set EBIRD_API_KEY in .env)
 
+import { BoundedCache } from './cache.js'
+
 const EBIRD_BASE = 'https://api.ebird.org/v2'
 const GEO_TTL      = 6 * 60 * 60 * 1000  // 6 hours  — per-refuge geo queries
 const REGIONAL_TTL = 3 * 60 * 60 * 1000  // 3 hours  — statewide region queries
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 
-interface CacheEntry<T> {
-  data: T
-  expiresAt: number
-}
-
-const obsCache      = new Map<string, CacheEntry<EBirdCount[]>>()
-const regionalCache = new Map<string, CacheEntry<EBirdRegionalCount[]>>()
-
-function getCached<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
-  const entry = cache.get(key)
-  if (!entry) return null
-  if (Date.now() > entry.expiresAt) {
-    cache.delete(key)
-    return null
-  }
-  return entry.data
-}
-
-function setCache<T>(cache: Map<string, CacheEntry<T>>, key: string, data: T, ttlMs: number): void {
-  cache.set(key, { data, expiresAt: Date.now() + ttlMs })
-}
+const obsCache      = new BoundedCache<EBirdCount[]>()
+const regionalCache = new BoundedCache<EBirdRegionalCount[]>()
 
 // ─── eBird species code → HuntStack slug ─────────────────────────────────────
 // eBird uses 6-letter alpha codes. Maps to our species slugs + display names.
@@ -158,7 +141,7 @@ export async function getEBirdCountsForRefuge(
   if (!apiKey) return []
 
   const cacheKey = `ebird:obs:${lat.toFixed(2)}:${lng.toFixed(2)}`
-  const cached = getCached(obsCache, cacheKey)
+  const cached = obsCache.get(cacheKey)
   if (cached) return cached
 
   try {
@@ -250,7 +233,7 @@ export async function getEBirdCountsForRefuge(
       })
     }
 
-    setCache(obsCache, cacheKey, result, GEO_TTL)
+    obsCache.set(cacheKey, result, GEO_TTL)
     return result
 
   } catch {
@@ -279,7 +262,7 @@ export async function getEBirdRegionalCounts(
 
   for (const stateCode of stateCodes) {
     const key = `ebird:region:US-${stateCode}:${daysBack}d`
-    const cached = getCached(regionalCache, key)
+    const cached = regionalCache.get(key)
     if (cached) {
       cachedResults.push(...cached)
     } else {
@@ -376,7 +359,7 @@ export async function getEBirdRegionalCounts(
     const result = fetchResults[i]
     if (result.status === 'fulfilled') {
       const key = `ebird:region:US-${result.value.stateCode}:${daysBack}d`
-      setCache(regionalCache, key, result.value.counts, REGIONAL_TTL)
+      regionalCache.set(key, result.value.counts, REGIONAL_TTL)
       freshResults.push(...result.value.counts)
     }
     // Silently skip failed states — partial results are better than nothing
