@@ -1,5 +1,5 @@
-import { pgTable, text, timestamp, uuid, jsonb, boolean, integer, real, varchar, index, uniqueIndex } from 'drizzle-orm/pg-core'
-import { relations } from 'drizzle-orm'
+import { pgTable, text, timestamp, uuid, jsonb, boolean, integer, real, varchar, index, uniqueIndex, check } from 'drizzle-orm/pg-core'
+import { relations, sql } from 'drizzle-orm'
 
 // ============================================
 // USERS & AUTH (Supabase handles most of this)
@@ -15,7 +15,9 @@ export const profiles = pgTable('profiles', {
   preferences: jsonb('preferences'), // { species, notifications, etc. }
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
-})
+}, (table) => ({
+  emailIdx: index('profiles_email_idx').on(table.email),
+}))
 
 // ============================================
 // SPECIES
@@ -195,6 +197,7 @@ export const reviews = pgTable('reviews', {
   outfitterIdx: index('reviews_outfitter_idx').on(table.outfitterId),
   userIdx: index('reviews_user_idx').on(table.userId),
   ratingIdx: index('reviews_rating_idx').on(table.rating),
+  ratingRange: check('reviews_rating_range', sql`${table.rating} >= 1 AND ${table.rating} <= 5`),
 }))
 
 // ============================================

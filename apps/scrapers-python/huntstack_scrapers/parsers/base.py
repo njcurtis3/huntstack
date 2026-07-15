@@ -23,10 +23,9 @@ DATE_PATTERNS = [
     re.compile(r"DATE\s*:\s*(\d{1,2}/\d{1,2}/\d{4})"),
     # "January 13, 2026"
     re.compile(r"((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4})"),
-    # "1/13/2026" standalone
+    # "1/13/2026" standalone — also matches dates at the start of content,
+    # since .search() finds the first occurrence regardless of position.
     re.compile(r"(\d{1,2}/\d{1,2}/\d{4})"),
-    # "2/3/2026" at start of content
-    re.compile(r"^(\d{1,2}/\d{1,2}/\d{4})"),
 ]
 
 
@@ -88,7 +87,7 @@ def extract_table_counts(response) -> dict[str, int]:
                     continue
 
                 if count is not None and count > 0:
-                    species_counts[name] = count
+                    species_counts[name] = species_counts.get(name, 0) + count
 
     return species_counts
 
