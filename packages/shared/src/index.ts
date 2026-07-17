@@ -16,16 +16,26 @@ export const paginationSchema = z.object({
   offset: z.coerce.number().min(0).default(0),
 })
 
+// Matches the categories apps/api/src/routes/search.ts actually searches —
+// 'outfitters' isn't handled there (outfitters aren't DB-backed yet), so it's
+// intentionally excluded until that route supports it.
 export const searchQuerySchema = z.object({
   q: z.string().min(1).max(500),
-  type: z.enum(['all', 'regulations', 'species', 'outfitters', 'locations']).optional(),
+  type: z.enum(['all', 'regulations', 'species', 'locations']).optional(),
   state: stateCodeSchema.optional(),
-  species: z.string().optional(),
 }).merge(paginationSchema)
 
+// Mirrors the runtime validation enforced by apps/api/src/routes/chat.ts's
+// Fastify/AJV body schema (message/history maxLength: 4000, history maxItems:
+// 20, conversationId maxLength: 200) — kept in sync so this type doesn't
+// silently drift from what's actually accepted at runtime.
 export const chatRequestSchema = z.object({
-  message: z.string().min(1).max(2000),
-  conversationId: z.string().optional(),
+  message: z.string().min(1).max(4000),
+  conversationId: z.string().max(200).optional(),
+  history: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string().max(4000),
+  })).max(20).optional(),
 })
 
 // ===========================================

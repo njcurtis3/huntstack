@@ -734,28 +734,10 @@ export function RegulationsPage() {
 
   useEffect(() => {
     if (!state) {
-      api.getStates()
-        .then(async (data) => {
-          const states = data.states as StateInfo[]
-          setStatesList(states)
-          const counts: StateRegCounts = {}
-          await Promise.all(states.map(async (s) => {
-            try {
-              const [regData, seasonsData, licensesData] = await Promise.all([
-                api.getStateRegulations(s.code, { year: 2024 }),
-                api.getStateSeasons(s.code),
-                api.getStateLicenses(s.code),
-              ])
-              counts[s.code] = {
-                regulations: (regData.regulations as unknown[]).length,
-                seasons: (seasonsData.seasons as unknown[]).length,
-                licenses: (licensesData.licenses as unknown[]).length,
-              }
-            } catch {
-              counts[s.code] = { regulations: 0, seasons: 0, licenses: 0 }
-            }
-          }))
-          setRegCounts(counts)
+      Promise.all([api.getStates(), api.getRegulationCounts(2024)])
+        .then(([statesData, countsData]) => {
+          setStatesList(statesData.states as StateInfo[])
+          setRegCounts(countsData.counts)
         })
         .catch(() => {})
         .finally(() => setLoading(false))

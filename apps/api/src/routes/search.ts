@@ -1,17 +1,9 @@
 import { FastifyPluginAsync } from 'fastify'
-import { z } from 'zod'
-import { ilike, or, eq, and, sql } from 'drizzle-orm'
+import { ilike, or, eq, and, sql, count } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { isConfigured, generateEmbedding } from '../lib/together.js'
 import { regulations, species, states, locations } from '@huntstack/db/schema'
-
-const searchQuerySchema = z.object({
-  q: z.string().min(1).max(500),
-  type: z.enum(['all', 'regulations', 'species', 'locations']).optional(),
-  state: z.string().length(2).optional(),
-  limit: z.coerce.number().min(1).max(100).optional().default(20),
-  offset: z.coerce.number().min(0).optional().default(0),
-})
+import { searchQuerySchema } from '@huntstack/shared'
 
 export const searchRoutes: FastifyPluginAsync = async (app) => {
   // Full-text search
@@ -47,27 +39,42 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
     const pattern = `%${query.q}%`
 
     const results: Array<{ type: string; id: string; title: string; snippet: string; stateCode?: string; category?: string }> = []
+    let total = 0
 
     const searchType = query.type || 'all'
+    // A single type gets the full offset/limit window straight from the DB
+    // (accurate pagination). 'all' shows a capped preview per category —
+    // paginating a merged, heterogeneous result set doesn't map cleanly to a
+    // single offset, so 'all' always starts from the top of each category;
+    // callers wanting to page deeper into one category should pass `type`.
+    const dbLimit = query.limit
+    const dbOffset = searchType === 'all' ? 0 : query.offset
 
     // Search species
     if (searchType === 'all' || searchType === 'species') {
-      const speciesResults = await db
-        .select({
-          id: species.id,
-          slug: species.slug,
-          name: species.name,
-          category: species.category,
-          description: species.description,
-        })
-        .from(species)
-        .where(or(
-          ilike(species.name, pattern),
-          ilike(species.description, pattern),
-          ilike(species.habitat, pattern),
-        ))
-        .limit(query.limit)
+      const speciesCondition = or(
+        ilike(species.name, pattern),
+        ilike(species.description, pattern),
+        ilike(species.habitat, pattern),
+      )
 
+      const [speciesResults, [{ value: speciesCount }]] = await Promise.all([
+        db
+          .select({
+            id: species.id,
+            slug: species.slug,
+            name: species.name,
+            category: species.category,
+            description: species.description,
+          })
+          .from(species)
+          .where(speciesCondition)
+          .limit(dbLimit)
+          .offset(dbOffset),
+        db.select({ value: count() }).from(species).where(speciesCondition),
+      ])
+
+      total += speciesCount
       for (const s of speciesResults) {
         results.push({
           type: 'species',
@@ -98,20 +105,26 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
         }
       }
 
-      const regResults = await db
-        .select({
-          id: regulations.id,
-          title: regulations.title,
-          summary: regulations.summary,
-          content: regulations.content,
-          category: regulations.category,
-          stateCode: states.code,
-        })
-        .from(regulations)
-        .innerJoin(states, eq(regulations.stateId, states.id))
-        .where(and(...regConditions))
-        .limit(query.limit)
+      const regWhere = and(...regConditions)
+      const [regResults, [{ value: regCount }]] = await Promise.all([
+        db
+          .select({
+            id: regulations.id,
+            title: regulations.title,
+            summary: regulations.summary,
+            content: regulations.content,
+            category: regulations.category,
+            stateCode: states.code,
+          })
+          .from(regulations)
+          .innerJoin(states, eq(regulations.stateId, states.id))
+          .where(regWhere)
+          .limit(dbLimit)
+          .offset(dbOffset),
+        db.select({ value: count() }).from(regulations).innerJoin(states, eq(regulations.stateId, states.id)).where(regWhere),
+      ])
 
+      total += regCount
       for (const r of regResults) {
         results.push({
           type: 'regulation',
@@ -140,19 +153,25 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
         }
       }
 
-      const locResults = await db
-        .select({
-          id: locations.id,
-          name: locations.name,
-          locationType: locations.locationType,
-          description: locations.description,
-          stateCode: states.code,
-        })
-        .from(locations)
-        .innerJoin(states, eq(locations.stateId, states.id))
-        .where(and(...locConditions))
-        .limit(query.limit)
+      const locWhere = and(...locConditions)
+      const [locResults, [{ value: locCount }]] = await Promise.all([
+        db
+          .select({
+            id: locations.id,
+            name: locations.name,
+            locationType: locations.locationType,
+            description: locations.description,
+            stateCode: states.code,
+          })
+          .from(locations)
+          .innerJoin(states, eq(locations.stateId, states.id))
+          .where(locWhere)
+          .limit(dbLimit)
+          .offset(dbOffset),
+        db.select({ value: count() }).from(locations).innerJoin(states, eq(locations.stateId, states.id)).where(locWhere),
+      ])
 
+      total += locCount
       for (const l of locResults) {
         results.push({
           type: 'location',
@@ -166,8 +185,8 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
     }
 
     return {
-      results: results.slice(query.offset, query.offset + query.limit),
-      total: results.length,
+      results,
+      total,
       query: query.q,
     }
   })

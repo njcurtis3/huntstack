@@ -4,6 +4,7 @@ import { getDb } from '../lib/db.js'
 import { getPushFactorsForStates } from '../lib/weather.js'
 import { generateChatResponse, isConfigured } from '../lib/together.js'
 import { getEBirdRegionalCounts, STATE_FLYWAY } from '../lib/ebird.js'
+import { BoundedCache } from '../lib/cache.js'
 
 const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
 
@@ -35,17 +36,11 @@ interface SummaryCache {
   expiresAt: number
 }
 
-const summaryCache = new Map<string, SummaryCache>()
+const summaryCache = new BoundedCache<SummaryCache>()
 const SUMMARY_TTL = 6 * 60 * 60 * 1000  // 6 hours
 
 function getCachedSummary(key: string): SummaryCache | null {
-  const entry = summaryCache.get(key)
-  if (!entry) return null
-  if (Date.now() > entry.expiresAt) {
-    summaryCache.delete(key)
-    return null
-  }
-  return entry
+  return summaryCache.get(key)
 }
 
 export const migrationRoutes: FastifyPluginAsync = async (app) => {
@@ -316,7 +311,7 @@ Keep it under 150 words. Be direct and actionable.`
       expiresAt: Date.now() + SUMMARY_TTL,
     }
 
-    summaryCache.set(cacheKey, result)
+    summaryCache.set(cacheKey, result, SUMMARY_TTL)
 
     return {
       summary: result.summary,

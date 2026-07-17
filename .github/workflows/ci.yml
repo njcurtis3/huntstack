@@ -94,6 +94,6 @@ jobs:
         run: pnpm --filter @huntstack/web build
         env:
           # Vite requires these at build time — set dummy values for CI
-          VITE_API_URL: http://localhost:4001
+          VITE_API_URL: http://localhost:4000
           VITE_SUPABASE_URL: https://placeholder.supabase.co
           VITE_SUPABASE_ANON_KEY: placeholder

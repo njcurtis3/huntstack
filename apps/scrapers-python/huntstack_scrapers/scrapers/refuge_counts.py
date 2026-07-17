@@ -205,11 +205,34 @@ class RefugeCountsScraper:
         # Strip ::attr(...) pseudo-element — Scrapling needs element selectors,
         # not Scrapy-style attribute extractors. We read .attrib["href"] ourselves.
         elem_selector = raw_selector.split("::")[0].strip()
-        links = [a.attrib.get("href", "") for a in response.css(elem_selector)]
+        anchors = response.css(elem_selector)
+        links = [
+            (a.attrib.get("href", ""), "".join(a.css("::text").getall()).strip())
+            for a in anchors
+        ]
         log.info(f"Found {len(links)} PDF links on {source['name']} index")
 
+        # Index pages like AGFC's mix current-season survey PDFs with prior
+        # seasons and unrelated documents (e.g. "Boating Handbook"). When a
+        # season_filter is set, keep only links whose visible text contains a
+        # year from that season (e.g. "2025-2026" -> {2025, 2026}). If nothing
+        # matches — e.g. the page changed shape — fall back to unfiltered so a
+        # site restructure doesn't silently zero out the source.
+        season_filter = source.get("season_filter")
+        if season_filter:
+            season_years = {int(y) for y in re.findall(r"\d{4}", season_filter)}
+            filtered = [
+                (href, text) for href, text in links
+                if {int(y) for y in re.findall(r"\d{4}", text)} & season_years
+            ]
+            if filtered:
+                log.info(f"season_filter {season_filter!r} narrowed {len(links)} links to {len(filtered)}")
+                links = filtered
+            else:
+                log.warning(f"season_filter {season_filter!r} matched no links on {source['name']} — scraping all links unfiltered")
+
         items = []
-        for link in links:
+        for link, _text in links:
             pdf_url = self._resolve_pdf_url(link, source["url"])
             if not pdf_url:
                 continue

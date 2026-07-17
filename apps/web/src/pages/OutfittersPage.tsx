@@ -420,7 +420,12 @@ export function OutfittersPage() {
                   : 'Try adjusting your filters or clearing your search.'}
               </p>
               {selectedState && !availableStates.includes(selectedState) && (
-                <button className="btn-primary text-sm px-5 py-2">Request a Listing</button>
+                <a
+                  href={`mailto:listings@huntstack.com?subject=${encodeURIComponent(`Outfitter Listing Request — ${STATE_NAMES[selectedState] ?? selectedState}`)}&body=${encodeURIComponent(`Business name:\nState: ${STATE_NAMES[selectedState] ?? selectedState}\nSpecies offered:\nWebsite:\nContact phone:\n`)}`}
+                  className="btn-primary text-sm px-5 py-2 inline-block"
+                >
+                  Request a Listing
+                </a>
               )}
             </div>
           ) : groupedByState ? (
@@ -493,9 +498,12 @@ export function OutfittersPage() {
           Get listed in the HuntStack directory and reach hunters who are actively researching where to go.
           Listings include species, price range, hunt type, and a direct link to your website.
         </p>
-        <button className="btn-primary text-sm px-5 py-2">
+        <a
+          href={`mailto:listings@huntstack.com?subject=${encodeURIComponent('Outfitter Listing Request')}&body=${encodeURIComponent('Business name:\nState(s):\nSpecies offered:\nWebsite:\nContact phone:\n')}`}
+          className="btn-primary text-sm px-5 py-2 inline-block"
+        >
           Request a Listing
-        </button>
+        </a>
       </div>
     </div>
   )

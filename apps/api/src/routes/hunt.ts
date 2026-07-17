@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify'
 import { sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { getHuntingConditions, getPushFactorsForStates } from '../lib/weather.js'
+import { decodeJsonbField } from '../lib/jsonb.js'
 
 const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
 
@@ -22,9 +23,11 @@ const WEATHER_SCORES: Record<string, number> = {
   poor: 0,
 }
 
-// pushScore 0–3.5 → migration pressure score 0–10
-// coldFrontIncoming adds 0.5, so half-point values are possible
-const PUSH_SCORES: Record<number, number> = { 0: 0, 0.5: 2, 1: 4, 1.5: 5, 2: 7, 2.5: 8, 3: 10, 3.5: 10 }
+// pushScore 0–3 → migration pressure score 0–10 (see getPushFactorsForStates
+// in lib/weather.ts: coldFrontPresent(1) and coldFrontIncoming(0.5) are
+// mutually exclusive, so 3.5 — both a present front and an incoming one —
+// can never actually occur; max is coldFrontPresent + northWind + subFreezing = 3)
+const PUSH_SCORES: Record<number, number> = { 0: 0, 0.5: 2, 1: 4, 1.5: 5, 2: 7, 2.5: 8, 3: 10 }
 
 // migrationStatus → score 0–10
 const MIGRATION_STATUS_SCORES: Record<string, number> = {
@@ -299,10 +302,26 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
       }
     })
 
-    // Sort by prelim score, take top candidates for weather fetch
+    // Sort by prelim score, then fetch weather for everyone who could still
+    // land in the final top `limit` once a weather bonus is added — not just
+    // a fixed top-8. Weather can add at most WEATHER_MAX_BONUS points, so
+    // anyone within that margin of the current #`limit` cutoff has a real
+    // shot at displacing it; a candidate ranked #9 with "excellent" weather
+    // (+15) can legitimately beat a #8 stuck with "poor" (+0). Below that
+    // margin a candidate has no way to catch up, so it's safe to skip the
+    // (rate-limited, external) weather call and score it 0.
     scored.sort((a, b) => b.prelimScore - a.prelimScore)
-    const topCandidates = scored.slice(0, 8)
-    const rest = scored.slice(8)
+    const WEATHER_MAX_BONUS = Math.max(...Object.values(WEATHER_SCORES))
+    const guaranteedCount = Math.min(limit, scored.length)
+    const cutoffScore = guaranteedCount > 0 ? scored[guaranteedCount - 1].prelimScore : 0
+    let weatherPoolSize = scored.findIndex(item => item.prelimScore < cutoffScore - WEATHER_MAX_BONUS)
+    if (weatherPoolSize === -1) weatherPoolSize = scored.length
+    // Hard cap so a large tie cluster near the cutoff can't trigger unbounded
+    // external weather calls in one request.
+    const MAX_WEATHER_FETCHES = 40
+    weatherPoolSize = Math.max(guaranteedCount, Math.min(weatherPoolSize, MAX_WEATHER_FETCHES))
+    const topCandidates = scored.slice(0, weatherPoolSize)
+    const rest = scored.slice(weatherPoolSize)
 
     // ── Step 4: Fetch weather for top candidates ────────────────────────────
     type WeatherResult = {
@@ -341,7 +360,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
       const rawScore = item.trendScore + item.magnitudeScore + item.seasonScore + item.weatherScore + item.pushScore + item.migrationScore + item.anomalyBonus
       const score = Math.min(100, rawScore)
       const cp = item.row.center_point
-      const meta = item.row.location_metadata
+      const meta = decodeJsonbField(item.row.location_metadata)
 
       const candidateIdx = topCandidates.indexOf(item)
       const weatherVal = candidateIdx >= 0 && weatherResults[candidateIdx]?.status === 'fulfilled'
@@ -376,7 +395,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         seasonName: item.season?.season_name ?? null,
         seasonStart: item.season?.start_date ?? null,
         seasonEnd: item.season?.end_date ?? null,
-        bagLimit: item.season?.bag_limit ?? null,
+        bagLimit: decodeJsonbField(item.season?.bag_limit),
         weatherRating: weatherVal?.rating ?? null,
         temperature: weatherVal?.temperature ?? null,
         temperatureUnit: weatherVal?.temperatureUnit ?? null,

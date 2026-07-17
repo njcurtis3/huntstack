@@ -22,9 +22,7 @@ Returns a list[ParseResult], one per non-zero survey date in the table.
 import re
 from datetime import datetime
 
-from scrapy.http import Response
-
-from huntstack_scrapers.parsers.base import ParseResult, parse_count_value
+from huntstack_scrapers.parsers.base import ParseResult, ParserResponse, parse_count_value
 
 
 # Aggregate / summary row names to skip
@@ -74,7 +72,7 @@ def _is_skip_row(first_cell: str) -> bool:
     return False
 
 
-def parse_clarence_cannon_html(response: Response) -> list[ParseResult]:
+def parse_clarence_cannon_html(response: ParserResponse) -> list[ParseResult]:
     """
     Parse the Clarence Cannon NWR waterfowl survey page.
 
@@ -89,28 +87,14 @@ def parse_clarence_cannon_html(response: Response) -> list[ParseResult]:
     if not rows:
         return []
 
-    # --- Pass 1: extract date columns from header row(s) ---
-    # The first row where td[0] contains "SPECIES" is the header.
+    # Single pass: the page has two logical sections (ducks, then other
+    # waterbirds), each preceded by its own "SPECIES & CODE" header row. A
+    # section's header is re-parsed whenever encountered rather than reusing
+    # the first section's date_columns — the docstring calls out that these
+    # are separate header rows, and there's no guarantee the two sections'
+    # columns line up, so blindly reusing the first would silently mis-map
+    # the second section's counts to the wrong dates if they ever diverge.
     date_columns: list[str] = []  # YYYY-MM-DD per column index (index 0 = species col, skip)
-
-    for row in rows:
-        cells = row.css("td")
-        if not cells:
-            continue
-        first = _cell_text(cells[0])
-        if "SPECIES" in first.upper():
-            # This is a header row — parse date columns
-            date_columns = []
-            for cell in cells[1:]:
-                date_str = _parse_date_header(_cell_text(cell))
-                date_columns.append(date_str or "")
-            break  # use the first header row found
-
-    if not date_columns:
-        return []
-
-    # --- Pass 2: accumulate counts per date column ---
-    # counts_by_date[YYYY-MM-DD] = {species: count}
     counts_by_date: dict[str, dict[str, int]] = {}
 
     for row in rows:
@@ -120,8 +104,20 @@ def parse_clarence_cannon_html(response: Response) -> list[ParseResult]:
 
         first = _cell_text(cells[0])
 
-        # Skip blank rows and header rows
-        if not first or "SPECIES" in first.upper():
+        if "SPECIES" in first.upper():
+            # Header row for this section — (re)parse its date columns.
+            date_columns = []
+            for cell in cells[1:]:
+                date_str = _parse_date_header(_cell_text(cell))
+                date_columns.append(date_str or "")
+            continue
+
+        # No header seen yet for the current section — nothing to map counts to.
+        if not date_columns:
+            continue
+
+        # Skip blank rows
+        if not first:
             continue
 
         # Skip totals and summary rows

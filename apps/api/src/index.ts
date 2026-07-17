@@ -120,7 +120,7 @@ process.on('SIGINT', () => shutdown('SIGINT'))
 // race condition where the OS hasn't released the port before the new
 // process spawns (tsx uses TerminateProcess which bypasses signal handlers)
 const start = async () => {
-  const port = parseInt(process.env.PORT || '4001', 10)
+  const port = parseInt(process.env.PORT || '4000', 10)
   const host = process.env.HOST || '0.0.0.0'
   const maxAttempts = 8
 

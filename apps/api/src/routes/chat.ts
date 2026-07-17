@@ -1,8 +1,16 @@
 import { FastifyPluginAsync } from 'fastify'
+import { z } from 'zod'
 import { isConfigured, generateEmbedding, generateChatResponse } from '../lib/together.js'
 import { getDb } from '../lib/db.js'
 import { sql } from 'drizzle-orm'
 import { getPushFactorsForStates } from '../lib/weather.js'
+import { chatRequestSchema } from '@huntstack/shared'
+import { decodeJsonbField } from '../lib/jsonb.js'
+
+// Fastify/AJV (schema.body below) is what actually enforces validation at
+// runtime; this type keeps the handler's view of the body in sync with that
+// same shape instead of via a hand-maintained duplicate.
+type ChatRequestBody = z.infer<typeof chatRequestSchema>
 
 // ─── Entity aliases for query matching ───────────────────────────────────────
 
@@ -130,11 +138,7 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
       },
     },
   }, async (request, reply) => {
-    const { message, conversationId, history } = request.body as {
-      message: string
-      conversationId?: string
-      history?: Array<{ role: 'user' | 'assistant'; content: string }>
-    }
+    const { message, conversationId, history } = request.body as ChatRequestBody
 
     if (!isConfigured()) {
       return reply.status(503).send({
@@ -750,16 +754,8 @@ function formatStructuredContext(ctx: StructuredContext): string {
 }
 
 function formatBagLimit(bagLimit: unknown): string {
-  if (!bagLimit) return ''
-  // Handle string-encoded JSONB (Drizzle double-encoding)
-  let bl: Record<string, unknown>
-  if (typeof bagLimit === 'string') {
-    try { bl = JSON.parse(bagLimit) } catch { return '' }
-  } else if (typeof bagLimit === 'object') {
-    bl = bagLimit as Record<string, unknown>
-  } else {
-    return ''
-  }
+  const bl = decodeJsonbField(bagLimit)
+  if (!bl) return ''
   const fmt = (v: unknown): string => {
     if (v == null) return 'none'
     if (typeof v === 'number' || typeof v === 'string') return String(v)
@@ -773,15 +769,8 @@ function formatBagLimit(bagLimit: unknown): string {
 }
 
 function formatShootingHours(hours: unknown): string {
-  if (!hours) return ''
-  let h: Record<string, unknown>
-  if (typeof hours === 'string') {
-    try { h = JSON.parse(hours) } catch { return hours }
-  } else if (typeof hours === 'object') {
-    h = hours as Record<string, unknown>
-  } else {
-    return String(hours)
-  }
+  const h = decodeJsonbField(hours)
+  if (!h) return typeof hours === 'string' ? hours : ''
   if (h.start && h.end) return `${h.start} to ${h.end}`
   return JSON.stringify(h)
 }

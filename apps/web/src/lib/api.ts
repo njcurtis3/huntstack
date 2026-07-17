@@ -1,7 +1,10 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
+const DEFAULT_TIMEOUT_MS = 30_000
+
 interface FetchOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>
+  timeoutMs?: number
 }
 
 class ApiClient {
@@ -12,10 +15,10 @@ class ApiClient {
   }
 
   private async request<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
-    const { params, ...fetchOptions } = options
-    
+    const { params, timeoutMs = DEFAULT_TIMEOUT_MS, ...fetchOptions } = options
+
     let url = `${this.baseUrl}${endpoint}`
-    
+
     if (params) {
       const searchParams = new URLSearchParams()
       Object.entries(params).forEach(([key, value]) => {
@@ -29,13 +32,34 @@ class ApiClient {
       }
     }
 
-    const response = await fetch(url, {
-      ...fetchOptions,
-      headers: {
-        'Content-Type': 'application/json',
-        ...fetchOptions.headers,
-      },
-    })
+    const timeoutController = new AbortController()
+    const timeoutId = setTimeout(() => timeoutController.abort(), timeoutMs)
+
+    // If the caller also passed a signal, either one aborting should abort the request.
+    const callerSignal = fetchOptions.signal
+    if (callerSignal) {
+      if (callerSignal.aborted) timeoutController.abort()
+      else callerSignal.addEventListener('abort', () => timeoutController.abort(), { once: true })
+    }
+
+    let response: Response
+    try {
+      response = await fetch(url, {
+        ...fetchOptions,
+        signal: timeoutController.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...fetchOptions.headers,
+        },
+      })
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError' && !callerSignal?.aborted) {
+        throw new Error('Request timed out. Please check your connection and try again.')
+      }
+      throw err
+    } finally {
+      clearTimeout(timeoutId)
+    }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Request failed' }))
@@ -93,6 +117,12 @@ class ApiClient {
       regulationsUrl: string | null
       licenseUrl: string | null
     }> }>('/api/regulations/states')
+  }
+
+  async getRegulationCounts(year?: number) {
+    return this.request<{
+      counts: Record<string, { regulations: number; seasons: number; licenses: number }>
+    }>('/api/regulations/counts', { params: year ? { year } : undefined })
   }
 
   async getStateRegulations(stateCode: string, options?: {
@@ -438,6 +468,7 @@ class ApiClient {
     }>('/api/chat', {
       method: 'POST',
       body: JSON.stringify({ message, conversationId, history }),
+      timeoutMs: 60_000, // RAG retrieval + LLM generation can run longer than the default budget
     })
   }
 
@@ -530,7 +561,7 @@ class ApiClient {
       summary: string
       generatedAt: string
       cached: boolean
-    }>('/api/migration/weekly-summary', { params: options })
+    }>('/api/migration/weekly-summary', { params: options, timeoutMs: 60_000 }) // LLM generation on cache miss
   }
 
   async getFlywayProgression(options?: {

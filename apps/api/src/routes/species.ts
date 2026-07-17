@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify'
 import { eq, and, desc, sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { species, regulations, seasons, states, locations, refugeCounts } from '@huntstack/db/schema'
+import { decodeJsonbField } from '../lib/jsonb.js'
 
 export const speciesRoutes: FastifyPluginAsync = async (app) => {
   // List all species
@@ -110,7 +111,7 @@ export const speciesRoutes: FastifyPluginAsync = async (app) => {
 
     return {
       species: sp,
-      seasons: speciesSeasons,
+      seasons: speciesSeasons.map(s => ({ ...s, bagLimit: decodeJsonbField(s.bagLimit) })),
     }
   })
 
@@ -174,7 +175,7 @@ export const speciesRoutes: FastifyPluginAsync = async (app) => {
 
     return {
       speciesSlug: id,
-      regulations: regs,
+      regulations: regs.map(r => ({ ...r, metadata: decodeJsonbField(r.metadata) })),
     }
   })
 
@@ -249,7 +250,7 @@ export const speciesRoutes: FastifyPluginAsync = async (app) => {
       surveyDate: r.surveyDate,
       surveyType: r.surveyType,
       centerPoint: r.centerPoint,
-      flyway: (r.locationMetadata as Record<string, unknown> | null)?.flyway || null,
+      flyway: decodeJsonbField<{ flyway?: string }>(r.locationMetadata)?.flyway || null,
     }))
 
     if (flyway) {

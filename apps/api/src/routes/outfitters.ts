@@ -260,7 +260,11 @@ const OUTFITTERS = [
   },
 ]
 
-const STATES_WITH_OUTFITTERS = [...new Set(OUTFITTERS.map(o => o.state))].sort()
+// Includes both each outfitter's primary state and any additional states it
+// serves, since filtering by `state` matches on both (see below) — otherwise
+// a state-served-but-not-primary outfitter shows up in results for a state
+// that never appeared in this dropdown-facet list.
+const STATES_WITH_OUTFITTERS = [...new Set(OUTFITTERS.flatMap(o => [o.state, ...o.statesServed]))].sort()
 
 export const outfittersRoutes: FastifyPluginAsync = async (app) => {
   app.get('/', {

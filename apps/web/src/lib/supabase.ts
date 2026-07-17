@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type AuthChangeEvent, type Session } from '@supabase/supabase-js'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -40,7 +40,7 @@ export async function getUser() {
 }
 
 // Subscribe to auth changes
-export function onAuthStateChange(callback: (event: string, session: unknown) => void) {
+export function onAuthStateChange(callback: (event: AuthChangeEvent, session: Session | null) => void) {
   if (!supabase) return { data: { subscription: { unsubscribe: () => {} } } }
   return supabase.auth.onAuthStateChange(callback)
 }

@@ -68,7 +68,7 @@ function getResultIcon(type: string) {
 
 function getResultLink(result: SearchResult) {
   switch (result.type) {
-    case 'species': return `/species/${result.id}`
+    case 'species': return `/migration?species=${encodeURIComponent(result.id)}`
     case 'regulation': return result.stateCode ? `/regulations/${result.stateCode.toLowerCase()}` : '/regulations'
     case 'location': return '/map'
     default: return '#'

@@ -17,6 +17,7 @@
     "@fastify/swagger": "^8.14.0",
     "@fastify/swagger-ui": "^4.0.0",
     "@huntstack/db": "workspace:*",
+    "@huntstack/shared": "workspace:*",
     "@supabase/supabase-js": "^2.45.0",
     "bullmq": "^5.8.0",
     "dotenv": "^16.4.5",

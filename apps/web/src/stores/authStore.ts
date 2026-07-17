@@ -50,7 +50,7 @@ export const useAuthStore = create<AuthState>()(
           // Listen for auth changes
           onAuthStateChange((event, session) => {
             if (event === 'SIGNED_IN' && session) {
-              const user = (session as any).user
+              const user = session.user
               set({
                 user: {
                   id: user.id,

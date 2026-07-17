@@ -133,7 +133,7 @@ Response includes structured data on seasons, licenses, bag limits, shooting hou
 
 ### Backend — `apps/api/`
 - **Runtime**: Node.js 22, TypeScript 5.5
-- **Framework**: Fastify 4 with plugins: cors, helmet, jwt, rate-limit, swagger
+- **Framework**: Fastify 4 with plugins: cors, helmet, rate-limit, swagger (`@fastify/jwt` is a declared dependency but not registered in `index.ts` — no auth is currently wired up; all routes are public reads plus two unauthenticated-by-design POST endpoints)
 - **Database**: PostgreSQL via Supabase, Drizzle ORM 0.32
 - **LLM / Embeddings**: Together.ai SDK 0.9 (`Qwen` for chat, `multilingual-e5-large` for embeddings)
 - **External APIs**: eBird (Cornell Lab), NOAA Weather
@@ -189,8 +189,7 @@ huntstack/
 │           └── species_mapping.py
 ├── packages/
 │   ├── db/                       # Drizzle schema & migrations (12 tables)
-│   ├── shared/                   # Shared utilities & Zod validation
-│   └── types/                    # Shared TypeScript types
+│   └── shared/                   # Shared utilities & Zod validation (used by apps/api's search/chat routes)
 ├── scripts/                      # Seed scripts, data validation utilities
 │   ├── run-refuge-counts.ps1     # Weekly scraper (Task Scheduler)
 │   └── logs/                     # Scraper run logs (auto-pruned 30d)
@@ -323,7 +322,7 @@ VITE_MAPTILER_KEY         # MapTiler API key for basemap
 REDIS_URL                 # Redis (declared, not active — localhost:6379)
 TOGETHER_API_KEY          # Together.ai (LLM + embeddings)
 EBIRD_API_KEY             # eBird Cornell Lab API
-PORT                      # API port (default: 4001)
+PORT                      # API port (default: 4000)
 HOST                      # API host (default: 0.0.0.0)
 NODE_ENV                  # development | production
 LOG_LEVEL                 # info
@@ -438,7 +437,7 @@ After waterfowl is solid:
 4. **Test with real scenarios** — use actual hunting planning use cases (e.g., "snow geese near Amarillo")
 5. **Mobile-first** — hunters use phones for research
 6. **Plain language** — regulations are complex; simplify for users
-7. **Type safety** — use shared types from `@huntstack/types`
+7. **Type safety** — prefer TypeScript's inference from Drizzle schema/Zod parse results over hand-written duplicate interfaces
 8. **Validation** — use Zod schemas from `@huntstack/shared`
 9. **Windows environment** — use `powershell -Command "..."` for Python commands
 10. **Drizzle JSONB quirk** — metadata stored as double-encoded strings; use `name LIKE` or app-level filtering instead of `->>'key'` extraction

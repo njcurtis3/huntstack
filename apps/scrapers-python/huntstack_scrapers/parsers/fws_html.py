@@ -6,10 +6,9 @@ Handles two page formats:
 - fws_story_page: FWS "story" format pages (e.g., Salt Plains NWR)
 """
 
-from scrapy.http import Response
-
 from huntstack_scrapers.parsers.base import (
     ParseResult,
+    ParserResponse,
     parse_survey_date,
     extract_observers,
     extract_table_counts,
@@ -17,7 +16,7 @@ from huntstack_scrapers.parsers.base import (
 )
 
 
-def parse_fws_refuge_page(response: Response) -> ParseResult | None:
+def parse_fws_refuge_page(response: ParserResponse) -> ParseResult | None:
     """
     Parse FWS refuge survey pages (e.g., Washita).
     Format: HTML tables with Species | Count columns, organized under
@@ -45,7 +44,7 @@ def parse_fws_refuge_page(response: Response) -> ParseResult | None:
     )
 
 
-def parse_fws_story_page(response: Response) -> ParseResult | None:
+def parse_fws_story_page(response: ParserResponse) -> ParseResult | None:
     """
     Parse FWS 'story' format survey pages (e.g., Salt Plains).
     Content in article body with sections for ducks, geese, etc.

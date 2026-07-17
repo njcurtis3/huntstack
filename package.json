@@ -16,7 +16,8 @@
     "db:migrate": "pnpm --filter @huntstack/db migrate",
     "db:push": "pnpm --filter @huntstack/db push",
     "db:studio": "pnpm --filter @huntstack/db studio",
-    "scrape:python": "cd apps/scrapers-python && python -m scrapy crawl",
+    "scrape:refuges": "cd apps/scrapers-python && python -m huntstack_scrapers.scrapers.run refuge_counts",
+    "scrape:regulations": "cd apps/scrapers-python && python -m huntstack_scrapers.scrapers.run state_regulations",
     "clean": "rm -rf node_modules apps/*/node_modules packages/*/node_modules"
   },
   "keywords": [

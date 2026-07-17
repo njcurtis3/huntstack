@@ -12,8 +12,10 @@ import {
   Moon,
   Crosshair,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useThemeStore } from '../stores/themeStore'
+import { useAuthStore } from '../stores/authStore'
+import { AuthModal } from './AuthModal'
 
 const primaryNav = [
   { name: 'Migration', href: '/migration', icon: Bird },
@@ -37,7 +39,14 @@ const mobileNav = [
 export function Layout() {
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [authModal, setAuthModal] = useState<'signin' | 'signup' | null>(null)
   const { resolvedTheme, setTheme } = useThemeStore()
+  const { user, isAuthenticated, initialize, logout } = useAuthStore()
+
+  useEffect(() => {
+    initialize()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const toggleTheme = () => {
     setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
@@ -122,8 +131,21 @@ export function Layout() {
                   <Moon className="w-5 h-5" />
                 )}
               </button>
-              <button className="btn-outline text-sm">Sign In</button>
-              <button className="btn-primary text-sm">Sign Up</button>
+              {isAuthenticated && user ? (
+                <>
+                  <span className="text-sm truncate max-w-[10rem]" style={{ color: 'rgb(var(--color-text-secondary))' }}>
+                    {user.email}
+                  </span>
+                  <button onClick={() => logout()} className="btn-outline text-sm">
+                    Sign Out
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => setAuthModal('signin')} className="btn-outline text-sm">Sign In</button>
+                  <button onClick={() => setAuthModal('signup')} className="btn-primary text-sm">Sign Up</button>
+                </>
+              )}
             </div>
 
             {/* Mobile menu button */}
@@ -212,8 +234,38 @@ export function Layout() {
               })}
             </nav>
             <div className="px-4 py-3 border-t border-earth-200 dark:border-earth-700 flex gap-3">
-              <button className="btn-outline text-sm flex-1">Sign In</button>
-              <button className="btn-primary text-sm flex-1">Sign Up</button>
+              {isAuthenticated && user ? (
+                <button
+                  onClick={() => {
+                    logout()
+                    setMobileMenuOpen(false)
+                  }}
+                  className="btn-outline text-sm flex-1"
+                >
+                  Sign Out ({user.email})
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      setAuthModal('signin')
+                      setMobileMenuOpen(false)
+                    }}
+                    className="btn-outline text-sm flex-1"
+                  >
+                    Sign In
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAuthModal('signup')
+                      setMobileMenuOpen(false)
+                    }}
+                    className="btn-primary text-sm flex-1"
+                  >
+                    Sign Up
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -232,7 +284,6 @@ export function Layout() {
               <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Hunters</h3>
               <ul className="space-y-2 text-sm">
                 <li><Link to="/where-to-hunt" className="text-accent-500 hover:underline">Where to Hunt</Link></li>
-                <li><Link to="/search" className="text-accent-500 hover:underline">Search</Link></li>
                 <li><Link to="/map" className="text-accent-500 hover:underline">Explore Map</Link></li>
                 <li><Link to="/migration" className="text-accent-500 hover:underline">Migration</Link></li>
                 <li><Link to="/regulations" className="text-accent-500 hover:underline">Regulations</Link></li>
@@ -274,6 +325,8 @@ export function Layout() {
           </div>
         </div>
       </footer>
+
+      {authModal && <AuthModal mode={authModal} onClose={() => setAuthModal(null)} />}
     </div>
   )
 }

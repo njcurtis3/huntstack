@@ -1,7 +1,8 @@
 import { FastifyPluginAsync } from 'fastify'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, count } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { states, regulations, seasons, licenses, species } from '@huntstack/db/schema'
+import { decodeJsonbField } from '../lib/jsonb.js'
 
 export const regulationsRoutes: FastifyPluginAsync = async (app) => {
   // List all states with regulations
@@ -43,6 +44,78 @@ export const regulationsRoutes: FastifyPluginAsync = async (app) => {
     }).from(states)
 
     return { states: rows }
+  })
+
+  // Per-state regulation/season/license counts in one round trip — used by the
+  // states-listing page to populate state cards without an N-states x 3-endpoint fan-out.
+  app.get('/counts', {
+    schema: {
+      tags: ['regulations'],
+      summary: 'Get regulation/season/license counts for every state in one call',
+      querystring: {
+        type: 'object',
+        properties: {
+          year: { type: 'number', description: 'Season/regulation year (defaults to 2024)' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            counts: {
+              type: 'object',
+              additionalProperties: {
+                type: 'object',
+                properties: {
+                  regulations: { type: 'number' },
+                  seasons: { type: 'number' },
+                  licenses: { type: 'number' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  }, async (request) => {
+    const { year } = request.query as { year?: number }
+    const targetYear = year || 2024
+    const db = getDb()
+
+    const [regCounts, seasonCounts, licenseCounts] = await Promise.all([
+      db
+        .select({ code: states.code, value: count(regulations.id) })
+        .from(states)
+        .leftJoin(regulations, and(
+          eq(regulations.stateId, states.id),
+          eq(regulations.isActive, true),
+          eq(regulations.seasonYear, targetYear),
+        ))
+        .groupBy(states.code),
+      db
+        .select({ code: states.code, value: count(seasons.id) })
+        .from(states)
+        .leftJoin(seasons, eq(seasons.stateId, states.id))
+        .groupBy(states.code),
+      db
+        .select({ code: states.code, value: count(licenses.id) })
+        .from(states)
+        .leftJoin(licenses, eq(licenses.stateId, states.id))
+        .groupBy(states.code),
+    ])
+
+    const result: Record<string, { regulations: number; seasons: number; licenses: number }> = {}
+    for (const row of regCounts) result[row.code] = { regulations: row.value, seasons: 0, licenses: 0 }
+    for (const row of seasonCounts) {
+      result[row.code] = result[row.code] ?? { regulations: 0, seasons: 0, licenses: 0 }
+      result[row.code].seasons = row.value
+    }
+    for (const row of licenseCounts) {
+      result[row.code] = result[row.code] ?? { regulations: 0, seasons: 0, licenses: 0 }
+      result[row.code].licenses = row.value
+    }
+
+    return { counts: result }
   })
 
   // Get regulations for a specific state
@@ -122,7 +195,7 @@ export const regulationsRoutes: FastifyPluginAsync = async (app) => {
         licenseUrl: state.licenseUrl,
         lastScraped: state.lastScraped,
       },
-      regulations: regs,
+      regulations: regs.map(r => ({ ...r, metadata: decodeJsonbField(r.metadata) })),
     }
   })
 
@@ -190,7 +263,11 @@ export const regulationsRoutes: FastifyPluginAsync = async (app) => {
     return {
       state: code,
       year: year || new Date().getFullYear(),
-      seasons: seasonRows,
+      seasons: seasonRows.map(s => ({
+        ...s,
+        bagLimit: decodeJsonbField(s.bagLimit),
+        shootingHours: decodeJsonbField(s.shootingHours),
+      })),
     }
   })
 

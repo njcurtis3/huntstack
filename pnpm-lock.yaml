@@ -38,6 +38,9 @@ importers:
       '@huntstack/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@huntstack/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@supabase/supabase-js':
         specifier: ^2.45.0
         version: 2.94.0
@@ -194,8 +197,6 @@ importers:
       zod:
         specifier: ^3.23.8
         version: 3.25.76
-
-  packages/types: {}
 
 packages:
 

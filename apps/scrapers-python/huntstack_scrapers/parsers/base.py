@@ -5,6 +5,22 @@ Base types and shared utilities for waterfowl count parsers.
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Protocol
+
+
+class ParserResponse(Protocol):
+    """
+    Structural type for whatever gets passed into a parser's response
+    argument. At runtime this is always a Scrapling Response wrapped in
+    _ScraplingResponseShim (see scrapers/refuge_counts.py) — never a real
+    Scrapy Response, since Scrapy itself has been removed from this pipeline.
+    Scrapling's .css()/.get()/.getall()/.attrib API is Scrapy-selector
+    compatible, so parsers can treat this as a drop-in regardless of which
+    concrete object is behind it; this Protocol just documents that surface
+    without requiring the (now-legacy) scrapy package as a type dependency.
+    """
+
+    def css(self, selector: str): ...
 
 
 @dataclass
@@ -67,7 +83,7 @@ def extract_observers(text: str) -> str | None:
 
 
 def extract_table_counts(response) -> dict[str, int]:
-    """Extract species:count pairs from HTML tables in a Scrapy response."""
+    """Extract species:count pairs from HTML tables in a parser response."""
     species_counts: dict[str, int] = {}
 
     tables = response.css("table")
