@@ -118,7 +118,7 @@ Response includes structured data on seasons, licenses, bag limits, shooting hou
 | Regulation scraper URLs | Needs fix | TX, AR, NM, KS, OK source sites restructured — see `plans/Finish-Killer-Feature-3.md` |
 | Additional state regulations | Ongoing | Priority: KS, OK deeper population; scraper URLs must be fixed first |
 | MapPage | Gated | "Coming Soon" overlay with redirect to Where to Hunt; MapLibre wired but unused |
-| Test suite | Not started | `pnpm test` wired, no test files yet |
+| Test suite | Started (scrapers) | pytest suite for `apps/scrapers-python` parsers (67 tests, run via `cd apps/scrapers-python && python -m pytest`). API (`apps/api`) and web (`apps/web`) still have no test files — `pnpm test` there still no-ops. |
 | Background job queue | Deferred | BullMQ + Redis declared but unwired; not needed at current scale |
 
 ### ❌ Explicitly Out of Scope (V1)
@@ -299,6 +299,9 @@ pnpm db:studio        # Open Drizzle Studio GUI
 python -m huntstack_scrapers.scrapers.run refuge_counts
 python -m huntstack_scrapers.scrapers.run state_regulations --state TX
 python -m huntstack_scrapers.scrapers.run refuge_counts --dry-run
+
+# Scraper tests (run from apps/scrapers-python/)
+python -m pytest
 
 # Seed scripts (run from repo root)
 pnpm tsx scripts/seed.ts
