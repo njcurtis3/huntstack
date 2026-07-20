@@ -392,6 +392,31 @@ Core data pipeline, migration intelligence, RAG chat, hunt recommendations, regu
 - Trip planning (save locations, notes)
 - Push notifications: "Snow geese numbers jumped in Clovis"
 - BullMQ background job queue (on-demand data refresh)
+- Auth wiring + monetization (see below) — not before a public beta launch
+
+#### Auth wiring plan
+
+Deliberately deferred: the app isn't public yet (not even a beta), and today literally nothing in the API needs to know who's asking — gating routes before there's a reason to gate them is wasted work and guesses at requirements that don't exist yet. `authStore.ts`/`AuthModal.tsx`/Supabase sign-in already work on the frontend; a signed-in user just has zero effect on API behavior.
+
+**Trigger to revisit:** the first real feature that needs to know who the user is. Strongest current candidates, in likely order:
+1. **Trip planning** (save locations/notes, V2 above) — inherently per-user, no way to build it without identity.
+2. **Outfitter listing management** (self-service edit instead of the current DB-only listings) — needs "only the listing's owner can edit it."
+3. **Reviews** — the `reviews` table already exists and references a user; nothing currently enforces that a review's author is who they claim to be.
+4. **Public beta launch itself** — once the app is public, even read-heavy endpoints likely want *some* notion of identity for rate-limiting-per-user, abuse prevention, or a free/paid split (see monetization below).
+
+**Mechanical shape when it happens:** Supabase already issues JWTs on sign-in — the API side is "verify a Supabase-issued JWT and decorate `request.user`," not "build a whole auth system." `@fastify/jwt` is already a declared dependency; it needs configuring against Supabase's JWT secret (or switching to Supabase's own server-side verification helper) and a `preHandler` on whichever routes end up needing it. Small, mechanical, low-risk — the actual work is deciding *which* routes, not the verification code itself.
+
+#### Monetization plan
+
+Not an engineering task yet — it's an undecided business model (`Open Questions` below), and it has a hard dependency on auth (can't gate a paid feature behind a login that doesn't exist). Building payment plumbing before the model is decided risks building it twice.
+
+**When this gets picked up, in order:**
+1. Decide the model first — plausible options for this product specifically:
+   - **Freemium (B2C)**: free tier with capped AI chat / recommendation calls (real per-call cost via Together.ai), paid tier removes the cap. Natural fit since the core costs (LLM, eBird, NOAA) scale with usage.
+   - **Outfitter listing fees (B2B)**: charge outfitters for listing/premium placement instead of charging hunters — keeps the hunter-facing product free, monetizes the supply side instead. Could run independently of a hunter paywall.
+   - **Both, sequenced**: outfitter fees first (smaller surface, clearer value exchange, doesn't require changing the hunter experience), hunter-facing subscription later once usage data justifies it.
+2. Once a model is picked: wire auth (above) if not already done, then add a `subscriptions`/`entitlements` concept (likely Stripe) and check entitlement at the specific route(s) the model gates — not a blanket auth-everything pass.
+3. Until then: no pricing tiers, no payment integration, no gating exists in the code, and that's intentional, not a gap to silently work around.
 
 ### V3 - Moat Phase (Become Infrastructure)
 
