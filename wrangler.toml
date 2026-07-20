@@ -1,0 +1,34 @@
+# Cloudflare Pages config for the huntstack-web frontend.
+#
+# This mirrors the settings currently configured in the Cloudflare dashboard
+# (Workers & Pages > huntstack > Settings > Builds & deployments), verified
+# 2026-07-20, so the deploy config is version-controlled instead of living
+# only in the dashboard. If you change these here, update the dashboard too
+# (or vice versa) — Cloudflare Pages' git integration does not automatically
+# reconcile the two for every setting; see the comments below.
+
+name = "huntstack"
+compatibility_date = "2026-07-20"
+
+# Root directory is unset in the dashboard (blank = repo root), so paths
+# below are relative to the repo root, not apps/web/.
+pages_build_output_dir = "apps/web/dist"
+
+# NOT enforced by this file — still dashboard-only settings as of this
+# writing (Cloudflare Pages' git-integration build command/root directory
+# are configured via the dashboard UI or the Cloudflare API, not
+# wrangler.toml, for git-connected Pages projects):
+#   Build command: pnpm --filter @huntstack/web build
+#   Root directory: (blank / repo root)
+#   Build comments: Enabled
+#
+# Build-time environment variables (Settings > Environment variables in the
+# dashboard — values are secrets, not committed here; this just documents
+# which VITE_* vars the build expects, matching .env.example):
+#   VITE_API_URL
+#   VITE_SUPABASE_URL
+#   VITE_SUPABASE_ANON_KEY
+#   VITE_MAPTILER_KEY
+#
+# SPA client-side routing fallback is handled by apps/web/public/_redirects
+# (already committed), not by this file.
