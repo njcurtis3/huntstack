@@ -40,7 +40,7 @@ const MIGRATION_STATUS_SCORES: Record<string, number> = {
   no_data: 0,
 }
 
-function getMigrationStatus(
+export function getMigrationStatus(
   trend: string,
   deltaPercent: number | null,
 ): 'arriving' | 'building' | 'peak' | 'declining' | 'departing' | 'first_survey' | 'no_data' {

@@ -205,7 +205,7 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
 
 // ─── Entity extraction ───────────────────────────────────────────────────────
 
-function extractEntities(query: string): ExtractedEntities {
+export function extractEntities(query: string): ExtractedEntities {
   const lower = query.toLowerCase()
   const stateCodes = new Set<string>()
   const speciesSlugs = new Set<string>()
@@ -753,7 +753,7 @@ function formatStructuredContext(ctx: StructuredContext): string {
   return sections.join('\n\n')
 }
 
-function formatBagLimit(bagLimit: unknown): string {
+export function formatBagLimit(bagLimit: unknown): string {
   const bl = decodeJsonbField(bagLimit)
   if (!bl) return ''
   const fmt = (v: unknown): string => {
@@ -768,7 +768,7 @@ function formatBagLimit(bagLimit: unknown): string {
   return parts.length > 0 ? `, bag limit: ${parts.join(', ')}` : ''
 }
 
-function formatShootingHours(hours: unknown): string {
+export function formatShootingHours(hours: unknown): string {
   const h = decodeJsonbField(hours)
   if (!h) return typeof hours === 'string' ? hours : ''
   if (h.start && h.end) return `${h.start} to ${h.end}`

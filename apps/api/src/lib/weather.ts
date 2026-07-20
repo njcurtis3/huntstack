@@ -318,11 +318,11 @@ export interface StatePushFactor {
 
 const NORTH_DIRECTIONS = new Set(['N', 'NW', 'NNW', 'NNE', 'NE'])
 
-function isNorthWind(dir: string): boolean {
+export function isNorthWind(dir: string): boolean {
   return NORTH_DIRECTIONS.has(dir.toUpperCase().trim())
 }
 
-function detectColdFront(periods: { temperature: number; startTime: string }[]): {
+export function detectColdFront(periods: { temperature: number; startTime: string }[]): {
   coldFrontPresent: boolean
   coldFrontIncoming: boolean
 } {
@@ -473,14 +473,14 @@ function mapPeriods(periods: NOAAForecastPeriod[]): ForecastPeriod[] {
   }))
 }
 
-function parseWindSpeed(windStr: string): number {
+export function parseWindSpeed(windStr: string): number {
   const match = windStr.match(/(\d+)\s*(?:to\s*(\d+))?\s*mph/i)
   if (!match) return 0
   // Use higher value if range given (conservative)
   return match[2] ? parseInt(match[2], 10) : parseInt(match[1], 10)
 }
 
-function classifyWind(mph: number): 'calm' | 'light' | 'moderate' | 'strong' | 'dangerous' {
+export function classifyWind(mph: number): 'calm' | 'light' | 'moderate' | 'strong' | 'dangerous' {
   if (mph <= 5) return 'calm'
   if (mph <= 10) return 'light'
   if (mph <= 20) return 'moderate'
@@ -488,7 +488,7 @@ function classifyWind(mph: number): 'calm' | 'light' | 'moderate' | 'strong' | '
   return 'dangerous'
 }
 
-function computeHuntingRating(
+export function computeHuntingRating(
   windMph: number,
   precip: number | null,
   temp: number,
