@@ -92,12 +92,11 @@
       "hardcoded_patterns": [
         "Date: YYYY-MM-DD regex",
         "species_line_pattern multiline regex",
-        "_SKIP_NAMES frozenset",
-        "generate_loess_bluffs_urls() date range hardcoded to Oct 2025 – Apr 2026"
+        "_SKIP_NAMES frozenset"
       ],
       "target_method": "Port URL generator to be season-aware; consider LLM extraction for species table",
-      "status": "pending",
-      "notes": "generate_loess_bluffs_urls() needs to be updated each season (currently hardcoded 2025-2026)."
+      "status": "done",
+      "notes": "generate_loess_bluffs_urls() now computes season bounds dynamically via _current_season_bounds() (today's date -> Oct 1-Apr 30 window), fixed in 822cc60. No longer needs manual updates each season."
     },
 
     {

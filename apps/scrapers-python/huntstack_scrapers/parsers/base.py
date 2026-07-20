@@ -60,6 +60,25 @@ def parse_survey_date(text: str) -> str | None:
     return None
 
 
+def current_waterfowl_season_bounds(today: datetime | None = None) -> tuple[datetime, datetime]:
+    """
+    Return (start, end) for the current waterfowl season (Oct 1 - Apr 30).
+
+    If today is Oct-Dec we're in the season that started this calendar
+    year; if Jan-Sep we're in the season that started last calendar year.
+    """
+    today = today or datetime.today()
+    if today.month >= 10:
+        return datetime(today.year, 10, 1), datetime(today.year + 1, 4, 30)
+    return datetime(today.year - 1, 10, 1), datetime(today.year, 4, 30)
+
+
+def current_waterfowl_season_label(today: datetime | None = None) -> str:
+    """Return the current waterfowl season as a 'YYYY-YYYY' label, e.g. '2026-2027'."""
+    start, end = current_waterfowl_season_bounds(today)
+    return f"{start.year}-{end.year}"
+
+
 def parse_count_value(text: str) -> int | None:
     """Parse a count value, handling commas and non-numeric text."""
     cleaned = text.strip().replace(",", "")

@@ -12,6 +12,7 @@ Source types:
   - "excel_index": Fetch Excel file URLs from an index page, download + parse each
 """
 
+from huntstack_scrapers.parsers.base import current_waterfowl_season_label
 from huntstack_scrapers.parsers.fws_html import parse_fws_refuge_page, parse_fws_story_page
 from huntstack_scrapers.parsers.loess_bluffs_pdf import parse_loess_bluffs_pdf, generate_loess_bluffs_urls
 from huntstack_scrapers.parsers.ldwf_pdf import parse_ldwf_pdf, fetch_ldwf_pdf_urls
@@ -47,7 +48,7 @@ WATERFOWL_SOURCES = [
         "source_type": "pdf_index",
         "survey_type": "aerial_biweekly",
         "pdf_link_selector": 'a[href*="drive.google.com"]::attr(href)',
-        "season_filter": "2025-2026",  # only follow links under current season
+        "season_filter": current_waterfowl_season_label(),  # only follow links under current season
     },
 
     # === Loess Bluffs NWR Weekly PDFs ===
