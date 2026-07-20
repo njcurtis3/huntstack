@@ -124,21 +124,19 @@ describe('detectColdFront', () => {
     expect(result.coldFrontIncoming).toBe(true)
   })
 
-  it('orders max/min by array position within the window, not by startTime value', () => {
-    // NOT a guarantee of the function — documents an actual constraint.
-    // The 24h/48h *windowing* step does filter by real startTime (covered
-    // by the "incoming front" case above), but the subsequent max-precedes-min
-    // check compares array index within that filtered subset, not the
-    // startTime values themselves. It silently assumes the caller passes
-    // periods in chronological order (true for NOAA's real API responses).
-    // Here the array order is reversed relative to the timestamps — despite
-    // the chronologically-earlier reading being the max, the array-position
-    // check sees the min listed first and the max second, so it does NOT
-    // register as a present front.
+  it('orders max/min by actual startTime, not by array position', () => {
+    // Regression: this previously compared array *index* position within
+    // the windowed subset instead of real startTime values, so it silently
+    // assumed the caller passed periods in chronological order. Here the
+    // array order is reversed relative to the timestamps — the min is
+    // listed first but its timestamp is later, and the max is listed
+    // second but its timestamp is earlier — so this must still register as
+    // a genuine present front (max time precedes min time), regardless of
+    // array order.
     const periods = [
       { temperature: 45, startTime: hoursFromNow(12) }, // min, but listed first
       { temperature: 60, startTime: hoursFromNow(1) },  // max, but listed second
     ]
-    expect(detectColdFront(periods)).toEqual({ coldFrontPresent: false, coldFrontIncoming: false })
+    expect(detectColdFront(periods)).toEqual({ coldFrontPresent: true, coldFrontIncoming: false })
   })
 })

@@ -322,6 +322,24 @@ export function isNorthWind(dir: string): boolean {
   return NORTH_DIRECTIONS.has(dir.toUpperCase().trim())
 }
 
+// True if the window contains a >=10°F peak-to-trough drop where the peak's
+// actual startTime precedes the trough's (a genuine drop, not a recovery).
+// Compares real timestamps rather than array position, so this is correct
+// even if a caller ever passes periods out of chronological order — unlike
+// comparing findIndex() results, which only happens to work today because
+// NOAA's real API responses are already time-ordered.
+function hasGenuineDrop(window: { temperature: number; startTime: string }[]): boolean {
+  if (window.length < 2) return false
+
+  const maxTemp = Math.max(...window.map(p => p.temperature))
+  const minTemp = Math.min(...window.map(p => p.temperature))
+  if (maxTemp - minTemp < 10) return false
+
+  const maxPeriod = window.find(p => p.temperature === maxTemp)!
+  const minPeriod = window.find(p => p.temperature === minTemp)!
+  return new Date(maxPeriod.startTime).getTime() < new Date(minPeriod.startTime).getTime()
+}
+
 export function detectColdFront(periods: { temperature: number; startTime: string }[]): {
   coldFrontPresent: boolean
   coldFrontIncoming: boolean
@@ -334,26 +352,11 @@ export function detectColdFront(periods: { temperature: number; startTime: strin
   const within24h  = periods.filter(p => new Date(p.startTime).getTime() - now <= 24 * 60 * 60 * 1000)
   const within48h  = periods.filter(p => new Date(p.startTime).getTime() - now <= 48 * 60 * 60 * 1000)
 
-  // Present: a >=10°F peak-to-trough drop occurs entirely within the next 24 hours.
-  // Max must precede min in time (genuine drop, not a recovery).
-  let coldFrontPresent = false
-  if (within24h.length >= 2) {
-    const maxTemp = Math.max(...within24h.map(p => p.temperature))
-    const minTemp = Math.min(...within24h.map(p => p.temperature))
-    const maxIdx  = within24h.findIndex(p => p.temperature === maxTemp)
-    const minIdx  = within24h.findIndex(p => p.temperature === minTemp)
-    coldFrontPresent = maxTemp - minTemp >= 10 && maxIdx < minIdx
-  }
+  // Present: a genuine drop occurs entirely within the next 24 hours.
+  const coldFrontPresent = hasGenuineDrop(within24h)
 
-  // Incoming: a >=10°F drop is visible in the 24–48h window but not yet present.
-  let coldFrontIncoming = false
-  if (!coldFrontPresent && within48h.length >= 2) {
-    const maxTemp = Math.max(...within48h.map(p => p.temperature))
-    const minTemp = Math.min(...within48h.map(p => p.temperature))
-    const maxIdx  = within48h.findIndex(p => p.temperature === maxTemp)
-    const minIdx  = within48h.findIndex(p => p.temperature === minTemp)
-    coldFrontIncoming = maxTemp - minTemp >= 10 && maxIdx < minIdx
-  }
+  // Incoming: a genuine drop is visible in the 24–48h window but not yet present.
+  const coldFrontIncoming = !coldFrontPresent && hasGenuineDrop(within48h)
 
   return { coldFrontPresent, coldFrontIncoming }
 }
