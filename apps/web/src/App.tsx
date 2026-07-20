@@ -11,6 +11,8 @@ import { ChatPage } from './pages/ChatPage'
 import { WhereToHuntPage } from './pages/WhereToHuntPage'
 import { DataSourcesPage } from './pages/DataSourcesPage'
 import { ApiPage } from './pages/ApiPage'
+import { PrivacyPage } from './pages/PrivacyPage'
+import { TermsPage } from './pages/TermsPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -61,6 +63,8 @@ function App() {
           <Route path="chat" element={<ChatPage />} />
           <Route path="data-sources" element={<DataSourcesPage />} />
           <Route path="api" element={<ApiPage />} />
+          <Route path="privacy" element={<PrivacyPage />} />
+          <Route path="terms" element={<TermsPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

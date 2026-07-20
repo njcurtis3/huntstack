@@ -311,8 +311,8 @@ export function Layout() {
               <ul className="space-y-2 text-sm">
                 <li><a href="#" className="text-accent-500 hover:underline">About</a></li>
                 <li><a href="#" className="text-accent-500 hover:underline">Contact</a></li>
-                <li><a href="#" className="text-accent-500 hover:underline">Privacy</a></li>
-                <li><a href="#" className="text-accent-500 hover:underline">Terms</a></li>
+                <li><Link to="/privacy" className="text-accent-500 hover:underline">Privacy</Link></li>
+                <li><Link to="/terms" className="text-accent-500 hover:underline">Terms</Link></li>
               </ul>
             </div>
           </div>
