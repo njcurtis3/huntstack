@@ -9,6 +9,7 @@ import { MigrationPage } from './pages/MigrationPage'
 import { MigrationReportPage } from './pages/MigrationReportPage'
 import { ChatPage } from './pages/ChatPage'
 import { WhereToHuntPage } from './pages/WhereToHuntPage'
+import { DataSourcesPage } from './pages/DataSourcesPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -57,6 +58,7 @@ function App() {
           <Route path="outfitters" element={<OutfittersPage />} />
           <Route path="outfitters/:id" element={<OutfittersPage />} />
           <Route path="chat" element={<ChatPage />} />
+          <Route path="data-sources" element={<DataSourcesPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

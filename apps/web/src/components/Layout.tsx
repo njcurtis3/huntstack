@@ -302,7 +302,7 @@ export function Layout() {
               <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Resources</h3>
               <ul className="space-y-2 text-sm">
                 <li><a href="#" className="text-accent-500 hover:underline">Blog</a></li>
-                <li><a href="#" className="text-accent-500 hover:underline">Data Sources</a></li>
+                <li><Link to="/data-sources" className="text-accent-500 hover:underline">Data Sources</Link></li>
                 <li><a href="#" className="text-accent-500 hover:underline">API</a></li>
               </ul>
             </div>
