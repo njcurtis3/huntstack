@@ -295,7 +295,7 @@ export function Layout() {
               <ul className="space-y-2 text-sm">
                 <li><a href="#" className="text-accent-500 hover:underline">List Your Business</a></li>
                 <li><a href="#" className="text-accent-500 hover:underline">Reg Alerts</a></li>
-                <li><a href="#" className="text-accent-500 hover:underline">Dashboard</a></li>
+                <li><Link to="/outfitters/dashboard" className="text-accent-500 hover:underline">Dashboard</Link></li>
               </ul>
             </div>
             <div>
