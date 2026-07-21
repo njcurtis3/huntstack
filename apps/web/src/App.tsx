@@ -71,7 +71,7 @@ function App() {
           <Route path="outfitters/:id" element={<OutfittersPage />} />
           <Route path="chat" element={<ChatPage />} />
           <Route path="data-sources" element={<DataSourcesPage />} />
-          <Route path="api" element={<ApiPage />} />
+          <Route path="developers" element={<ApiPage />} />
           <Route path="privacy" element={<PrivacyPage />} />
           <Route path="terms" element={<TermsPage />} />
           <Route path="about" element={<AboutPage />} />

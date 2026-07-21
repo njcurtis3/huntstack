@@ -303,7 +303,7 @@ export function Layout() {
               <ul className="space-y-2 text-sm">
                 <li><Link to="/blog" className="text-accent-500 hover:underline">Blog</Link></li>
                 <li><Link to="/data-sources" className="text-accent-500 hover:underline">Data Sources</Link></li>
-                <li><Link to="/api" className="text-accent-500 hover:underline">API</Link></li>
+                <li><Link to="/developers" className="text-accent-500 hover:underline">API</Link></li>
               </ul>
             </div>
             <div>
