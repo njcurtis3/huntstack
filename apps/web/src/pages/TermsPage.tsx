@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 const LAST_UPDATED = 'July 20, 2026'
 
 export function TermsPage() {
@@ -103,7 +105,10 @@ export function TermsPage() {
           <h2 className="text-lg font-semibold mb-2" style={{ color: `rgb(var(--color-text-primary))` }}>
             Contact
           </h2>
-          <p>Questions about these terms: contact the site owner directly.</p>
+          <p>
+            Questions about these terms:{' '}
+            <Link to="/contact" className="text-accent-500 hover:underline">get in touch</Link>.
+          </p>
         </section>
       </div>
     </div>

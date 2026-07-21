@@ -36,7 +36,8 @@ export function RegAlertsPage() {
       </div>
 
       <p className="text-xs mt-8" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-        Want to be notified when this ships? Contact the site owner directly.
+        Want to be notified when this ships?{' '}
+        <Link to="/contact" className="text-accent-500 hover:underline">Get in touch</Link>.
       </p>
     </div>
   )

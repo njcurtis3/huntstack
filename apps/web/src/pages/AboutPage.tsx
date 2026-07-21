@@ -58,7 +58,10 @@ export function AboutPage() {
           for exactly what's aggregated today and where it comes from.
         </p>
 
-        <p>If you're a hunter and something here is wrong, missing, or just annoying, I want to hear about it.</p>
+        <p>
+          If you're a hunter and something here is wrong, missing, or just annoying, I want to hear about
+          it — <Link to="/contact" className="text-accent-500 hover:underline">reach out</Link>.
+        </p>
       </div>
     </div>
   )

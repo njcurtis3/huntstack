@@ -35,8 +35,8 @@ export function OutfitterDashboardPage() {
       </div>
 
       <p className="text-xs mt-8" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-        Run an outfitting business and want to be listed, or want early access when this launches? Contact
-        the site owner directly.
+        Run an outfitting business and want to be listed, or want early access when this launches?{' '}
+        <Link to="/contact" className="text-accent-500 hover:underline">Get in touch</Link>.
       </p>
     </div>
   )

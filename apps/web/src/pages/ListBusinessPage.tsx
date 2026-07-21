@@ -38,7 +38,7 @@ export function ListBusinessPage() {
       </div>
 
       <p className="text-xs mt-8" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-        To get listed, contact the site owner directly.
+        To get listed, <Link to="/contact" className="text-accent-500 hover:underline">get in touch</Link>.
       </p>
     </div>
   )
