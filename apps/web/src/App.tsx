@@ -18,6 +18,7 @@ import { OutfitterDashboardPage } from './pages/OutfitterDashboardPage'
 import { RegAlertsPage } from './pages/RegAlertsPage'
 import { ListBusinessPage } from './pages/ListBusinessPage'
 import { ContactPage } from './pages/ContactPage'
+import { BlogPage } from './pages/BlogPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -75,6 +76,7 @@ function App() {
           <Route path="terms" element={<TermsPage />} />
           <Route path="about" element={<AboutPage />} />
           <Route path="contact" element={<ContactPage />} />
+          <Route path="blog" element={<BlogPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
