@@ -293,7 +293,7 @@ export function Layout() {
             <div>
               <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Outfitters</h3>
               <ul className="space-y-2 text-sm">
-                <li><a href="#" className="text-accent-500 hover:underline">List Your Business</a></li>
+                <li><Link to="/outfitters/list-your-business" className="text-accent-500 hover:underline">List Your Business</Link></li>
                 <li><Link to="/outfitters/reg-alerts" className="text-accent-500 hover:underline">Reg Alerts</Link></li>
                 <li><Link to="/outfitters/dashboard" className="text-accent-500 hover:underline">Dashboard</Link></li>
               </ul>
