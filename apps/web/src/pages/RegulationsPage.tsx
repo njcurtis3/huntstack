@@ -8,6 +8,17 @@ import { getMapColors } from '../lib/themeColors'
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json'
 
+// Current waterfowl season year: the fall-start year of the season now in play. Seasons run
+// fall→winter (e.g. the "2026" season is Oct 2026–Jan 2027), so from July onward the current
+// season is this calendar year; before July it's still last year's season. Computed rather than
+// hardcoded so the default doesn't silently go stale each summer.
+function currentSeasonYear(): number {
+  const now = new Date()
+  return now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1
+}
+const SEASON_YEAR = currentSeasonYear()
+const SEASON_YEAR_OPTIONS = [SEASON_YEAR, SEASON_YEAR - 1, SEASON_YEAR - 2, SEASON_YEAR - 3]
+
 const STATE_NAME_TO_CODE: Record<string, string> = {
   'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR',
   'California': 'CA', 'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE',
@@ -409,7 +420,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedCategory, setSelectedCategory] = useState('all')
-  const [selectedYear, setSelectedYear] = useState<number>(2024)
+  const [selectedYear, setSelectedYear] = useState<number>(SEASON_YEAR)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [expandedLicenseTypes, setExpandedLicenseTypes] = useState<Set<string>>(new Set())
 
@@ -553,8 +564,8 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
           onChange={e => { setSelectedYear(Number(e.target.value)); setSelectedCategory('all') }}
           className="px-3 py-2 rounded-md text-sm font-medium border bg-earth-50 dark:bg-earth-800 text-earth-700 dark:text-earth-200 border-earth-200 dark:border-earth-700"
         >
-          {[2025, 2024, 2023, 2022].map(y => (
-            <option key={y} value={y}>{y}</option>
+          {SEASON_YEAR_OPTIONS.map(y => (
+            <option key={y} value={y}>{y}–{y + 1}</option>
           ))}
         </select>
 

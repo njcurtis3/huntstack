@@ -4,6 +4,14 @@ import { getDb } from '../lib/db.js'
 import { states, regulations, seasons, licenses, species } from '@huntstack/db/schema'
 import { decodeJsonbField } from '../lib/jsonb.js'
 
+// Current waterfowl season year: fall-start year of the season now in play. Seasons run
+// fall→winter, so from July onward the current season is this calendar year; before July it's
+// still last year's. Computed rather than hardcoded so defaults don't go stale each summer.
+function currentSeasonYear(): number {
+  const now = new Date()
+  return now.getMonth() >= 6 ? now.getFullYear() : now.getFullYear() - 1
+}
+
 export const regulationsRoutes: FastifyPluginAsync = async (app) => {
   // List all states with regulations
   app.get('/states', {
@@ -79,7 +87,7 @@ export const regulationsRoutes: FastifyPluginAsync = async (app) => {
     },
   }, async (request) => {
     const { year } = request.query as { year?: number }
-    const targetYear = year || 2024
+    const targetYear = year || currentSeasonYear()
     const db = getDb()
 
     const [regCounts, seasonCounts, licenseCounts] = await Promise.all([
@@ -95,7 +103,10 @@ export const regulationsRoutes: FastifyPluginAsync = async (app) => {
       db
         .select({ code: states.code, value: count(seasons.id) })
         .from(states)
-        .leftJoin(seasons, eq(seasons.stateId, states.id))
+        .leftJoin(seasons, and(
+          eq(seasons.stateId, states.id),
+          eq(seasons.year, targetYear),
+        ))
         .groupBy(states.code),
       db
         .select({ code: states.code, value: count(licenses.id) })

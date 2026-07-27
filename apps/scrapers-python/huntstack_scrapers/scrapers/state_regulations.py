@@ -80,9 +80,9 @@ STATE_SOURCES = {
     "KS": {
         "name": "Kansas",
         "start_urls": [
-            "https://ksoutdoors.gov/Hunting/Migratory-Birds",
-            "https://ksoutdoors.gov/Hunting/Migratory-Birds/Ducks",
-            "https://ksoutdoors.gov/Hunting/Migratory-Birds/Geese/REGULATIONS",
+            "https://ksoutdoors.gov/outdoor-activities/hunting-in-kansas/what-to-hunt/migratory-birds",
+            "https://ksoutdoors.gov/outdoor-activities/hunting-in-kansas/what-to-hunt/migratory-birds/ducks",
+            "https://ksoutdoors.gov/outdoor-activities/hunting-in-kansas/what-to-hunt/migratory-birds/geese",
         ],
         "allowed_domains": ["ksoutdoors.gov"],
         "link_keywords": ["migratory", "waterfowl", "duck", "goose"],

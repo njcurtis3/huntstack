@@ -8,10 +8,11 @@ Usage:
     python -m huntstack_scrapers.extract_regulations
     python -m huntstack_scrapers.extract_regulations --state TX
     python -m huntstack_scrapers.extract_regulations --dry-run
-    python -m huntstack_scrapers.extract_regulations --model meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo
+    python -m huntstack_scrapers.extract_regulations --model Qwen/Qwen2.5-7B-Instruct-Turbo
 """
 
 import os
+import re
 import sys
 import json
 import argparse
@@ -32,7 +33,13 @@ logging.basicConfig(
 )
 log = logging.getLogger("extract")
 
-DEFAULT_MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
+# NOTE: Together.ai retired the Llama-3.1 Turbo family from serverless as of ~mid-2026 (now
+# dedicated-endpoint only — returns 400 model_not_available). Qwen2.5-7B-Instruct-Turbo is the
+# current serverless replacement: same family as the API's chat model and a like-for-like swap
+# for the original 8B baseline (fast/cheap, practical for the full 6-state seasonal refresh).
+# For a slower, higher-accuracy pass pass --model meta-llama/Llama-3.3-70B-Instruct-Turbo
+# (also serverless-verified 2026-07-27, but ~10x slower per call on the 552-doc TX set).
+DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct-Turbo"
 TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
 V1_STATES = ["TX", "AR", "NM", "LA", "KS", "OK"]
 
@@ -74,6 +81,29 @@ def call_llm(prompt: str, system: str, model: str) -> str:
     resp.raise_for_status()
     data = resp.json()
     return data["choices"][0]["message"]["content"]
+
+
+def clean_content(text: str) -> str:
+    """Strip CSS/JS/style boilerplate the scraper stored alongside the real page text.
+
+    Some source pages (notably ksoutdoors.gov) are stored with tens of thousands of chars
+    of leading inline CSS, AngularJS bootstrap, and nav markup before the actual regulation
+    text — e.g. a KS 'Ducks' page buries its season-date table past char 32,000. That pushed
+    the real content beyond both the classify (6K) and extraction (30K) windows, so pages got
+    misclassified as non-waterfowl and their seasons never extracted. Removing the boilerplate
+    compacts the real text toward the top so it lands inside the windows.
+    """
+    if not text:
+        return text
+    text = re.sub(r"<style[^>]*>.*?</style>", " ", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<script[^>]*>.*?</script>", " ", text, flags=re.DOTALL | re.IGNORECASE)
+    # CSS rule blocks (selector { ... }) and any leftover brace blocks
+    text = re.sub(r"[.#]?[\w-]+(\s*[,>+~]\s*[.#:\w-]+)*\s*\{[^{}]*\}", " ", text)
+    text = re.sub(r"\{[^{}]*\}", " ", text)
+    # inline JS config assignments (window.foo = {...}; / var foo = {...};)
+    text = re.sub(r"(window\.\w+|var\s+\w+)\s*=\s*[^;]{0,4000};", " ", text, flags=re.DOTALL)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 def parse_json_response(text: str) -> dict:
@@ -203,7 +233,7 @@ If no regulations are found, output: {"regulations": []}"""
 
 def extract_seasons(doc: dict, state_code: str, model: str, year: int = 2024) -> list[dict]:
     """Extract season data from a document."""
-    prompt = f"State: {state_code}\nSeason year: {year}-{year+1} (fall {year} through spring {year+1})\nDocument title: {doc['title']}\nSource URL: {doc.get('source_url', 'unknown')}\n\nDocument content:\n{doc['content'][:16000]}"
+    prompt = f"State: {state_code}\nSeason year: {year}-{year+1} (fall {year} through spring {year+1})\nDocument title: {doc['title']}\nSource URL: {doc.get('source_url', 'unknown')}\n\nDocument content:\n{doc['content'][:30000]}"
 
     try:
         result = parse_json_response(call_llm(prompt, SEASONS_SYSTEM, model))
@@ -217,7 +247,7 @@ def extract_seasons(doc: dict, state_code: str, model: str, year: int = 2024) ->
 
 def extract_licenses(doc: dict, state_code: str, model: str) -> list[dict]:
     """Extract license data from a document."""
-    prompt = f"State: {state_code}\nDocument title: {doc['title']}\nSource URL: {doc.get('source_url', 'unknown')}\n\nDocument content:\n{doc['content'][:16000]}"
+    prompt = f"State: {state_code}\nDocument title: {doc['title']}\nSource URL: {doc.get('source_url', 'unknown')}\n\nDocument content:\n{doc['content'][:30000]}"
 
     try:
         result = parse_json_response(call_llm(prompt, LICENSES_SYSTEM, model))
@@ -231,7 +261,7 @@ def extract_licenses(doc: dict, state_code: str, model: str) -> list[dict]:
 
 def extract_regulations(doc: dict, state_code: str, model: str) -> list[dict]:
     """Extract regulation data from a document."""
-    prompt = f"State: {state_code}\nDocument title: {doc['title']}\nSource URL: {doc.get('source_url', 'unknown')}\n\nDocument content:\n{doc['content'][:16000]}"
+    prompt = f"State: {state_code}\nDocument title: {doc['title']}\nSource URL: {doc.get('source_url', 'unknown')}\n\nDocument content:\n{doc['content'][:30000]}"
 
     try:
         result = parse_json_response(call_llm(prompt, REGULATIONS_SYSTEM, model))
@@ -304,6 +334,28 @@ def load_documents(conn, state_code: str) -> list[dict]:
             AND length(d.content) > 200
             AND d.title NOT ILIKE '%%pfas%%'
             AND d.title NOT ILIKE '%%commercial fish%%'
+            -- Exclude crawl-trap / non-authoritative noise from the state_regulations scraper's
+            -- over-broad link-following. These pages carry no statewide season/license/regulation
+            -- content, and feeding them to the LLM extractor is both slow AND a correctness risk:
+            -- news articles in particular cause the model to hallucinate "seasons" out of prose
+            -- (e.g. AR's /news/ 'Waterfowl Report' pages). Filtering these keeps every state's doc
+            -- set small enough to extract in one pass and keeps extraction grounded in real reg
+            -- pages. Cuts e.g. TX 558->69, KS 684->69, AR 202->~11. See CONSTRAINTS.md scraper note.
+            AND d.source_url NOT ILIKE '%%huntwild/hunt/wma%%'  -- TX per-WMA amenity pages
+            AND d.source_url NOT ILIKE '%%/layout/%%'           -- KS CMS template URLs
+            AND d.source_url NOT ILIKE '%%/news/%%'             -- news articles (all states)
+            AND d.source_url NOT ILIKE '%%/tag/%%'              -- blog/news tag index pages
+            AND d.source_url NOT ILIKE '%%/category/%%'         -- blog category index pages
+            AND d.source_url NOT ILIKE '%%wp-content%%'         -- WordPress media/attachments
+            -- Only extract from the freshest scrape for this state. The documents table
+            -- accumulates every historical scrape, so after a source site restructures its
+            -- URLs (as TX/KS/NM did in 2026) the old, now-dead pages linger with stale season
+            -- dates and would otherwise contaminate the current-year extraction (and bloat it:
+            -- KS alone had 1571 stale docs from an old over-crawl). Scoping to within 3 days of
+            -- the state's most recent scrape keeps extraction current and fast.
+            AND d.created_at >= (
+                SELECT MAX(d2.created_at) FROM documents d2 WHERE d2.state_id = d.state_id
+            ) - INTERVAL '3 days'
             ORDER BY d.source_url, d.created_at DESC
         """, (state_code,))
         columns = [desc[0] for desc in cur.description]
@@ -645,6 +697,10 @@ def process_state(conn, state_code: str, model: str, dry_run: bool, year: int):
         docs_since_flush = 0
 
     for doc in docs:
+        # Strip CSS/JS/nav boilerplate once so the real regulation text lands inside the
+        # classify/extraction windows (see clean_content docstring — fixes KS pages whose
+        # season tables sat past char 32,000 behind inline styles and AngularJS bootstrap).
+        doc["content"] = clean_content(doc["content"])
         log.info(f"\nClassifying: '{doc['title']}'")
         categories = classify_document(doc, model)
 
@@ -656,24 +712,30 @@ def process_state(conn, state_code: str, model: str, dry_run: bool, year: int):
 
         log.info(f"  Categories: {categories}")
 
-        seasons = extract_seasons(doc, state_code, model, year=year)
-        valid = [s for s in seasons if validate_season(s)]
-        if len(valid) < len(seasons):
-            log.warning(f"  {len(seasons) - len(valid)} seasons failed validation")
-        batch_seasons.extend(valid)
-        all_seasons.extend(valid)
+        # Only run each extractor for a category the classifier actually flagged. Calling all
+        # three on every relevant doc tripled the LLM calls (and wall-clock) for no gain — a
+        # season-only page still paid for license+regulation extractions that returned nothing.
+        if "seasons" in categories:
+            seasons = extract_seasons(doc, state_code, model, year=year)
+            valid = [s for s in seasons if validate_season(s)]
+            if len(valid) < len(seasons):
+                log.warning(f"  {len(seasons) - len(valid)} seasons failed validation")
+            batch_seasons.extend(valid)
+            all_seasons.extend(valid)
 
-        licenses = extract_licenses(doc, state_code, model)
-        valid = [l for l in licenses if validate_license(l)]
-        if len(valid) < len(licenses):
-            log.warning(f"  {len(licenses) - len(valid)} licenses failed validation")
-        batch_licenses.extend(valid)
-        all_licenses.extend(valid)
+        if "licenses" in categories:
+            licenses = extract_licenses(doc, state_code, model)
+            valid = [l for l in licenses if validate_license(l)]
+            if len(valid) < len(licenses):
+                log.warning(f"  {len(licenses) - len(valid)} licenses failed validation")
+            batch_licenses.extend(valid)
+            all_licenses.extend(valid)
 
-        regs = extract_regulations(doc, state_code, model)
-        valid_regs = [r for r in regs if r.get("title") and r.get("content")]
-        batch_regs.extend(valid_regs)
-        all_regulations.extend(valid_regs)
+        if "regulations" in categories:
+            regs = extract_regulations(doc, state_code, model)
+            valid_regs = [r for r in regs if r.get("title") and r.get("content")]
+            batch_regs.extend(valid_regs)
+            all_regulations.extend(valid_regs)
 
         docs_since_flush += 1
         flush()
