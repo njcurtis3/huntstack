@@ -327,7 +327,7 @@ export function ChatPage() {
                   <div className="max-w-[85%] space-y-3">
                     {/* Message bubble */}
                     <div
-                      className={`rounded-lg px-4 py-3 ${message.role === 'user' ? 'bg-accent-500 text-white' : ''}`}
+                      className={`rounded-lg px-4 py-3 break-words ${message.role === 'user' ? 'bg-accent-500 text-white' : ''}`}
                       style={message.role === 'assistant' ? {
                         backgroundColor: `rgb(var(--color-bg-secondary))`,
                         color: `rgb(var(--color-text-primary))`,
@@ -345,16 +345,17 @@ export function ChatPage() {
                               h1: ({ children }) => <h1 className="font-bold text-base mb-1 mt-3 first:mt-0">{children}</h1>,
                               h2: ({ children }) => <h2 className="font-semibold text-sm mb-1 mt-3 first:mt-0">{children}</h2>,
                               h3: ({ children }) => <h3 className="font-semibold text-sm mb-1 mt-2 first:mt-0">{children}</h3>,
-                              code: ({ children }) => <code className="bg-earth-100 dark:bg-earth-800 rounded px-1 py-0.5 text-xs font-mono">{children}</code>,
+                              code: ({ children }) => <code className="bg-earth-100 dark:bg-earth-800 rounded px-1 py-0.5 text-xs font-mono break-all whitespace-pre-wrap">{children}</code>,
+                              pre: ({ children }) => <pre className="overflow-x-auto rounded bg-earth-100 dark:bg-earth-800 p-2 text-xs font-mono mb-2">{children}</pre>,
                               blockquote: ({ children }) => <blockquote className="border-l-2 border-accent-400 pl-3 italic opacity-80 mb-2">{children}</blockquote>,
-                              a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:underline">{children}</a>,
+                              a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:underline break-all">{children}</a>,
                             }}
                           >
                             {message.content}
                           </ReactMarkdown>
                         </div>
                       ) : (
-                        <p className="text-sm leading-relaxed">{message.content}</p>
+                        <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">{message.content}</p>
                       )}
                     </div>
 

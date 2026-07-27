@@ -1076,10 +1076,8 @@ function MigrationChat({ speciesName, selectedStates }: {
 
   return (
     <div
-      className="fixed bottom-6 right-6 z-50 flex flex-col rounded-xl shadow-2xl overflow-hidden"
+      className="fixed inset-x-4 bottom-4 sm:inset-x-auto sm:right-6 sm:bottom-6 z-50 flex flex-col rounded-xl shadow-2xl overflow-hidden w-auto sm:w-[380px] h-[70vh] max-h-[520px] sm:h-[520px]"
       style={{
-        width: 380,
-        height: 520,
         backgroundColor: `rgb(var(--color-bg-elevated))`,
         border: `1px solid rgb(var(--color-border-primary))`,
       }}
@@ -1951,7 +1949,7 @@ export function MigrationPage() {
         )}
 
         {/* Quick Intel */}
-        <div className="rounded-lg border" style={{ margin: '100px 0', borderColor: `rgb(var(--color-border-primary))` }}>
+        <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
           <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
             <span className="text-base font-bold text-white">Quick Intel</span>
           </div>
@@ -1981,7 +1979,7 @@ export function MigrationPage() {
 
         {/* Regional Activity — eBird community data */}
         {(regionalActivityLoading || (regionalActivity && regionalActivity.stateActivity.length > 0)) && (
-          <div className="rounded-lg border" style={{ margin: '100px 0', borderColor: `rgb(var(--color-border-primary))` }}>
+          <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
             <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
               <div className="flex items-center gap-2">
                 <span className="text-base font-bold text-white">Regional Activity</span>
@@ -2003,7 +2001,7 @@ export function MigrationPage() {
         )}
 
         {/* My Area */}
-        <div className="rounded-lg border" style={{ margin: '100px 0', borderColor: `rgb(var(--color-border-primary))` }}>
+        <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
           <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
             <span className="text-base font-bold text-white">My Area</span>
           </div>
@@ -2352,7 +2350,7 @@ export function MigrationPage() {
         {!loading && !error && (
           <>
             {/* Snapshot */}
-            <div className="rounded-lg border" style={{ margin: '100px 0', borderColor: `rgb(var(--color-border-primary))` }}>
+            <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
               <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
                 <span className="text-base font-bold text-white">Snapshot</span>
               </div>

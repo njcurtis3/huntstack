@@ -2,9 +2,9 @@ import { Layers, MapPin, Construction } from 'lucide-react'
 
 export function MapPage() {
   return (
-    <div className="h-[calc(100vh-4rem)] flex relative">
+    <div className="h-[calc(100vh-4rem)] flex flex-col md:flex-row relative">
       {/* Sidebar (visual placeholder) */}
-      <div className="w-80 flex flex-col border-r" style={{ backgroundColor: `rgb(var(--color-bg-elevated))`, borderColor: `rgb(var(--color-border-primary))` }}>
+      <div className="w-full md:w-80 flex flex-col border-r" style={{ backgroundColor: `rgb(var(--color-bg-elevated))`, borderColor: `rgb(var(--color-border-primary))` }}>
         <div className="p-4 border-b" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
           <h2 className="font-semibold text-sm" style={{ color: `rgb(var(--color-text-primary))` }}>Map Layers</h2>
         </div>

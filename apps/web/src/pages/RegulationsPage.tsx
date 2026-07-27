@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { ChevronRight, ChevronDown, FileText, AlertCircle, ExternalLink, Loader2, MessageSquare, X } from 'lucide-react'
-import { ComposableMap, Geographies, Geography } from 'react-simple-maps'
+import { ChevronRight, ChevronDown, FileText, AlertCircle, ExternalLink, Loader2, MessageSquare, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
+import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps'
 import { api } from '../lib/api'
 import { useThemeStore } from '../stores/themeStore'
 import { getMapColors } from '../lib/themeColors'
@@ -729,6 +729,9 @@ export function RegulationsPage() {
   const [compareMode, setCompareMode] = useState(false)
   const [compareStates, setCompareStates] = useState<Set<string>>(new Set())
 
+  const [mapZoom, setMapZoom] = useState(1)
+  const [mapCenter, setMapCenter] = useState<[number, number]>([0, 0])
+
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme)
   const mapColors = getMapColors(resolvedTheme)
 
@@ -878,55 +881,88 @@ export function RegulationsPage() {
               </span>
             </div>
           </div>
-          <ComposableMap
-            projection="geoAlbersUsa"
-            projectionConfig={{ scale: 1000 }}
-            width={980}
-            height={500}
-            style={{ width: '100%', height: 'auto' }}
-          >
-            <Geographies geography={GEO_URL}>
-              {({ geographies }) =>
-                geographies.map(geo => {
-                  const stateName = geo.properties.name as string
-                  const stateCode = STATE_NAME_TO_CODE[stateName]
-                  if (!stateCode) return null
-                  const hasData = statesWithData.has(stateCode)
-                  const isSelected = compareMode ? compareStates.has(stateCode) : selectedState === stateCode
-                  const isClickable = hasData
-                  return (
-                    <Geography
-                      key={geo.rsmKey}
-                      geography={geo}
-                      onClick={() => isClickable && handleMapStateClick(stateCode)}
-                      style={{
-                        default: {
-                          fill: isSelected ? mapColors.selected : hasData ? mapColors.hasData : mapColors.empty,
-                          stroke: mapColors.stroke,
-                          strokeWidth: 0.5,
-                          outline: 'none',
-                          cursor: isClickable ? 'pointer' : 'default',
-                        },
-                        hover: {
-                          fill: isSelected ? mapColors.selectedHover : hasData ? mapColors.hasDataHover : mapColors.empty,
-                          stroke: hasData ? mapColors.selected : mapColors.stroke,
-                          strokeWidth: hasData ? 1.5 : 0.5,
-                          outline: 'none',
-                          cursor: isClickable ? 'pointer' : 'default',
-                        },
-                        pressed: {
-                          fill: isSelected ? mapColors.selectedHover : hasData ? mapColors.hasDataHover : mapColors.empty,
-                          stroke: mapColors.selected,
-                          strokeWidth: 1.5,
-                          outline: 'none',
-                        },
-                      }}
-                    />
-                  )
-                })
-              }
-            </Geographies>
-          </ComposableMap>
+          <p className="sm:hidden text-xs mb-2" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+            Map view is best on larger screens — search or tap a state card below to select one.
+          </p>
+          <div className="relative">
+            <div className="absolute top-2 right-2 z-10 flex flex-col gap-1">
+              <button
+                onClick={() => setMapZoom(z => Math.min(z * 1.5, 8))}
+                className="w-7 h-7 rounded-md flex items-center justify-center shadow border"
+                style={{ backgroundColor: `rgb(var(--color-bg-elevated))`, borderColor: `rgb(var(--color-border-primary))`, color: `rgb(var(--color-text-secondary))` }}
+                aria-label="Zoom in"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setMapZoom(z => Math.max(z / 1.5, 1))}
+                className="w-7 h-7 rounded-md flex items-center justify-center shadow border"
+                style={{ backgroundColor: `rgb(var(--color-bg-elevated))`, borderColor: `rgb(var(--color-border-primary))`, color: `rgb(var(--color-text-secondary))` }}
+                aria-label="Zoom out"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => { setMapZoom(1); setMapCenter([0, 0]) }}
+                className="w-7 h-7 rounded-md flex items-center justify-center shadow border"
+                style={{ backgroundColor: `rgb(var(--color-bg-elevated))`, borderColor: `rgb(var(--color-border-primary))`, color: `rgb(var(--color-text-secondary))` }}
+                aria-label="Reset zoom"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <ComposableMap
+              projection="geoAlbersUsa"
+              projectionConfig={{ scale: 1000 }}
+              width={980}
+              height={500}
+              style={{ width: '100%', height: 'auto' }}
+            >
+              <ZoomableGroup zoom={mapZoom} center={mapCenter} onMoveEnd={({ zoom, coordinates }) => { setMapZoom(zoom); setMapCenter(coordinates) }}>
+                <Geographies geography={GEO_URL}>
+                  {({ geographies }) =>
+                    geographies.map(geo => {
+                      const stateName = geo.properties.name as string
+                      const stateCode = STATE_NAME_TO_CODE[stateName]
+                      if (!stateCode) return null
+                      const hasData = statesWithData.has(stateCode)
+                      const isSelected = compareMode ? compareStates.has(stateCode) : selectedState === stateCode
+                      const isClickable = hasData
+                      return (
+                        <Geography
+                          key={geo.rsmKey}
+                          geography={geo}
+                          onClick={() => isClickable && handleMapStateClick(stateCode)}
+                          style={{
+                            default: {
+                              fill: isSelected ? mapColors.selected : hasData ? mapColors.hasData : mapColors.empty,
+                              stroke: mapColors.stroke,
+                              strokeWidth: 0.5,
+                              outline: 'none',
+                              cursor: isClickable ? 'pointer' : 'default',
+                            },
+                            hover: {
+                              fill: isSelected ? mapColors.selectedHover : hasData ? mapColors.hasDataHover : mapColors.empty,
+                              stroke: hasData ? mapColors.selected : mapColors.stroke,
+                              strokeWidth: hasData ? 1.5 : 0.5,
+                              outline: 'none',
+                              cursor: isClickable ? 'pointer' : 'default',
+                            },
+                            pressed: {
+                              fill: isSelected ? mapColors.selectedHover : hasData ? mapColors.hasDataHover : mapColors.empty,
+                              stroke: mapColors.selected,
+                              strokeWidth: 1.5,
+                              outline: 'none',
+                            },
+                          }}
+                        />
+                      )
+                    })
+                  }
+                </Geographies>
+              </ZoomableGroup>
+            </ComposableMap>
+          </div>
         </div>
 
         {/* Compare mode: selected state badges */}
