@@ -16,7 +16,11 @@ import requests
 log = logging.getLogger(__name__)
 
 TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
-DEFAULT_MODEL = "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"
+# Together.ai retired the Llama-3.1 Turbo family from serverless ~mid-2026 (returns 400
+# model_not_available). This broke refuge-count PDF extraction for the AGFC/LDWF aerial-survey
+# sources exactly as it broke regulation extraction. Qwen2.5-7B-Instruct-Turbo is the serverless
+# replacement (see extract_regulations.py). Overridable via SCRAPEGRAPHAI_MODEL.
+DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct-Turbo"
 
 BIRD_COUNT_SYSTEM = """You are a wildlife survey data extraction assistant.
 Extract ALL bird species count data from this waterfowl survey document.

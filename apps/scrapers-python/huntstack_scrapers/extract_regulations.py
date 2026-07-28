@@ -72,7 +72,9 @@ def call_llm(prompt: str, system: str, model: str) -> str:
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
-            "temperature": 0.1,
+            "temperature": 0.0,  # deterministic — classification was flaky at 0.1, causing the
+                                 # same doc (e.g. NM's rules PDF) to be flagged for seasons on
+                                 # some runs and skipped on others
             "max_tokens": 4096,
             "response_format": {"type": "json_object"},
         },
@@ -276,6 +278,29 @@ def extract_regulations(doc: dict, state_code: str, model: str) -> list[dict]:
 # ============================================
 # VALIDATION
 # ============================================
+
+def normalize_season_dates(s: dict) -> dict:
+    """Fix the LLM's most common season-date error: mapping a winter/spring END date to the
+    season's start year instead of the following year.
+
+    Waterfowl seasons routinely cross the new year (e.g. NM ducks run Oct 10 → Jan 13 of the
+    *next* year; conservation orders run into Feb/Mar). The model frequently writes both dates
+    with the same year, producing end < start, which `validate_season` would otherwise reject —
+    silently dropping real seasons (this is exactly why NM extracted 0 seasons at first). When
+    the end month is in the first half of the year and falls on/before the start, roll the end
+    year forward by one. Mutates and returns `s`.
+    """
+    sd, ed = s.get("start_date"), s.get("end_date")
+    if sd and ed:
+        try:
+            start = datetime.strptime(sd, "%Y-%m-%d")
+            end = datetime.strptime(ed, "%Y-%m-%d")
+            if start >= end and end.month <= 6:
+                s["end_date"] = end.replace(year=end.year + 1).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return s
+
 
 def validate_season(s: dict) -> bool:
     """Validate an extracted season record."""
@@ -716,7 +741,7 @@ def process_state(conn, state_code: str, model: str, dry_run: bool, year: int):
         # three on every relevant doc tripled the LLM calls (and wall-clock) for no gain — a
         # season-only page still paid for license+regulation extractions that returned nothing.
         if "seasons" in categories:
-            seasons = extract_seasons(doc, state_code, model, year=year)
+            seasons = [normalize_season_dates(s) for s in extract_seasons(doc, state_code, model, year=year)]
             valid = [s for s in seasons if validate_season(s)]
             if len(valid) < len(seasons):
                 log.warning(f"  {len(seasons) - len(valid)} seasons failed validation")

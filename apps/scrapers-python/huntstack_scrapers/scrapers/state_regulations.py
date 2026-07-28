@@ -62,6 +62,13 @@ STATE_SOURCES = {
         "start_urls": [
             "https://wildlife.dgf.nm.gov/hunting/information-by-animal/migratory-bird/",
             "https://wildlife.dgf.nm.gov/hunting/licenses-and-permits/license-requirements-fees/",
+            # NM publishes waterfowl SEASON DATES only in the Migratory Game Bird Rules & Info
+            # PDF booklet — they appear nowhere in HTML, so without this the NM extraction gets
+            # 0 seasons. This is a WordPress download-manager URL (serves application/pdf; handled
+            # by the PDF content-type branch in _scrape_state). NOTE: the `wpdmdl` id and the
+            # year in the slug are SEASON-SPECIFIC — update this each season from the current PDF
+            # link on https://wildlife.dgf.nm.gov/home/publications/ (migratory game bird rules).
+            "https://wildlife.dgf.nm.gov/download/2026-2027-new-mexico-migratory-game-bird-hunting-rules-and-info/?wpdmdl=55779",
         ],
         "allowed_domains": ["wildlife.dgf.nm.gov"],
         "link_keywords": ["migratory", "waterfowl", "duck", "goose", "licenses"],
@@ -272,12 +279,32 @@ class StateRegulationsScraper:
             if not response or response.status != 200:
                 continue
 
-            # Skip non-HTML responses (PDFs, images, downloads served with wrong extension)
             content_type = ""
             try:
                 content_type = (response.headers.get("content-type") or "").lower()
             except Exception:
                 pass
+
+            # A URL that serves a PDF directly. Some season data lives ONLY in a PDF behind a
+            # WordPress /download/?wpdmdl= URL with no .pdf extension (e.g. NM's migratory game
+            # bird rules booklet — its waterfowl season-date tables appear nowhere in HTML), so
+            # the .pdf-suffix link path below can't reach it. Download + extract it here.
+            if content_type and "application/pdf" in content_type:
+                if self.dry_run:
+                    log.info(f"[DRY RUN] Would download PDF: {url[:80]}")
+                    stored += 1
+                    continue
+                pdf_bytes = self._download_pdf(url)
+                if pdf_bytes:
+                    pdf_text = self._extract_text_from_pdf(pdf_bytes)
+                    if pdf_text and len(pdf_text) > 200:
+                        pdf_title = (urlparse(url).path.rstrip("/").split("/")[-1].replace("-", " ").strip().title()
+                                     or "Regulation PDF")
+                        self._store_document(state_code, pdf_title, pdf_text, url, "regulation")
+                        stored += 1
+                continue
+
+            # Skip other non-HTML responses (images, downloads served with wrong extension)
             if content_type and not any(ct in content_type for ct in ("text/html", "text/plain", "application/xhtml")):
                 log.debug(f"Skipping non-HTML content-type '{content_type}' for {url}")
                 continue
