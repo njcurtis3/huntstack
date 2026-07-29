@@ -4,10 +4,23 @@ import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import swagger from '@fastify/swagger'
 import swaggerUi from '@fastify/swagger-ui'
+import * as Sentry from '@sentry/node'
 import { config } from 'dotenv'
 import { resolve } from 'path'
 
 config({ path: resolve(import.meta.dirname, '../../../.env') })
+
+// Error tracking — only active when SENTRY_DSN is set, so the API runs identically with no DSN
+// configured (nothing is sent, no startup cost). Errors-only: tracesSampleRate 0 keeps us within
+// the free tier and avoids the OpenTelemetry perf-tracing overhead we don't need at beta scale.
+const sentryEnabled = !!process.env.SENTRY_DSN
+if (sentryEnabled) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'development',
+    tracesSampleRate: 0,
+  })
+}
 
 import { healthRoutes } from './routes/health.js'
 import { searchRoutes } from './routes/search.js'
@@ -89,12 +102,18 @@ await app.register(migrationRoutes, { prefix: '/api/migration' })
 await app.register(geoRoutes, { prefix: '/api/geo' })
 
 // Global error handler
-app.setErrorHandler((error, _request, reply) => {
+app.setErrorHandler((error, request, reply) => {
   app.log.error(error)
-  
+
   const statusCode = error.statusCode || 500
+  // Only report genuine server-side failures to Sentry — 4xx (validation, rate-limit, not-found)
+  // are client errors, not bugs, and would just be noise.
+  if (sentryEnabled && statusCode >= 500) {
+    Sentry.captureException(error, { extra: { method: request.method, url: request.url } })
+  }
+
   const message = statusCode === 500 ? 'Internal Server Error' : error.message
-  
+
   reply.status(statusCode).send({
     error: true,
     message,

@@ -1,5 +1,6 @@
-import { Component, type ReactNode } from 'react'
+import { Component, type ReactNode, type ErrorInfo } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import * as Sentry from '@sentry/react'
 import { Layout } from './components/Layout'
 import { HomePage } from './pages/HomePage'
 import { MapPage } from './pages/MapPage'
@@ -26,6 +27,11 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 
   static getDerivedStateFromError(error: Error) {
     return { error }
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    // No-op when Sentry isn't initialized (no VITE_SENTRY_DSN), so this is safe either way.
+    Sentry.captureException(error, { extra: { componentStack: info.componentStack } })
   }
 
   render() {
