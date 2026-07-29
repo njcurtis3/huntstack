@@ -91,6 +91,22 @@ interface StructuredContext {
 export const chatRoutes: FastifyPluginAsync = async (app) => {
   // Chat completion with RAG
   app.post('/', {
+    // Tighter per-IP limit than the global 100/min (index.ts). This endpoint is unauthenticated
+    // and calls Together.ai on every request (real per-call LLM cost), so a script looping it
+    // could run up the bill and starve real users. 20 requests/hour/IP is generous for a person
+    // asking a handful of questions but stops automated abuse. Per-route config overrides the
+    // global rate limit for this route only; keys on the real client IP via trustProxy (index.ts).
+    config: {
+      rateLimit: {
+        max: 20,
+        timeWindow: '1 hour',
+        errorResponseBuilder: (_req, context) => ({
+          error: true,
+          statusCode: 429,
+          message: `You've reached the limit of ${context.max} questions per hour. Please wait a bit and try again.`,
+        }),
+      },
+    },
     schema: {
       tags: ['chat'],
       summary: 'Ask a question with AI-powered RAG response',
