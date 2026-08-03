@@ -107,16 +107,21 @@ Response includes structured data on seasons, licenses, bag limits, shooting hou
 | State comparison tool | Complete | Cross-state season/regulation comparison |
 | Full-text + semantic search | Complete | Both keyword and vector search |
 | CI pipeline | Complete | GitHub Actions: typecheck + build on every PR |
-| Weekly scraper automation | Complete | Windows Task Scheduler, every Monday 6am |
+| Weekly scraper automation | Complete | Windows Task Scheduler, every Monday 6am; posts to optional `SCRAPER_ALERT_WEBHOOK` on failure/0-items |
 | NM refuge data | Complete | Central flyway refuges added |
 | Beta readiness fixes | Complete | Error boundary, health check, .env.example, mobile headers, port fix |
+| Mobile polish | Complete | Audited + fixed 2026-07 (chat widget overflow, map zoom controls, spacing, sidebar stacking, chat text-wrap) |
+| 2026-2027 season data | Complete | All 6 states refreshed to the current season (TX 20, NM 21, LA 14, AR 13, KS 9, OK 3 seasons); NM dates come from a PDF booklet, see scraper notes |
+| Regulation scraper URLs | Complete | TX/AR/NM/LA/KS/OK all fixed (KS moved to `/outdoor-activities/...`); NM season PDF wired via `application/pdf` handling |
+| Chat abuse/cost protection | Complete | Per-route rate limit on `/api/chat` (20 req/hr/IP) |
+| Error tracking | Complete | Sentry (`@sentry/node` + `@sentry/react`), errors-only, gated on `SENTRY_DSN`/`VITE_SENTRY_DSN` (live in prod) |
 
 ### 🔄 In Progress / Next
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Regulation scraper URLs | Needs fix | TX, AR, NM, KS, OK source sites restructured — see `plans/Finish-Killer-Feature-3.md` |
-| Additional state regulations | Ongoing | Priority: KS, OK deeper population; scraper URLs must be fixed first |
+| OK/AR + LDWF in-season refresh | Pending | OK/AR general duck-season dates and LDWF winter refuge surveys aren't published until ~late Aug (federal framework) — re-scrape then |
+| Additional state regulations | Ongoing | Priority: KS, OK deeper population once late-Aug dates publish |
 | MapPage | Gated | "Coming Soon" overlay with redirect to Where to Hunt; MapLibre wired but unused |
 | Test suite | Started (scrapers + API) | pytest for `apps/scrapers-python` parsers (67 tests, `cd apps/scrapers-python && python -m pytest`); vitest for `apps/api` pure logic (63 tests, `pnpm --filter @huntstack/api test`) — `lib/cache.ts`, `lib/jsonb.ts`, `lib/weather.ts`'s scoring helpers, `hunt.ts`'s `getMigrationStatus`, `chat.ts`'s `extractEntities`/`formatBagLimit`/`formatShootingHours`. CI now runs both in a `test` job gating `build`. `apps/web` still has no test files — `pnpm --filter @huntstack/web test` still no-ops. |
 | Background job queue | Deferred | BullMQ + Redis declared but unwired; not needed at current scale |
@@ -151,7 +156,7 @@ Response includes structured data on seasons, licenses, bag limits, shooting hou
 ### Data Pipeline — `apps/scrapers-python/`
 - **Framework**: Scrapling 0.4 (replaced Scrapy)
 - **PDF extraction**: pdfplumber
-- **LLM extraction**: Together.ai `meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo`
+- **LLM extraction**: Together.ai `Qwen/Qwen2.5-7B-Instruct-Turbo` (was `Meta-Llama-3.1-8B-Instruct-Turbo` until Together retired the 3.1 Turbo family from serverless ~mid-2026; both `extract_regulations.py` and `extractors/llm.py`, temperature 0.0)
 - **Entry point**: `python -m huntstack_scrapers.scrapers.run {refuge_counts|state_regulations}`
 
 ### Infrastructure
@@ -270,7 +275,7 @@ Run all: `python -m huntstack_scrapers.scrapers.run refuge_counts`
 Run one: `python -m huntstack_scrapers.scrapers.run refuge_counts --source "Washita National Wildlife Refuge"`
 Dry run: `python -m huntstack_scrapers.scrapers.run refuge_counts --dry-run`
 
-> **NOTE**: `loess_bluffs_pdf.py` URL generator is hardcoded to Oct 2025–Apr 2026 season. Update each season.
+> **NOTE**: `loess_bluffs_pdf.py`'s URL generator computes its season window dynamically from today's date (via `current_waterfowl_season_bounds()` in `parsers/base.py`) — no longer hardcoded. The **NM regulation PDF** URL in `state_regulations.py` (`?wpdmdl=` link) *is* season-specific and needs updating each year from wildlife.dgf.nm.gov/home/publications/.
 
 ---
 
@@ -333,6 +338,9 @@ HOST                      # API host (default: 0.0.0.0)
 NODE_ENV                  # development | production
 LOG_LEVEL                 # info
 CORS_ORIGIN               # http://localhost:3000
+SENTRY_DSN                # API error tracking (optional; unset = no reporting)
+VITE_SENTRY_DSN           # Frontend error tracking (optional; build-time)
+SCRAPER_ALERT_WEBHOOK     # Optional Slack/Discord webhook for scraper failure alerts
 ```
 
 ---
@@ -379,10 +387,11 @@ CORS_ORIGIN               # http://localhost:3000
 Core data pipeline, migration intelligence, RAG chat, hunt recommendations, regulations, and weather are all live. Priority states (TX, NM, AR, LA, KS, OK) are seeded.
 
 **Remaining V1 work:**
-- Deepen KS/OK regulation data
+- Deepen KS/OK regulation data (re-scrape in-season once late-Aug 2026-2027 dates publish)
 - Add NM refuge count sources
-- Build out test suite
-- Mobile polish
+- Build out test suite (`apps/web` still has zero tests)
+- ~~Mobile polish~~ — done 2026-07
+- Human accuracy spot-check of extracted 2026-2027 season dates against source PDFs (legal-stakes data)
 
 ### V2 - Expansion (When V1 Gets Traction)
 
