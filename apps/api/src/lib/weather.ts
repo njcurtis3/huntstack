@@ -7,7 +7,7 @@
 import { BoundedCache } from './cache.js'
 
 const NOAA_BASE = 'https://api.weather.gov'
-const USER_AGENT = '(HuntStack, huntstack.app)'
+const USER_AGENT = '(HuntStack, huntstack.com)'
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 

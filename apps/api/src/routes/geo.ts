@@ -3,7 +3,7 @@ import { FastifyPluginAsync } from 'fastify'
 // Nominatim (OpenStreetMap) — free, no key, excellent US coverage
 const NOMINATIM_SEARCH = 'https://nominatim.openstreetmap.org/search'
 const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse'
-const USER_AGENT = 'HuntStack/1.0 (huntstack.app)'
+const USER_AGENT = 'HuntStack/1.0 (huntstack.com)'
 
 // Nominatim's usage policy caps unauthenticated use at ~1 req/sec per app,
 // enforced by IP ban — serialize all outbound calls with a minimum gap.

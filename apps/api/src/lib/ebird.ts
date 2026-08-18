@@ -157,7 +157,7 @@ export async function getEBirdCountsForRefuge(
     const resp = await fetch(url.toString(), {
       headers: {
         'X-eBirdApiToken': apiKey,
-        'User-Agent': '(HuntStack, huntstack.app)',
+        'User-Agent': '(HuntStack, huntstack.com)',
       },
     })
 
@@ -284,7 +284,7 @@ export async function getEBirdRegionalCounts(
       const resp = await fetch(url.toString(), {
         headers: {
           'X-eBirdApiToken': apiKey,
-          'User-Agent': '(HuntStack, huntstack.app)',
+          'User-Agent': '(HuntStack, huntstack.com)',
         },
       })
 

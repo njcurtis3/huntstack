@@ -1,0 +1,14 @@
+# HuntStack is in pre-beta. Indexing is deliberately blocked until launch.
+#
+# TO GO LIVE: delete the "Disallow: /" line below (leave everything else).
+# Open Graph / Twitter cards do NOT depend on crawling, so shared links still
+# preview correctly while this block is in place.
+
+User-agent: *
+Disallow: /
+
+# Never worth indexing, even after launch:
+Disallow: /report          # print-oriented migration report view
+Disallow: /search          # redirects to /chat
+
+Sitemap: https://huntstack.com/sitemap.xml
