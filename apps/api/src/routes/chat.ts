@@ -176,7 +176,7 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
       // Step 3: Build system prompt with both context types
       const structuredText = formatStructuredContext(structuredCtx)
       const systemPrompt = buildSystemPrompt(vectorContext, structuredText)
-      const responseText = await generateChatResponse(message, systemPrompt, history)
+      const responseText = await generateChatResponse(message, systemPrompt, truncateHistory(history))
 
       // Step 4: Merge sources from both retrievals
       const allSources = [
@@ -220,6 +220,27 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
 }
 
 // ─── Entity extraction ───────────────────────────────────────────────────────
+
+// The request schema allows up to 20 history messages of 4,000 chars each (~20k tokens),
+// and history is resent in full on every turn. Unbounded, that makes a crafted request roughly
+// 7x more expensive than a normal one on an unauthenticated, LLM-backed endpoint — see
+// INFRASTRUCTURE_COSTS.md section 5.1. Trimming server-side caps the blast radius regardless of
+// what the client sends, and also keeps the model focused on retrieved context rather than a
+// long tail of prior turns.
+export const MAX_HISTORY_MESSAGES = 6
+export const MAX_HISTORY_CHARS = 1000
+
+export function truncateHistory(
+  history?: Array<{ role: 'user' | 'assistant'; content: string }>,
+): Array<{ role: 'user' | 'assistant'; content: string }> | undefined {
+  if (!history || history.length === 0) return undefined
+  return history.slice(-MAX_HISTORY_MESSAGES).map(m => ({
+    role: m.role,
+    content: m.content.length > MAX_HISTORY_CHARS
+      ? m.content.slice(0, MAX_HISTORY_CHARS)
+      : m.content,
+  }))
+}
 
 export function extractEntities(query: string): ExtractedEntities {
   const lower = query.toLowerCase()

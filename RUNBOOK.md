@@ -82,9 +82,16 @@ pgvector column alone) is the prerequisite for revisiting this.
   silently extracts 0 items. Without it, a stalled or broken scraper fails invisibly.
 - **Error tracking:** set `SENTRY_DSN` (API) and `VITE_SENTRY_DSN` (frontend, build-time) to send
   unhandled errors to Sentry. Both apps run normally with these unset (no reporting).
-- **LLM cost:** `/api/chat` is rate-limited to 20 req/hour/IP (`chat.ts`). Set a hard billing
-  spend-cap/alert in the **Together.ai dashboard** as the external backstop — this is not
-  configurable from code.
+- **LLM cost:** every endpoint that spends Together.ai money has a dedicated control —
+  `/api/chat` 20 req/hour/IP plus server-side history truncation, `/api/search/semantic`
+  60 req/hour/IP, and `/api/migration/weekly-summary` a 6h cache with a 15-minute regeneration
+  floor on `?refresh=true`. Full breakdown and cost model in **`INFRASTRUCTURE_COSTS.md`**.
+  These bound the cost of abuse; they don't stop it. **Set a hard billing spend-cap/alert in the
+  Together.ai dashboard** as the external backstop — not configurable from code.
+- **Unexpected Together bill:** check `INFRASTRUCTURE_COSTS.md` §5 first. Most likely causes are a
+  new paid route added without a per-route rate limit (`CONSTRAINTS.md` §3.12), a raised
+  `MAX_HISTORY_*` value in `chat.ts`, or a scraper re-run — a full 6-state regulation re-scrape
+  costs more than a day of normal beta chat traffic.
 - **Health:** `GET /api/health` (liveness) and `GET /api/health/ready` (DB check, returns 503 if
   the DB is down). Railway uses the latter to gate deploys.
 

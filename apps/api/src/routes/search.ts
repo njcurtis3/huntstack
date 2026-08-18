@@ -193,6 +193,21 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
 
   // Semantic search using vector embeddings (Together.ai + pgvector)
   app.post('/semantic', {
+    // Calls Together.ai for an embedding on every request (real per-call cost) on an
+    // unauthenticated route. Embeddings are ~50x cheaper than a chat completion, so this limit is
+    // correspondingly looser than chat.ts's 20/hour — it exists to stop a loop, not to ration
+    // normal use. See INFRASTRUCTURE_COSTS.md section 5.3.
+    config: {
+      rateLimit: {
+        max: 60,
+        timeWindow: '1 hour',
+        errorResponseBuilder: (_req, context) => ({
+          error: true,
+          statusCode: 429,
+          message: `You've reached the limit of ${context.max} searches per hour. Please wait a bit and try again.`,
+        }),
+      },
+    },
     schema: {
       tags: ['search'],
       summary: 'Semantic search using vector embeddings',

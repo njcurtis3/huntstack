@@ -39,6 +39,15 @@ interface SummaryCache {
 const summaryCache = new BoundedCache<SummaryCache>()
 const SUMMARY_TTL = 6 * 60 * 60 * 1000  // 6 hours
 
+// Floor on how often `?refresh=true` may actually force a regeneration. The summary is a shared
+// artifact keyed only by flyway/species — it is not per-user — so regenerating it more than once
+// every 15 minutes produces no new information regardless of who asked. Without this, `refresh`
+// bypassed the cache entirely on an unauthenticated route whose only ceiling was the global
+// 100 req/min, i.e. up to 100 forced LLM generations per minute. A regeneration floor is
+// preferable to an IP rate limit here because it cannot be evaded by rotating IPs.
+// See INFRASTRUCTURE_COSTS.md section 5.2.
+const REFRESH_MIN_AGE_MS = 15 * 60 * 1000  // 15 minutes
+
 function getCachedSummary(key: string): SummaryCache | null {
   return summaryCache.get(key)
 }
@@ -129,10 +138,12 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
 
     const cacheKey = `summary:${flyway || 'all'}:${species || 'all'}`
 
-    // Return cached summary if fresh and not forced refresh
-    if (!refresh) {
-      const cached = getCachedSummary(cacheKey)
-      if (cached) {
+    // Return the cached summary when it is fresh, and also when a forced refresh arrives before
+    // the regeneration floor has elapsed (see REFRESH_MIN_AGE_MS).
+    const cached = getCachedSummary(cacheKey)
+    if (cached) {
+      const ageMs = Date.now() - new Date(cached.generatedAt).getTime()
+      if (!refresh || ageMs < REFRESH_MIN_AGE_MS) {
         return { ...cached, cached: true }
       }
     }

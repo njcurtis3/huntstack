@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { extractEntities, formatBagLimit, formatShootingHours } from './chat.js'
+import {
+  MAX_HISTORY_CHARS,
+  MAX_HISTORY_MESSAGES,
+  extractEntities,
+  formatBagLimit,
+  formatShootingHours,
+  truncateHistory,
+} from './chat.js'
 
 describe('extractEntities', () => {
   it('extracts a state name and species alias', () => {
@@ -95,5 +102,54 @@ describe('formatShootingHours', () => {
   it('returns empty string for null/undefined', () => {
     expect(formatShootingHours(null)).toBe('')
     expect(formatShootingHours(undefined)).toBe('')
+  })
+})
+
+describe('truncateHistory', () => {
+  const msg = (i: number, len = 10): { role: 'user' | 'assistant'; content: string } => ({
+    role: i % 2 === 0 ? 'user' : 'assistant',
+    content: 'x'.repeat(len),
+  })
+
+  it('returns undefined for missing or empty history', () => {
+    expect(truncateHistory(undefined)).toBeUndefined()
+    expect(truncateHistory([])).toBeUndefined()
+  })
+
+  it('passes through history already within both limits', () => {
+    const history = [msg(0), msg(1)]
+    expect(truncateHistory(history)).toEqual(history)
+  })
+
+  it('keeps only the most recent MAX_HISTORY_MESSAGES turns', () => {
+    const history = Array.from({ length: 20 }, (_, i) => ({
+      role: (i % 2 === 0 ? 'user' : 'assistant') as 'user' | 'assistant',
+      content: `message-${i}`,
+    }))
+    const result = truncateHistory(history)!
+    expect(result).toHaveLength(MAX_HISTORY_MESSAGES)
+    // Oldest dropped, newest retained
+    expect(result[0].content).toBe(`message-${20 - MAX_HISTORY_MESSAGES}`)
+    expect(result[result.length - 1].content).toBe('message-19')
+  })
+
+  it('caps the length of each individual message', () => {
+    const result = truncateHistory([msg(0, 4000)])!
+    expect(result[0].content).toHaveLength(MAX_HISTORY_CHARS)
+  })
+
+  it('bounds the worst-case payload the schema allows', () => {
+    // Schema permits 20 messages x 4000 chars (~80k chars). Truncation must cut that down
+    // regardless of what the client sends -- this is the cost guarantee (see
+    // INFRASTRUCTURE_COSTS.md section 5.1), so assert the total directly.
+    const worstCase = Array.from({ length: 20 }, (_, i) => msg(i, 4000))
+    const total = truncateHistory(worstCase)!.reduce((n, m) => n + m.content.length, 0)
+    expect(total).toBe(MAX_HISTORY_MESSAGES * MAX_HISTORY_CHARS)
+    expect(total).toBeLessThan(80_000)
+  })
+
+  it('preserves roles', () => {
+    const result = truncateHistory([msg(0), msg(1)])!
+    expect(result.map(m => m.role)).toEqual(['user', 'assistant'])
   })
 })
