@@ -2,6 +2,22 @@
 builder = "nixpacks"
 buildCommand = "pnpm install --frozen-lockfile && pnpm --filter @huntstack/db build && pnpm --filter @huntstack/api build"
 
+# NOTE: `pnpm db:migrate` is deliberately NOT part of the build or start command.
+# This is not an oversight — see RUNBOOK.md "Deploying" and CONSTRAINTS.md §1.1.
+#
+# This project has never used Drizzle's migration system: `packages/db/drizzle/`
+# is empty (no migration files, no journal), and every schema change to date has
+# been hand-written raw SQL in `scripts/`, applied manually. Running
+# `drizzle-kit migrate` here would therefore (a) do nothing useful, since it
+# knows nothing about `scripts/*.sql`, (b) add a fresh way for every deploy to
+# fail, and (c) create a false sense that migrations are automated when they
+# aren't. `drizzle-kit` is also only a devDependency, so it may not exist in a
+# production install.
+#
+# Schema changes are a manual, deliberate pre-deploy step. Follow the checklist
+# in RUNBOOK.md. If Drizzle migrations are ever adopted properly (baseline
+# generated and reconciled against the live DB), revisit this.
+
 [deploy]
 startCommand = "pnpm --filter @huntstack/api start"
 healthcheckPath = "/api/health/ready"

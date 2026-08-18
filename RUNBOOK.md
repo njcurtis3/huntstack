@@ -13,6 +13,44 @@ architecture snapshot see `CURRENT_STATE.md`; for constraints see `CONSTRAINTS.m
 
 Both platforms auto-deploy from `main`, so a bad commit reaching `main` ships to production.
 
+## Deploying
+
+Both platforms auto-deploy on push to `main`. Code deploys need no manual step. **Schema
+changes do** — there is no automatic migration, by design (see below and `CONSTRAINTS.md` §1.1).
+
+### Pre-deploy checklist
+
+Run through this before pushing to `main`:
+
+1. **Does this change touch the database schema?** If no, skip to step 5.
+2. **Is there a raw SQL script for it in `scripts/`?** Schema changes are hand-written SQL,
+   committed alongside the code that needs them. **Never `drizzle-kit push`** — it drops the
+   pgvector `embedding` column on `document_chunks`. **Never `drizzle-kit generate`/`migrate`**
+   either: `packages/db/drizzle/` is empty and has no journal reconciled against the live DB,
+   so a generated migration would be a "create everything from scratch" baseline.
+3. **Apply the SQL to Supabase manually** (SQL editor or `psql`) — *before* the code that
+   depends on it reaches `main`. Additive changes (new table/column) are safe to apply early;
+   destructive ones (drop/rename) must wait until the old code is no longer running.
+4. **Confirm the change landed** — re-query the table, then hit `GET /api/health/ready`.
+5. **Push.** Watch the Railway deploy go healthy (`/api/health/ready` gates it) and the
+   Cloudflare Pages build finish.
+
+### Ordering rule
+
+Code and schema deploy independently, so they must be compatible in both directions for the
+duration of a deploy: apply **additive** schema changes *before* pushing code, and
+**destructive** ones *after* the code that stopped using them is live. A code rollback does
+not roll back the schema.
+
+### Why migrations aren't automated
+
+`railway.toml` deliberately omits `pnpm db:migrate` — this is a documented decision, not a gap.
+Drizzle's migration system has never been used here; `scripts/*.sql` is the proven path, and
+`drizzle-kit` is only a devDependency so it may not even be installed in a production build.
+Automating it would add deploy failure modes while providing no real safety. Adopting Drizzle
+migrations properly (generate a baseline, reconcile it against the live DB, verify it leaves the
+pgvector column alone) is the prerequisite for revisiting this.
+
 ## Rollback
 
 ### Frontend (Cloudflare Pages)
