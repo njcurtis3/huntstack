@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest",
+        "--browser", "chrome",
+        "--user-data-dir", ".claude/agents/services/.browser-profile",
+        "--caps", "pdf",
+        "--timeout-navigation", "90000",
+        "--image-responses", "omit",
+        "--allowed-origins", "https://dash.cloudflare.com;https://*.cloudflare.com;https://railway.com;https://*.railway.com;https://railway.app;https://*.railway.app;https://sentry.io;https://*.sentry.io;https://*.sentry-cdn.com;https://supabase.com;https://*.supabase.com;https://api.together.ai;https://together.ai;https://*.together.ai;https://github.com;https://accounts.google.com;https://*.stripe.com;https://*.cloudflareinsights.com"
+      ]
+    }
+  }
+}

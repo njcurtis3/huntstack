@@ -63,3 +63,14 @@ SESSION_TEMPLATE.md
 migration-intelligence-feature-roadmap.md
 CURRENT_STATE.md
 CONSTRAINTS.md
+env.services
+
+# services agent control-plane tokens (never commit)
+.claude/agents/services/.env.services
+.claude/agents/services/.browser-profile/
+
+# Local-only docs (untracked 2026-08-19; kept on disk, not in the repo)
+CLAUDE.md
+INFRASTRUCTURE_COSTS.md
+RUNBOOK.md
+docs/
