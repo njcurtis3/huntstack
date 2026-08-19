@@ -42,26 +42,34 @@ does get printed, treat it as leaked and tell the user to rotate it immediately.
 
 ## Loading them
 
+**Never `source` / `.` this file.** Sourcing *executes* it as a shell script, so
+a single stray space (`NAME= value`) makes bash try to run your token as a
+command and print it in the error. That has happened once and cost a rotation.
+
+Use this loader instead — it parses the file in Python and only ever emits
+`export` lines, so file contents can never be executed:
+
 ```bash
-set -a; . .claude/agents/services/.env.services; set +a
+eval "$(python -c "
+import re, shlex
+for line in open('.claude/agents/services/.env.services', encoding='utf-8-sig'):
+    s = line.strip()
+    if not s or s.startswith('#') or '=' not in s: continue
+    k, v = s.split('=', 1)
+    k, v = k.strip(), v.strip().strip('\"').strip(chr(39))
+    if v and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]*', k):
+        print('export %s=%s' % (k, shlex.quote(v)))
+")"
 ```
 
-Run that once per session, in the same Bash call as the command that needs it
-(shell state does not persist between Bash tool calls — the variable will be
-gone on the next call). In practice: prefix every call.
-
-```bash
-set -a; . .claude/agents/services/.env.services 2>/dev/null; set +a
-curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" ...
-```
+It tolerates spaces around `=`, surrounding quotes, and a UTF-8 BOM. Shell state
+does not persist between Bash tool calls, so include it in the same call as the
+command that needs it.
 
 Check what is available without printing values:
 
 ```bash
-set -a; . .claude/agents/services/.env.services 2>/dev/null; set +a
-for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID RAILWAY_API_TOKEN \
-         SENTRY_AUTH_TOKEN SENTRY_ORG SUPABASE_ACCESS_TOKEN \
-         TOGETHER_API_KEY GITHUB_TOKEN; do
+for v in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID RAILWAY_API_TOKEN          SENTRY_AUTH_TOKEN SENTRY_ORG SUPABASE_ACCESS_TOKEN          TOGETHER_API_KEY GITHUB_TOKEN; do
   eval "val=\$$v"
   if [ -n "$val" ]; then echo "$v: set (${#val} chars)"; else echo "$v: MISSING"; fi
 done
@@ -69,6 +77,12 @@ done
 
 If `.env.services` does not exist, say so and point the user at the setup table
 below. Do not attempt unauthenticated calls.
+
+### If a secret ever reaches the terminal
+
+Treat it as leaked — transcripts are written to disk. Tell the user to rotate it
+at the source immediately, before continuing. Do not rotate it yourself; that is
+a write operation.
 
 ## What each token needs
 
