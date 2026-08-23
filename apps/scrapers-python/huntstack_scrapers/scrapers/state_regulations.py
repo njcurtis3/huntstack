@@ -101,9 +101,18 @@ STATE_SOURCES = {
             "https://www.wildlifedepartment.com/hunting/regs/migratory-game-bird-regulations",
             "https://www.wildlifedepartment.com/hunting/resources/waterfowl",
             "https://www.wildlifedepartment.com/licensing/regs/license-fees",
+            # ODWC splits SEASON DATES onto per-species pages under /hunting/regs/ that are
+            # linked only from /hunting/seasons — the migratory-game-bird-regulations page
+            # carries general rules (licenses, shooting hours, restrictions) and no dates at
+            # all. Without these the OK extraction gets almost no seasons.
+            "https://www.wildlifedepartment.com/hunting/seasons",
+            "https://www.wildlifedepartment.com/hunting/regs/ducks-mergansers-coots",
+            "https://www.wildlifedepartment.com/hunting/regs/september-teal-geese-sandhill-cranes",
+            "https://www.wildlifedepartment.com/hunting/regs/youth-veteran-active-military-waterfowl-hunting-opportunities",
         ],
         "allowed_domains": ["wildlifedepartment.com"],
-        "link_keywords": ["waterfowl", "migratory", "migratory-game-bird"],
+        "link_keywords": ["waterfowl", "migratory", "migratory-game-bird",
+                          "ducks", "geese", "teal", "crane", "coots", "seasons"],
         "pdf_keywords": ["waterfowl", "migratory", "duck", "goose"],
     },
 }
