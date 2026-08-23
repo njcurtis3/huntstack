@@ -35,7 +35,31 @@
       "Bash(cmd /c \"netstat -aon | findstr 4000\")",
       "Bash(cmd /c \"powershell -command \"\"Get-NetTCPConnection -LocalPort 4000 -ErrorAction SilentlyContinue | Select-Object LocalAddress,LocalPort,State,OwningProcess\"\"\")",
       "Bash(cmd /c \"powershell -command \"\"Get-NetTCPConnection -LocalPort 4000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { $p = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue; Write-Output \\(\\\\\"\"PID: \\\\\"\" + $_.OwningProcess + \\\\\"\" Process: \\\\\"\" + $p.Name + \\\\\"\" Path: \\\\\"\" + $p.Path\\) }\"\"\")",
-      "Bash(cmd /c \"powershell -command \"\"Get-NetTCPConnection -LocalPort 4000 -ErrorAction SilentlyContinue\"\"\")"
+      "Bash(cmd /c \"powershell -command \"\"Get-NetTCPConnection -LocalPort 4000 -ErrorAction SilentlyContinue\"\"\")",
+      "Bash(git check-ignore *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(npx drizzle-kit *)",
+      "Bash(npm run *)",
+      "Bash(where psql *)",
+      "Bash(where winget *)",
+      "Bash(where choco *)",
+      "Bash(where scoop *)",
+      "Bash(winget show *)",
+      "Bash(winget search *)",
+      "Bash(winget install *)",
+      "Bash(\"/c/Program Files/PostgreSQL/17/bin/psql.exe\" --version)",
+      "PowerShell([Environment]::GetEnvironmentVariable\\(\"Path\", \"User\"\\))",
+      "PowerShell(powershell -NoProfile -Command \"psql --version\")",
+      "PowerShell(psql *)",
+      "Bash(pnpm --filter @huntstack/api exec tsc --noEmit)",
+      "Bash(pkill -f \"tsx.*api\")",
+      "Bash(pkill -f \"node.*api\")",
+      "Bash(taskkill //F //IM node.exe)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "playwright"
+  ]
 }

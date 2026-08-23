@@ -74,3 +74,6 @@ CLAUDE.md
 INFRASTRUCTURE_COSTS.md
 RUNBOOK.md
 docs/
+
+# Playwright MCP session artifacts (console logs, page snapshots)
+.playwright-mcp/
