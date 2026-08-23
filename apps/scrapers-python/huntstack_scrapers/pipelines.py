@@ -212,7 +212,13 @@ class DatabasePipeline:
                 cur.execute("""
                     INSERT INTO documents (title, content, document_type, source_url, source_type, state_id, metadata)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT DO NOTHING
+                    ON CONFLICT (source_url, document_type) DO UPDATE SET
+                        title = EXCLUDED.title,
+                        content = EXCLUDED.content,
+                        source_type = EXCLUDED.source_type,
+                        state_id = EXCLUDED.state_id,
+                        metadata = EXCLUDED.metadata,
+                        updated_at = now()
                     RETURNING id
                 """, (
                     item.get("link_title", "PDF Document"),
@@ -244,7 +250,13 @@ class DatabasePipeline:
                 cur.execute("""
                     INSERT INTO documents (title, content, document_type, source_url, source_type, state_id, metadata)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT DO NOTHING
+                    ON CONFLICT (source_url, document_type) DO UPDATE SET
+                        title = EXCLUDED.title,
+                        content = EXCLUDED.content,
+                        source_type = EXCLUDED.source_type,
+                        state_id = EXCLUDED.state_id,
+                        metadata = EXCLUDED.metadata,
+                        updated_at = now()
                 """, (
                     item.get("title", "Web Page"),
                     item.get("content", ""),
@@ -273,7 +285,13 @@ class DatabasePipeline:
                 cur.execute("""
                     INSERT INTO documents (title, content, document_type, source_url, source_type, state_id, metadata)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT DO NOTHING
+                    ON CONFLICT (source_url, document_type) DO UPDATE SET
+                        title = EXCLUDED.title,
+                        content = EXCLUDED.content,
+                        source_type = EXCLUDED.source_type,
+                        state_id = EXCLUDED.state_id,
+                        metadata = EXCLUDED.metadata,
+                        updated_at = now()
                 """, (
                     item.get("title", "Regulation"),
                     item.get("content", ""),
@@ -479,7 +497,11 @@ class EmbeddingPipeline:
                         cur.execute("""
                             INSERT INTO document_chunks (document_id, chunk_index, content, embedding, token_count, metadata)
                             VALUES (%s, %s, %s, %s::vector, %s, %s)
-                            ON CONFLICT DO NOTHING
+                            ON CONFLICT (document_id, chunk_index) DO UPDATE SET
+                                content = EXCLUDED.content,
+                                embedding = EXCLUDED.embedding,
+                                token_count = EXCLUDED.token_count,
+                                metadata = EXCLUDED.metadata
                         """, (
                             document_id,
                             index,
