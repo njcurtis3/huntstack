@@ -122,6 +122,16 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
+# Maps a scraped item's "type" to the document_type it is stored under. Both
+# DatabasePipeline (which writes documents) and EmbeddingPipeline (which has to
+# find those documents again) depend on this agreeing -- a drift between them
+# silently attaches chunks to the wrong document.
+DOCUMENT_TYPE_BY_ITEM_TYPE = {
+    "pdf": "regulation",
+    "page": "page",
+    "regulation": "regulation",
+}
+
 class DatabasePipeline:
     """Pipeline to store scraped items in PostgreSQL."""
 
@@ -223,7 +233,7 @@ class DatabasePipeline:
                 """, (
                     item.get("link_title", "PDF Document"),
                     full_text,
-                    "regulation",
+                    DOCUMENT_TYPE_BY_ITEM_TYPE["pdf"],
                     item.get("url"),
                     "state_agency",
                     state_id,
@@ -260,7 +270,7 @@ class DatabasePipeline:
                 """, (
                     item.get("title", "Web Page"),
                     item.get("content", ""),
-                    "page",
+                    DOCUMENT_TYPE_BY_ITEM_TYPE["page"],
                     item.get("url"),
                     "state_agency",
                     state_id,
@@ -295,7 +305,7 @@ class DatabasePipeline:
                 """, (
                     item.get("title", "Regulation"),
                     item.get("content", ""),
-                    "regulation",
+                    DOCUMENT_TYPE_BY_ITEM_TYPE["regulation"],
                     item.get("url"),
                     "state_agency",
                     state_id,
@@ -412,13 +422,27 @@ class EmbeddingPipeline:
         try:
             chunks = self._chunk_text(content)
 
+            embedded = []
             for i, chunk in enumerate(chunks):
                 embedding = self._generate_embedding(chunk, spider)
 
                 if embedding:
-                    self._store_chunk(item, i, chunk, embedding, spider)
+                    embedded.append((i, chunk, embedding))
 
-            spider.logger.info(f"Generated {len(chunks)} embeddings for {item.get('url')}")
+            # Every embedding failing usually means the API is down, not that the
+            # page is empty. Writing nothing here would let _store_chunks delete
+            # the document's existing chunks and leave it unsearchable.
+            if not embedded:
+                spider.logger.warning(
+                    f"No embeddings generated for {item.get('url')} — leaving existing chunks alone"
+                )
+                return item
+
+            self._store_chunks(item, embedded, spider)
+
+            spider.logger.info(
+                f"Generated {len(embedded)}/{len(chunks)} embeddings for {item.get('url')}"
+            )
 
         except Exception as e:
             spider.logger.error(f"Error generating embeddings: {e}")
@@ -471,10 +495,23 @@ class EmbeddingPipeline:
             spider.logger.error(f"Error generating embedding: {e}")
             return None
 
-    def _store_chunk(self, item: dict, index: int, chunk: str, embedding: list[float], spider):
-        """Store chunk with embedding in database."""
+    def _store_chunks(self, item: dict, embedded: list[tuple[int, str, list[float]]], spider):
+        """Write a document's chunks, and remove any the new content no longer has.
+
+        One connection, one transaction, for the whole document. Re-chunking a
+        page that got shorter must not leave the old tail behind: those chunks
+        would keep their stale text and stale embeddings and go on surfacing in
+        RAG results, attached to a document that no longer says any of it.
+        """
         db_url = os.getenv("DATABASE_URL")
         if not db_url:
+            return
+
+        document_type = DOCUMENT_TYPE_BY_ITEM_TYPE.get(item.get("type"))
+        if not document_type:
+            spider.logger.error(
+                f"No document_type mapping for item type {item.get('type')!r} — skipping chunks"
+            )
             return
 
         try:
@@ -484,9 +521,14 @@ class EmbeddingPipeline:
             try:
                 with conn:
                     with conn.cursor() as cur:
+                        # (source_url, document_type) is the unique key — see
+                        # scripts/add-documents-unique-constraint.sql. Matching on
+                        # source_url alone picks arbitrarily between the same URL
+                        # stored once as a 'page' and once as a 'regulation'.
                         cur.execute("""
-                            SELECT id FROM documents WHERE source_url = %s
-                        """, (item.get("url"),))
+                            SELECT id FROM documents
+                            WHERE source_url = %s AND document_type = %s
+                        """, (item.get("url"), document_type))
 
                         result = cur.fetchone()
                         if not result:
@@ -494,27 +536,42 @@ class EmbeddingPipeline:
 
                         document_id = result[0]
 
+                        for index, chunk, embedding in embedded:
+                            cur.execute("""
+                                INSERT INTO document_chunks (document_id, chunk_index, content, embedding, token_count, metadata)
+                                VALUES (%s, %s, %s, %s::vector, %s, %s)
+                                ON CONFLICT (document_id, chunk_index) DO UPDATE SET
+                                    content = EXCLUDED.content,
+                                    embedding = EXCLUDED.embedding,
+                                    token_count = EXCLUDED.token_count,
+                                    metadata = EXCLUDED.metadata
+                            """, (
+                                document_id,
+                                index,
+                                chunk,
+                                str(embedding),
+                                len(chunk.split()),
+                                json.dumps({
+                                    "state_code": item.get("state_code"),
+                                    "source_url": item.get("url"),
+                                }),
+                            ))
+
+                        # Drop whatever this pass did not just write: the trailing
+                        # chunks of a now-shorter document, and any index whose
+                        # embedding call failed above (its stored copy is stale).
                         cur.execute("""
-                            INSERT INTO document_chunks (document_id, chunk_index, content, embedding, token_count, metadata)
-                            VALUES (%s, %s, %s, %s::vector, %s, %s)
-                            ON CONFLICT (document_id, chunk_index) DO UPDATE SET
-                                content = EXCLUDED.content,
-                                embedding = EXCLUDED.embedding,
-                                token_count = EXCLUDED.token_count,
-                                metadata = EXCLUDED.metadata
-                        """, (
-                            document_id,
-                            index,
-                            chunk,
-                            str(embedding),
-                            len(chunk.split()),
-                            json.dumps({
-                                "state_code": item.get("state_code"),
-                                "source_url": item.get("url"),
-                            }),
-                        ))
+                            DELETE FROM document_chunks
+                            WHERE document_id = %s
+                              AND NOT (chunk_index = ANY(%s))
+                        """, (document_id, [index for index, _, _ in embedded]))
+
+                        if cur.rowcount:
+                            spider.logger.info(
+                                f"Removed {cur.rowcount} stale chunks for {item.get('url')}"
+                            )
             finally:
                 conn.close()
 
         except Exception as e:
-            spider.logger.error(f"Error storing chunk: {e}")
+            spider.logger.error(f"Error storing chunks: {e}")

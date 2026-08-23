@@ -60,29 +60,15 @@ ORDER BY tablename, indexname;
 
 
 -- ===========================================
--- KNOWN LIMITATION -- shrinking documents
+-- NOTE -- shrinking documents
 --
--- With upserts in place, re-scraping a page that got SHORTER leaves stale
--- trailing chunks behind: the new content produces chunk_index 0..9, the old
--- produced 0..13, and chunks 10..13 are updated by nothing and survive with
--- their old text and embeddings, polluting RAG results.
+-- Upserting chunks by (document_id, chunk_index) would, on its own, strand the
+-- tail of a document that got shorter: new content writes chunk_index 0..9, the
+-- old content had written 0..13, and 10..13 survive with stale text and stale
+-- embeddings that keep surfacing in RAG results.
 --
--- The clean fix is for the chunk pipeline to delete a document's existing
--- chunks before writing the new set, rather than upserting chunk-by-chunk.
--- That is a larger refactor of pipelines.py's per-chunk flow than this
--- migration covers. Until it happens, this sweeps the stragglers -- safe to
--- re-run any time after a scrape:
---
---   DELETE FROM document_chunks c
---   USING (
---     SELECT document_id, max(chunk_index) AS max_idx
---     FROM document_chunks
---     WHERE created_at > now() - interval '1 day'
---     GROUP BY document_id
---   ) recent
---   WHERE c.document_id = recent.document_id
---     AND c.created_at < now() - interval '1 day';
---
--- (Deletes chunks for recently-rewritten documents that were not themselves
--- rewritten in that pass. Adjust the interval to bracket your scrape run.)
+-- That is handled in code as of the commit that added this note:
+-- EmbeddingPipeline._store_chunks() writes a whole document in one transaction
+-- and then deletes any chunk_index it did not just write. No periodic sweep is
+-- needed here.
 -- ===========================================
