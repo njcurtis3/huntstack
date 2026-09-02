@@ -119,6 +119,11 @@ export default function WhereToHuntScreen() {
 
   useEffect(() => {
     if (!preferencesLoaded) return;
+    // set-state-in-effect fires because load() flips the loading/error state
+    // synchronously before it awaits. That is the fetch-on-mount transition, not a
+    // derived-state loop: this runs once when the stored preferences arrive and
+    // again only when `species` changes, and requestId guards a stale overwrite.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load(false);
   }, [preferencesLoaded, load]);
 

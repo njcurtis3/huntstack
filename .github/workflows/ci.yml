@@ -35,6 +35,9 @@ jobs:
       - name: Type check Web
         run: pnpm --filter @huntstack/web exec tsc --noEmit
 
+      - name: Type check Mobile
+        run: pnpm --filter @huntstack/mobile exec tsc --noEmit
+
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -60,6 +63,9 @@ jobs:
 
       - name: Test API
         run: pnpm --filter @huntstack/api test
+
+      - name: Test Mobile
+        run: pnpm --filter @huntstack/mobile test
 
       - uses: actions/setup-python@v5
         with:
@@ -102,6 +108,9 @@ jobs:
       - name: Lint Web
         run: pnpm --filter @huntstack/web lint
 
+      - name: Lint Mobile
+        run: pnpm --filter @huntstack/mobile lint
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -135,3 +144,11 @@ jobs:
           VITE_API_URL: http://localhost:4000
           VITE_SUPABASE_URL: https://placeholder.supabase.co
           VITE_SUPABASE_ANON_KEY: placeholder
+
+      # Runs Metro over the real dependency graph, which is the standing check
+      # that pnpm's isolated (symlinked) store still resolves for React Native.
+      # A dependency bump, an .npmrc setting or a nodeLinker change that breaks
+      # Metro resolution fails here instead of failing on a developer's laptop
+      # months later. No simulator, Xcode or device is needed to run it.
+      - name: Bundle Mobile
+        run: pnpm --filter @huntstack/mobile exec expo export --platform ios
