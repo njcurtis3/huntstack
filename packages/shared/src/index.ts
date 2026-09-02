@@ -165,12 +165,37 @@ export function getStateCode(name: string): string | undefined {
 }
 
 /**
+ * A season start/end is a calendar day, not an instant — the day the regulation
+ * prints. Handing the wire value straight to Date parses it as UTC midnight,
+ * which is the *previous* day everywhere west of Greenwich: a Sep 1 opener reads
+ * "Aug 31" to a hunter in Texas. Season dates carry legal weight, so read the
+ * leading YYYY-MM-DD and build local midnight from those three numbers.
+ *
+ * The pattern is deliberately not anchored at the tail. Drizzle's timestamp
+ * mapper hands Fastify a UTC-midnight Date, so apps/api serializes
+ * '2026-09-01T00:00:00.000Z' — apps/web never sees the bare '2026-09-01' form.
+ * A trailing `$` would fix nothing there while looking correct.
+ *
+ * A Date arrives here untouched, because a caller passing one has already
+ * localized it (apps/mobile parses to local midnight before calling in).
+ * Shifting it again would move the day the other way.
+ */
+function toCalendarDate(value: string | Date): Date {
+  if (value instanceof Date) return value
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
+  if (!match) return new Date(value)
+
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+}
+
+/**
  * Format date range for display
  */
 export function formatDateRange(startDate: string | Date, endDate: string | Date): string {
-  const start = new Date(startDate)
-  const end = new Date(endDate)
-  
+  const start = toCalendarDate(startDate)
+  const end = toCalendarDate(endDate)
+
   const options: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' }
   const yearOptions: Intl.DateTimeFormatOptions = { ...options, year: 'numeric' }
   
