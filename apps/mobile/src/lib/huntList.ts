@@ -143,11 +143,12 @@ export type ListState =
 /**
  * Which of the four things the list is doing.
  *
- * The empty case is the one worth care. A zero-length response is the NORMAL
- * answer out of season: the ranking is driven by weekly refuge surveys, and
- * before the season's first survey there is genuinely nothing to rank. If the
- * screen just showed an empty list a tester would reasonably read it as broken,
- * so the empty state says out loud that it is a data window and not a failure.
+ * The empty case is the one worth care. apps/api ranks whatever refuge counts
+ * exist — it applies no date window, so the list is NOT gated on the season
+ * being open — which means a zero-length response says one thing only: no
+ * survey has ever been recorded for this species in these states. That is a
+ * normal answer for a species the scrapers do not cover, and if the screen just
+ * showed an empty list a tester would reasonably read it as broken.
  */
 export function describeListState({
   loading,
@@ -168,7 +169,7 @@ export function describeListState({
       kind: 'empty',
       title: `Nothing ranked for ${speciesLabel}`,
       detail:
-        'This is not an error. Rankings come from weekly refuge surveys, so there is nothing to rank outside the waterfowl season or before this season’s first survey lands. Try All waterfowl, or pull down to refresh once counts start.',
+        'This is not an error. Rankings come from refuge count surveys, and no survey on record covers this species. Closed seasons still rank — try All waterfowl, or pull down to refresh once new counts land.',
     };
   }
   return { kind: 'ready' };
