@@ -1,3 +1,59 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# apps/mobile brings React 19 (Expo SDK 57) into a workspace where apps/web is still
+# React 18. pnpm's isolated store keeps ONE hoisted copy of @types/react in
+# node_modules/.pnpm/node_modules/, and adding React 19 flipped that copy to 19.x — which
+# silently retyped every React library that imports "react" without declaring @types/react
+# as a peer, producing 263 TS2786 "cannot be used as a JSX component" errors in apps/web.
+#
+# These extensions declare the peer those packages are missing, so pnpm resolves
+# @types/react per-consumer: apps/web gets 18.x, apps/mobile gets 19.x. Optional, so a
+# consumer without @types/react installed is not warned about.
+#
+# Add an entry here if a new React library ever starts typing itself against the wrong
+# React major. Verified by `pnpm --filter @huntstack/web exec tsc --noEmit`.
+packageExtensions:
+  "@reduxjs/toolkit":
+    peerDependencies:
+      "@types/react": "*"
+    peerDependenciesMeta:
+      "@types/react":
+        optional: true
+  "@sentry/react":
+    peerDependencies:
+      "@types/react": "*"
+    peerDependenciesMeta:
+      "@types/react":
+        optional: true
+  "@tanstack/react-query":
+    peerDependencies:
+      "@types/react": "*"
+    peerDependenciesMeta:
+      "@types/react":
+        optional: true
+  lucide-react:
+    peerDependencies:
+      "@types/react": "*"
+    peerDependenciesMeta:
+      "@types/react":
+        optional: true
+  react-router:
+    peerDependencies:
+      "@types/react": "*"
+    peerDependenciesMeta:
+      "@types/react":
+        optional: true
+  react-router-dom:
+    peerDependencies:
+      "@types/react": "*"
+    peerDependenciesMeta:
+      "@types/react":
+        optional: true
+  recharts:
+    peerDependencies:
+      "@types/react": "*"
+    peerDependenciesMeta:
+      "@types/react":
+        optional: true
