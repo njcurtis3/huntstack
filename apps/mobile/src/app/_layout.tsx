@@ -8,7 +8,9 @@ export default function RootLayout() {
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <Stack>
-        <Stack.Screen name="index" options={{ title: 'HuntStack' }} />
+        {/* The tabs carry their own headers, so the stack must not add a second one. */}
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="recommendation/[id]" options={{ title: 'Why this spot' }} />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

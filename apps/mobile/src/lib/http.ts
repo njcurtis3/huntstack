@@ -41,7 +41,18 @@ export interface BaseUrlSources {
  */
 export function resolveApiBaseUrl({ envUrl, hostUri, isDev }: BaseUrlSources): string {
   const configured = envUrl?.trim();
-  if (configured) return configured.replace(/\/+$/, '');
+  if (configured) {
+    // A scheme-less value — the bare domain, no leading http:// — is a plausible
+    // thing to type into a build environment, and without this it would reach
+    // fetch as a relative URL and fail as an opaque network error rather than
+    // the configuration error it actually is.
+    if (!/^https?:\/\//i.test(configured)) {
+      throw new Error(
+        `EXPO_PUBLIC_API_URL must start with http:// or https:// — got "${configured}".`,
+      );
+    }
+    return configured.replace(/\/+$/, '');
+  }
 
   if (!isDev) {
     throw new Error(
@@ -118,5 +129,16 @@ export async function getJson<T>(url: string, options: RequestOptions = {}): Pro
     throw new Error(message);
   }
 
-  return response.json() as Promise<T>;
+  // A 200 whose body is not JSON is not a hypothetical: a captive portal on hotel
+  // or gas-station wifi answers every request with its own login page, which is
+  // exactly the network a hunter is on the night before. Left unguarded this
+  // rejects with a raw "Unexpected token < in JSON at position 0" that the screen
+  // has no choice but to show the user.
+  try {
+    return (await response.json()) as T;
+  } catch {
+    throw new Error(
+      'The server answered with something that was not hunting data. If you are on public wifi, you may need to sign in to the network first.',
+    );
+  }
 }

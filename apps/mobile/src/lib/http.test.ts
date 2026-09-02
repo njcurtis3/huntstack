@@ -44,6 +44,23 @@ describe('resolveApiBaseUrl', () => {
   it('treats a blank EXPO_PUBLIC_API_URL as unset', () => {
     expect(() => resolveApiBaseUrl({ envUrl: '   ', isDev: false })).toThrow(/EXPO_PUBLIC_API_URL is not set/);
   });
+
+  it('rejects a scheme-less EXPO_PUBLIC_API_URL as the misconfiguration it is', () => {
+    // Without this the value reaches fetch as a relative URL and every request
+    // dies as an opaque network error instead of naming the actual mistake.
+    expect(() => resolveApiBaseUrl({ envUrl: 'api.example.test', isDev: false })).toThrow(
+      /must start with http:\/\/ or https:\/\//,
+    );
+  });
+
+  it('accepts either scheme, case-insensitively', () => {
+    expect(resolveApiBaseUrl({ envUrl: 'HTTP://api.example.test', isDev: false })).toBe(
+      'HTTP://api.example.test',
+    );
+    expect(resolveApiBaseUrl({ envUrl: 'https://api.example.test', isDev: false })).toBe(
+      'https://api.example.test',
+    );
+  });
 });
 
 describe('buildUrl', () => {
@@ -93,6 +110,15 @@ describe('getJson', () => {
   it('falls back to the status code when the error body is not JSON', async () => {
     stubFetch(502, '<html>bad gateway</html>');
     await expect(getJson('http://api.test/api/species')).rejects.toThrow('HTTP 502');
+  });
+
+  it('does not leak a JSON parser error out of a 200 that is not JSON', async () => {
+    // A captive portal on public wifi answers 200 with its own login page. The
+    // screen renders whatever this throws, and "Unexpected token <" is not it.
+    stubFetch(200, '<html>Sign in to continue</html>');
+    const pending = getJson('http://api.test/api/species');
+    await expect(pending).rejects.toThrow(/public wifi/i);
+    await expect(pending).rejects.not.toThrow(/JSON/i);
   });
 
   it('reports a timeout in words a hunter can act on', async () => {
