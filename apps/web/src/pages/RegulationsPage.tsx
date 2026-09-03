@@ -119,6 +119,30 @@ const GROUP_CONFIG: { key: 'duck' | 'goose' | 'dove' | 'other' | 'special'; labe
   { key: 'special', label: 'Special Seasons' },
 ]
 
+// ─── Season dates ────────────────────────────────────────────────────────────
+
+// A season start/end is a calendar day — the day the regulation prints — not an instant.
+// Handing the wire value straight to Date parses it as UTC midnight, which is the *previous*
+// day everywhere west of Greenwich: a Sep 1 opener reads "Aug 31" to a hunter in Texas.
+// Season dates carry legal weight, so read the leading YYYY-MM-DD and build local midnight
+// from those three numbers.
+//
+// The pattern is deliberately not anchored at the tail. Drizzle's timestamp mapper hands
+// Fastify a UTC-midnight Date, so the API serializes '2026-09-01T00:00:00.000Z' — this page
+// never sees the bare '2026-09-01' form, and a trailing `$` would fix nothing while looking
+// correct. A Date arrives untouched: a caller passing one has already localized it.
+//
+// This duplicates the rule in packages/shared deliberately. apps/web doesn't depend on that
+// package, and its formatDateRange renders a different string than the one below.
+function toCalendarDate(value: string | Date): Date {
+  if (value instanceof Date) return value
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
+  if (!match) return new Date(value)
+
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+}
+
 function SeasonTable({ seasons }: { seasons: Season[] }) {
   const bagFmt = (bl: unknown) => {
     const b = bl as { daily?: number; season?: number } | null
@@ -143,9 +167,9 @@ function SeasonTable({ seasons }: { seasons: Season[] }) {
           <tr key={season.id}>
             <td className="p-3 font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>{season.name}</td>
             <td className="p-3 whitespace-nowrap" style={{ color: `rgb(var(--color-text-secondary))` }}>
-              {new Date(season.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              {toCalendarDate(season.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               {' – '}
-              {new Date(season.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              {toCalendarDate(season.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </td>
             <td className="p-3 whitespace-nowrap" style={{ color: `rgb(var(--color-text-secondary))` }}>{bagFmt(season.bagLimit)}</td>
             <td className="p-3 hidden md:table-cell" style={{ color: `rgb(var(--color-text-secondary))` }}>{season.restrictions || '-'}</td>
@@ -230,8 +254,8 @@ function findLicense(licenses: License[], keywords: string[]): License | null {
 
 function formatDateRange(season: Season | null): string {
   if (!season) return '—'
-  const start = new Date(season.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  const end = new Date(season.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const start = toCalendarDate(season.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const end = toCalendarDate(season.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
   return `${start} – ${end}`
 }
 
