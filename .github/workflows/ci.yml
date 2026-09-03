@@ -61,6 +61,9 @@ jobs:
       - name: Build db package
         run: pnpm --filter @huntstack/db build
 
+      - name: Test Shared
+        run: pnpm --filter @huntstack/shared test
+
       - name: Test API
         run: pnpm --filter @huntstack/api test
 
