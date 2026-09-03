@@ -73,6 +73,10 @@ env.services
 CLAUDE.md
 INFRASTRUCTURE_COSTS.md
 RUNBOOK.md
+
+# Local-only dev aid (2026-09-03): serves the API's wire shapes so apps/web and
+# apps/mobile can be driven with no database. Kept on disk, never in the repo.
+scripts/stub-api.mjs
 docs/
 
 # Playwright MCP session artifacts (console logs, page snapshots)
