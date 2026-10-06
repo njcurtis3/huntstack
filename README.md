@@ -1,268 +1,310 @@
-# huntstack
+<h1 align="center">
+  <img src="apps/web/public/duck-image-1.png" alt="" height="56" align="center">
+  huntstack
+</h1>
 
-**Pre-hunt intelligence.**
+<p align="center">
+  <i>Pre-hunt intelligence for waterfowl hunters: live refuge counts, migration timing and season rules, searchable, in one place.</i>
+</p>
 
-HuntStack replaces the fragmented workflow of Googling across state websites, reading PDFs, and checking Facebook groups — with structured data, live refuge counts, and an AI-powered assistant.
+<h4 align="center">
+  <a href="https://github.com/njcurtis3/huntstack/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/njcurtis3/huntstack/ci.yml?branch=main&label=ci&style=flat-square" alt="ci" style="height: 20px;">
+  </a>
+  <a href="#license">
+    <img src="https://img.shields.io/badge/license-all%20rights%20reserved-8f8c84.svg?style=flat-square" alt="license: all rights reserved" style="height: 20px;">
+  </a>
+  <img src="https://img.shields.io/badge/status-pre--beta-c9a227.svg?style=flat-square" alt="status: pre-beta" style="height: 20px;">
+  <br>
+  <img src="https://img.shields.io/badge/node-22%2B-8f8c84.svg?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node 22+" style="height: 20px;">
+  <img src="https://img.shields.io/badge/python-3.11%2B-8f8c84.svg?style=flat-square&logo=python&logoColor=white" alt="Python 3.11+" style="height: 20px;">
+  <img src="https://img.shields.io/badge/React-18-8f8c84.svg?style=flat-square&logo=react&logoColor=white" alt="React 18" style="height: 20px;">
+  <img src="https://img.shields.io/badge/Fastify-4-8f8c84.svg?style=flat-square&logo=fastify&logoColor=white" alt="Fastify 4" style="height: 20px;">
+  <img src="https://img.shields.io/badge/Supabase-pgvector-3fb950.svg?style=flat-square&logo=supabase&logoColor=white" alt="Supabase + pgvector" style="height: 20px;">
+</h4>
 
----
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#run">Run</a> ·
+  <a href="#scrapers">Scrapers</a> ·
+  <a href="#api">API</a> ·
+  <a href="#data-sources">Data sources</a> ·
+  <a href="#roadmap">Roadmap</a> ·
+  <a href="RUNBOOK.md">Runbook</a> ·
+  <a href="CURRENT_STATE.md">Current state</a>
+</p>
 
-## What It Does
+<p align="center">
+  <img src="apps/web/public/og-image.png" alt="HuntStack: pre-hunt intelligence for the Central and Mississippi Flyways" width="100%">
+</p>
 
-### Migration Intelligence Dashboard (`/migration`)
+## Introduction
 
-The core feature. Live and historical waterfowl counts from federal and state aerial surveys across the Central and Mississippi Flyways — updated weekly. See which refuges have birds arriving, peaking, or moving out, with week-over-week deltas and current weather push signals.
+`huntstack` replaces the way waterfowl hunters plan today: Googling across six
+state websites, reading three PDFs, and scrolling Facebook groups for refuge
+reports. It pulls federal and state aerial surveys, eBird sightings, NOAA
+weather and state regulations into one structured dataset, and answers the
+question that matters before a hunt: *where should I go this weekend?*
 
-Organized into four sections:
+It does not try to be a map. OnX, HuntStand and BaseMap own in-field
+navigation. **HuntStack tells you where to hunt; OnX helps you get there.**
 
-- **Quick Intel** — collapsed panels for Migration Pressure (push factor scores), Flyway Flow (N→S directional arrows overlaid on map), and Weather Alerts
-- **Weekly Intelligence** — AI-generated weekly migration narrative with per-state summaries
-- **My Area** — type a city/zip or use GPS to find the nearest active refuges, sorted by distance
-- **Snapshot** — summary stats, top movement refuges, hunt recommendations, and state season comparison
+V1 covers waterfowl in the Central and Mississippi Flyways: TX, NM, AR, LA,
+KS, OK and MO.
 
-Additional features:
+> [!WARNING]
+> **HuntStack is pre-beta.** The migration dashboard, recommendations, chat
+> and regulations are built and running, but the app is not yet open to the
+> public. Season dates are extracted from state documents and are still being
+> spot-checked by hand. **Always confirm seasons, bag limits and shooting
+> hours with the state agency before you hunt.**
 
-- Species-level counts with WoW % change and trend direction
-- **Regional Activity** — eBird statewide community observations for all V1 states (TX, NM, KS, OK, AR, LA, MO) with High/Moderate/Low activity levels, week-over-week trend vs prior 14-day period, and top 3 species per state
-- Cold front and push factor scoring (cold front present, north winds, sub-freezing temps)
-- Flyway flow arrows on AlbersUSA SVG map with magnitude-based direction inference
-- State, species, and flyway filters above the map
-- Shareable migration report (`/report`) — snapshot of current conditions filterable by state/species
+<details open>
+<summary>
+ Features
+</summary> <br />
 
-### Where to Hunt (`/where-to-hunt`)
+<table>
+  <tr>
+    <td width="50%"><b>Migration Intelligence</b> (<code>/migration</code>)<br>Live and historical counts from refuge aerial surveys, updated weekly. See which refuges have birds arriving, peaking or moving out, with week-over-week deltas, species-level trends and an AI-written weekly narrative per state.</td>
+    <td width="50%"><b>Where to Hunt</b> (<code>/where-to-hunt</code>)<br>Enter a species and a city, zip or GPS fix, and get public hunting areas ranked by bird activity, migration status, push factor, open seasons, weather and distance, with the score broken down on every card.</td>
+  </tr>
+  <tr>
+    <td><b>Push factors and flyway flow</b><br>Cold fronts, north winds and sub-freezing temps from NOAA, scored per state. Flyway arrows on the map show which way the birds are moving, inferred from N→S count changes.</td>
+    <td><b>AI chat</b> (<code>/chat</code>)<br>Ask <i>"What do I need to hunt snow geese in New Mexico?"</i> or <i>"Where are the pintails right now?"</i> RAG over structured data and source documents, rate-limited per IP.</td>
+  </tr>
+  <tr>
+    <td><b>Regulations and licenses</b> (<code>/regulations</code>)<br>Seasons, bag limits, shooting hours, stamps and license requirements for TX, NM, AR, LA, KS and OK, with a side-by-side state comparison, instead of a stack of PDFs.</td>
+    <td><b>Regional activity</b><br>eBird community observations for every V1 state, rated High, Moderate or Low against the prior 14 days, with the top species per state and per-refuge sightings.</td>
+  </tr>
+  <tr>
+    <td><b>My Area and reports</b><br>Find the nearest active refuges from a city, zip or GPS, and share a snapshot of current conditions (<code>/report</code>) filtered by state and species.</td>
+    <td><b>Native app</b> (<code>apps/mobile</code>)<br>An Expo app with Where to Hunt on your phone, talking to the same API. Runs in Expo Go today; see <a href="apps/mobile/README.md">its README</a>.</td>
+  </tr>
+</table>
 
-Ranked refuge recommendations based on what's actually happening — not generic maps. Enter a species and optionally a location (city, zip, or GPS), and the app returns public hunting areas sorted by:
+</details>
 
-- Current bird activity and trend
-- Migration status (Arriving / Building / Peak / Declining / Departing)
-- Push factor score (cold fronts, north winds)
-- Active season alignment
-- Weather conditions
-- Distance from your location (when set)
+## Install
 
-Score breakdown shown per card (trend, volume, season, weather, push, migration, anomaly bonus).
+<details open>
+<summary>
+ Prerequisites
+</summary> <br />
 
-### AI Chat (`/chat`)
+- Node.js 22 or later, and pnpm 8 or later
+- Python 3.11 or later (for the scrapers)
+- A Supabase project with the `postgis` and `vector` extensions enabled
+- A Together.ai API key, and an eBird API key
 
-Natural language queries backed by structured data + RAG. Ask things like:
-
-- *"What do I need to hunt snow geese in New Mexico?"*
-- *"Where are the pintails right now in the Central Flyway?"*
-- *"Compare duck seasons in Arkansas vs Louisiana"*
-
-### Regulation & License Intelligence (`/regulations`)
-
-Structured seasons, bag limits, and license requirements for TX, NM, AR, LA, KS, OK — queryable through chat instead of reading PDFs.
-
----
-
-## Live Data Sources
-
-| Source | State | Type | Frequency |
-| ------ | ----- | ---- | --------- |
-| Washita NWR | OK | FWS HTML survey | Weekly |
-| Salt Plains NWR | OK | FWS HTML survey | Weekly |
-| Clarence Cannon NWR | MO | FWS HTML table | Weekly |
-| Loess Bluffs NWR | MO | FWS PDF survey | Weekly |
-| AGFC Aerial Survey | AR | State PDF (LLM extracted) | Biweekly |
-| LDWF Aerial Survey | LA | State PDF (LLM extracted) | Monthly |
-| MWI Statewide | TX, NM, AR, LA, KS, OK | USFWS harvest data | Annual |
-| eBird API | TX, NM, KS, OK, AR, LA, MO | Cornell Lab — statewide + per-refuge community sightings | On-demand (3h cache) |
-
-PDFs (AGFC, LDWF) are extracted with `Meta-Llama-3.1-8B-Instruct-Turbo` via Together.ai.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|------------|
-| Frontend | React 18, Vite, TypeScript, Tailwind CSS |
-| Maps | react-simple-maps (AlbersUSA SVG) |
-| Charts | Recharts |
-| State | Zustand + TanStack Query |
-| Backend | Fastify, TypeScript, Drizzle ORM |
-| Database | Supabase (PostgreSQL + PostGIS + pgvector) |
-| LLM / Embeddings | Together.ai (Llama 3.1 8B + bge-base-en-v1.5) |
-| Scrapers | Python (Scrapling, pdfplumber) |
-| Weather | NOAA API |
-| Bird Sightings | eBird API (Cornell Lab) |
-| Geocoding | Nominatim (OpenStreetMap) |
-| Monorepo | pnpm workspaces |
-
----
-
-## Project Structure
-
-```
-huntstack/
-├── apps/
-│   ├── web/                        # React + Vite frontend
-│   │   └── src/
-│   │       ├── pages/              # MigrationPage, WhereToHuntPage, ChatPage, etc.
-│   │       ├── components/         # Reusable UI components
-│   │       ├── stores/             # Zustand state
-│   │       └── lib/                # API client, utilities
-│   ├── api/                        # Fastify backend
-│   │   └── src/
-│   │       ├── routes/             # refuges, migration, hunt, chat, search, geo, weather, regulations
-│   │       └── lib/                # weather.ts (NOAA), embeddings, RAG
-│   └── scrapers-python/            # Python scraper pipeline
-│       └── huntstack_scrapers/
-│           ├── scrapers/           # run.py (unified CLI), refuge_counts.py
-│           ├── parsers/            # Per-source HTML/PDF parsers
-│           ├── extractors/         # llm.py (Together.ai), pdf.py (pdfplumber)
-│           └── sources.py          # WATERFOWL_SOURCES registry
-├── packages/
-│   ├── db/                         # Drizzle schema & migrations
-│   ├── shared/                     # Zod schemas, shared utilities
-│   └── types/                      # Shared TypeScript types
-├── scripts/                        # Seed scripts, scraper automation
-│   ├── run-refuge-counts.ps1       # Weekly scraper (Windows Task Scheduler)
-│   └── logs/                       # Scraper run logs (auto-pruned 30d)
-└── .github/workflows/ci.yml        # CI: typecheck + build on every PR
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 20+
-- pnpm 8+
-- Python 3.11+
-- Supabase project (PostgreSQL with `postgis` and `vector` extensions enabled)
-- Together.ai API key
-
-### Install
+</details>
 
 ```bash
-git clone https://github.com/yourusername/huntstack.git
+git clone https://github.com/njcurtis3/huntstack.git
 cd huntstack
 pnpm install
-cp .env.example .env
-# Fill in .env with your credentials
 ```
 
-### Database Setup
+Create a `.env` at the repo root with the variables under
+[Environment](#environment), then run `scripts/init-supabase.sql` in the
+Supabase SQL editor.
 
-Run `scripts/init-supabase.sql` in the Supabase SQL Editor.
+> [!CAUTION]
+> **Never run `pnpm db:push` or `drizzle-kit push`.** Drizzle will try to drop
+> the pgvector `embedding` column. Make every schema change in raw SQL.
 
-> **Do NOT use `pnpm db:push`** — Drizzle will try to drop the `embedding` column (pgvector). Use raw SQL for all schema changes.
-
-### Run
+## Run
 
 ```bash
-pnpm dev          # Start API + frontend in parallel
-pnpm dev:web      # Frontend only — http://localhost:3000
-pnpm dev:api      # API only    — http://localhost:4001
+pnpm dev          # API and web together
+pnpm dev:web      # web only, http://localhost:3000
+pnpm dev:api      # API only, http://localhost:4001 (Swagger at /docs)
 ```
 
-### Scrapers
+Tests:
+
+```bash
+pnpm --filter @huntstack/api test                # API (vitest)
+cd apps/scrapers-python && python -m pytest      # scraper parsers (pytest)
+```
+
+## Scrapers
 
 ```bash
 cd apps/scrapers-python
 
-# Run all refuge count sources
-python -m huntstack_scrapers.scrapers.run refuge_counts
-
-# Run a single source
+python -m huntstack_scrapers.scrapers.run refuge_counts               # every source
 python -m huntstack_scrapers.scrapers.run refuge_counts --source "Loess Bluffs National Wildlife Refuge"
-
-# Dry run (parse only, no DB writes)
-python -m huntstack_scrapers.scrapers.run refuge_counts --dry-run
+python -m huntstack_scrapers.scrapers.run refuge_counts --dry-run     # parse only, no DB writes
+python -m huntstack_scrapers.scrapers.run state_regulations --state TX
 ```
 
----
+On the dev machine, `scripts/run-refuge-counts.ps1` runs the refuge counts
+every Monday at 6am through Windows Task Scheduler, logs to `scripts/logs/`,
+and posts to `SCRAPER_ALERT_WEBHOOK` when a run fails or finds nothing.
 
-## API Routes
+<details>
+<summary>
+ Data sources
+</summary> <br />
 
-| Route | Description |
-| ----- | ----------- |
-| `GET /api/refuges` | List wildlife refuges with state/flyway filters |
-| `GET /api/refuges/:id/counts` | Bird count time-series with delta + trend |
-| `GET /api/refuges/migration/dashboard` | Aggregated migration data across all refuges (includes eBird) |
-| `GET /api/migration/push-factors` | Weather push factor scores per state (cold fronts, wind, temp) |
-| `GET /api/migration/weekly-summary` | LLM-generated migration narrative (6h cache) |
-| `GET /api/migration/flyway-progression` | Weekly counts by state ordered N→S |
-| `GET /api/migration/regional-activity` | eBird statewide activity levels with trend vs prior 14-day period |
-| `GET /api/hunt/recommendations` | Ranked hunting recommendations by species + location |
-| `GET /api/geo/zip/:zip` | Geocode a US zip code to lat/lng + city/state |
-| `GET /api/geo/search?q=` | Free-text city/place geocode (Nominatim) |
-| `GET /api/geo/reverse?lat=&lng=` | Reverse geocode lat/lng to city/state (Nominatim) |
-| `GET /api/weather/forecast/:refugeId` | Weather forecast for a specific refuge |
-| `GET /api/weather/alerts` | Active weather alerts |
-| `GET /api/weather/hunting-conditions/:refugeId` | Hunting conditions score for a refuge |
-| `POST /api/chat` | RAG-powered AI chat with structured data retrieval |
-| `GET /api/search` | Full-text search across regulations, species, locations |
-| `GET /api/regulations` | State regulations with filters |
-| `GET /api/species` | Species catalog |
+<a id="data-sources"></a>
 
-Swagger docs at `http://localhost:4001/docs` when running locally.
+| Source | State | Type | Frequency |
+|---|---|---|---|
+| Washita NWR | OK | FWS HTML survey | weekly |
+| Salt Plains NWR | OK | FWS HTML survey | weekly |
+| Clarence Cannon NWR | MO | FWS HTML table | weekly |
+| Loess Bluffs NWR | MO | FWS PDF survey | weekly |
+| AGFC aerial survey | AR | state PDF, LLM-extracted | biweekly |
+| LDWF aerial survey | LA | state PDF, LLM-extracted | monthly |
+| Midwinter Waterfowl Inventory | TX, NM, AR, LA, KS, OK | USFWS survey | annual |
+| eBird | TX, NM, KS, OK, AR, LA, MO | Cornell Lab, statewide and per refuge | on demand, cached 3h |
 
----
+PDFs are extracted with `Qwen2.5-7B-Instruct-Turbo` on Together.ai at
+temperature 0.
 
-## Environment Variables
+</details>
+
+<details>
+<summary>
+ Tech stack
+</summary> <br />
+
+| Layer | Technology |
+|---|---|
+| Web | React 18, Vite, TypeScript, Tailwind CSS, Zustand, TanStack Query |
+| Maps and charts | react-simple-maps (AlbersUSA SVG), Recharts |
+| Mobile | React Native, Expo, expo-router |
+| API | Fastify 4, TypeScript, Drizzle ORM, Zod |
+| Database | Supabase: PostgreSQL, PostGIS, pgvector |
+| LLM and embeddings | Together.ai: Qwen 2.5 7B, multilingual-e5-large-instruct |
+| Scrapers | Python, Scrapling, pdfplumber |
+| Weather, birds, geocoding | NOAA, eBird, Nominatim |
+| Errors | Sentry, errors only |
+| Monorepo | pnpm workspaces |
+
+</details>
+
+<details>
+<summary>
+ Project structure
+</summary> <br />
+
+```
+huntstack/
+├── apps/
+│   ├── web/                  # React + Vite frontend
+│   ├── mobile/               # Expo native app
+│   ├── api/                  # Fastify backend: routes, NOAA, RAG, embeddings
+│   └── scrapers-python/      # scrapers, parsers, LLM/PDF extractors, source registry
+├── packages/
+│   ├── db/                   # Drizzle schema and migrations
+│   └── shared/               # Zod schemas and shared utilities
+│   └── types/                # shared TypeScript types
+├── scripts/                  # seed scripts, weekly scraper, logs
+└── .github/workflows/ci.yml  # typecheck, tests and build on every push and PR
+```
+
+</details>
+
+## API
+
+<details>
+<summary>
+ Routes
+</summary> <br />
+
+| Route | What it returns |
+|---|---|
+| `GET /api/refuges` | refuges, filterable by state and flyway |
+| `GET /api/refuges/:id/counts` | a refuge's count time series, with delta and trend |
+| `GET /api/refuges/migration/dashboard` | migration data across every refuge, eBird included |
+| `GET /api/migration/push-factors` | push factor scores per state |
+| `GET /api/migration/weekly-summary` | the AI weekly narrative, cached 6h |
+| `GET /api/migration/flyway-progression` | weekly counts by state, N→S |
+| `GET /api/migration/regional-activity` | eBird activity per state, vs the prior 14 days |
+| `GET /api/hunt/recommendations` | ranked recommendations by species and location |
+| `GET /api/geo/zip/:zip` · `/search?q=` · `/reverse?lat=&lng=` | geocoding through Nominatim |
+| `GET /api/weather/forecast/:refugeId` · `/alerts` · `/hunting-conditions/:refugeId` | NOAA weather |
+| `POST /api/chat` | RAG chat over structured data |
+| `GET /api/search` | full-text search across regulations, species and locations |
+| `GET /api/regulations` · `GET /api/species` | regulations and the species catalog |
+
+Swagger runs at `http://localhost:4001/docs`.
+
+</details>
+
+## Environment
+
+<details>
+<summary>
+ Variables
+</summary> <br />
 
 ```bash
 DATABASE_URL=postgresql://...
 SUPABASE_URL=https://...
 SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_KEY=
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
 TOGETHER_API_KEY=
 EBIRD_API_KEY=
 VITE_API_URL=http://localhost:4001
-VITE_MAPTILER_KEY=...
+VITE_MAPTILER_KEY=
 PORT=4001
 CORS_ORIGIN=http://localhost:3000
+SENTRY_DSN=                # optional
+VITE_SENTRY_DSN=           # optional
+SCRAPER_ALERT_WEBHOOK=     # optional
 ```
 
----
+</details>
 
-## V1 Roadmap
+## Roadmap
 
-V1 targets waterfowl hunters in the Central and Mississippi Flyways.
+<details>
+<summary>
+ Done
+</summary> <br />
 
-**Priority states:** TX, NM, AR, LA, KS, OK + MO (Loess Bluffs)
+- [x] Refuge count pipeline: live FWS and state sources, plus eBird
+- [x] Migration dashboard: counts, week-over-week deltas, trends, flyway map and flow arrows
+- [x] Push factors from NOAA, and the AI weekly narrative
+- [x] eBird regional activity for every V1 state
+- [x] My Area proximity search, and shareable reports
+- [x] Where to Hunt: scored recommendations
+- [x] AI chat over structured data and documents
+- [x] Regulations and licenses for TX, NM, AR, LA, KS and OK, with state comparison
+- [x] 2026–2027 season data
+- [x] Native app (Expo), Where to Hunt first
+- [x] Dark and light mode
+- [x] CI, weekly scraper, chat rate limit, Sentry
 
-### Done
+</details>
 
-- [x] Refuge count scraper pipeline (7 live sources + eBird, 1,500+ rows)
-- [x] Migration Intelligence dashboard — counts, WoW deltas, trend direction, flyway map
-- [x] Flyway flow visualization — directional arrows on AlbersUSA map with magnitude-based inference
-- [x] Push factor panel — cold fronts, north winds, sub-freezing temps via NOAA
-- [x] AI-generated weekly migration narrative with per-state breakdowns
-- [x] eBird integration — statewide Regional Activity panel (all V1 states) with activity levels, trend vs prior period, top species per state; per-refuge geo sightings with real delta/trend computation
-- [x] My Area — proximity search (city / zip / GPS) + nearest active refuge list
-- [x] Shareable migration conditions report (`/report`)
-- [x] Where to Hunt — ranked recommendations with migration status + push factor scoring
-- [x] AI Chat — RAG over structured data + document embeddings
-- [x] Regulation & License Intelligence — TX, NM, AR, LA, KS, OK
-- [x] Geocoding API — zip lookup, city search, reverse geocode (Nominatim)
-- [x] State comparison tool — cross-state season/regulation comparison
-- [x] Dark / light mode
-- [x] CI pipeline — GitHub Actions typecheck + build on every PR
-- [x] Automated weekly scraper — Windows Task Scheduler, every Monday 6am
+<details>
+<summary>
+ Next
+</summary> <br />
 
-### Planned
+- [ ] Hand spot-check of extracted 2026–2027 season dates
+- [ ] More live sources for KS and NM
+- [ ] Push notifications (*"Snow geese numbers jumped at Loess Bluffs"*)
+- [ ] Accounts and saved locations
+- [ ] Outfitter directory beyond Texas
+- [ ] Web tests
 
-- [ ] Push notifications ("Snow geese numbers jumped at Loess Bluffs")
-- [ ] User accounts + saved locations
-- [ ] Outfitter directory expansion (14 TX outfitters live; other states pending)
-- [ ] More state scraper coverage (KS, NM live sources)
-- [ ] Offline PWA support
+Later, once V1 has traction: public land layers, predictive migration
+models, crowdsourced harvest reports, and big game (elk and deer in CO, MT
+and WY).
 
-### V2 (When V1 Has Traction)
-
-- Public land layers (BLM, state WMAs)
-- Predictive migration models (weather × count correlation)
-- User harvest reports (crowdsourced)
-- Big game expansion (elk, deer — CO, MT, WY)
-
----
+</details>
 
 ## License
 
-**Private** — © 2026 Nathan Curtis. All rights reserved.
+**Private.** © 2026 Nathan Curtis. All rights reserved.
 
-This repository is public for viewing purposes only. No permission is granted to copy, modify, or redistribute without explicit written permission.
+This repository is public for viewing only. No permission is granted to copy,
+modify or redistribute it without explicit written permission.
