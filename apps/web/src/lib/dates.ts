@@ -1,8 +1,10 @@
 /**
- * A survey date is a calendar day, not an instant. apps/api sends refuge count dates as
- * '2026-01-23 00:00:00' (Postgres timestamp text), which Safari will not parse at all and
- * which reads as the previous day west of Greenwich once anything treats it as UTC. Read the
- * leading YYYY-MM-DD and build local midnight from those three numbers instead.
+ * A survey date or week is a calendar day, not an instant, but apps/api sends it in three
+ * shapes: '2026-01-23 00:00:00' from raw SQL, a bare '2026-10-05' (eBird, flyway weeks), and
+ * '2026-01-23T00:00:00.000Z' from the ORM. `new Date()` reads the last two as UTC midnight, so
+ * every US reader sees the day before — a Monday survey week labelled Sunday — and older Safari
+ * rejects the first outright. Read the leading YYYY-MM-DD and build local midnight from those
+ * three numbers instead.
  *
  * Mirrors toCalendarDate in packages/shared, which apps/web does not depend on.
  */

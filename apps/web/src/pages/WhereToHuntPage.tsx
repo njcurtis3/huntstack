@@ -5,6 +5,7 @@ import {
   MapPin, Navigation, X as XIcon, ArrowUpDown,
 } from 'lucide-react'
 import { api } from '../lib/api'
+import { parseCalendarDate } from '../lib/dates'
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371
@@ -642,7 +643,7 @@ export function WhereToHuntPage() {
                           <TrendBadge trend={rec.trend} delta={rec.delta} deltaPercent={rec.deltaPercent} />
                           {rec.surveyDate && (
                             <p className="text-xs mt-0.5" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
-                              {new Date(rec.surveyDate).toLocaleDateString()}
+                              {parseCalendarDate(rec.surveyDate).toLocaleDateString()}
                             </p>
                           )}
                         </>
@@ -667,7 +668,7 @@ export function WhereToHuntPage() {
                           )}
                           {rec.seasonEnd && (
                             <p className="text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
-                              Closes {new Date(rec.seasonEnd).toLocaleDateString()}
+                              Closes {parseCalendarDate(rec.seasonEnd).toLocaleDateString()}
                             </p>
                           )}
                           {bagLimitStr(rec.bagLimit) && (

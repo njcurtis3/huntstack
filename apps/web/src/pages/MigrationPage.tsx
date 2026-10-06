@@ -11,6 +11,7 @@ import {
 import { ComposableMap, Geographies, Geography, Annotation } from 'react-simple-maps'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
+import { parseCalendarDate } from '../lib/dates'
 import { useThemeStore } from '../stores/themeStore'
 import { getMapColors, getChartColors } from '../lib/themeColors'
 
@@ -1602,7 +1603,7 @@ export function MigrationPage() {
       const totalBirds = items.reduce((s, c) => s + (c.count || 0), 0)
       const latestDate = items.reduce((best, c) =>
         c.surveyDate > best ? c.surveyDate : best, items[0].surveyDate)
-      const isStale = new Date(latestDate).getTime() < staleThresholdMs
+      const isStale = parseCalendarDate(latestDate).getTime() < staleThresholdMs
       const topAnomaly: AnomalyType = !isStale && items.some(c => c.anomaly === 'spike') ? 'spike'
         : !isStale && items.some(c => c.anomaly === 'drop') ? 'drop' : null
       // Dominant status: pick the status that appears most, preferring interesting ones
@@ -1724,13 +1725,13 @@ export function MigrationPage() {
     }
     return new Date(Date.now() - 60 * 24 * 60 * 60 * 1000) // 60-day rolling window in-season
   })()
-  const freshCounts = filteredCounts.filter(c => new Date(c.surveyDate) >= staleThreshold)
+  const freshCounts = filteredCounts.filter(c => parseCalendarDate(c.surveyDate) >= staleThreshold)
 
   // Summary stats — use only fresh counts so stale data doesn't inflate totals
   const totalBirds = freshCounts.reduce((sum, c) => sum + (c.count || 0), 0)
   const refugeCount = new Set(freshCounts.map(c => c.refugeName)).size
   const latestDate = filteredCounts.length > 0
-    ? new Date(Math.max(...filteredCounts.map(c => new Date(c.surveyDate).getTime())))
+    ? new Date(Math.max(...filteredCounts.map(c => parseCalendarDate(c.surveyDate).getTime())))
     : null
   const hasStaleData = filteredCounts.length > freshCounts.length
 
@@ -1847,7 +1848,7 @@ export function MigrationPage() {
     return flywayProgression.weeks.map(week => {
       const entry: Record<string, unknown> = {
         week,
-        label: new Date(week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        label: parseCalendarDate(week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       }
       for (const state of flywayProgression.states) {
         const match = state.weeks.find(w => w.weekStart === week)
@@ -2606,7 +2607,7 @@ export function MigrationPage() {
                               </div>
                               <div className="mt-1">
                                 <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                                  Updated {new Date(sg.latestDate).toLocaleDateString()}
+                                  Updated {parseCalendarDate(sg.latestDate).toLocaleDateString()}
                                 </span>
                               </div>
                             </div>
@@ -2688,7 +2689,7 @@ export function MigrationPage() {
                                         </div>
                                         <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                                           <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                                            {new Date(group.latestDate).toLocaleDateString()}
+                                            {parseCalendarDate(group.latestDate).toLocaleDateString()}
                                           </span>
                                           {w && (
                                             <span className="flex items-center gap-1.5 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
@@ -2770,7 +2771,7 @@ export function MigrationPage() {
                                               })()}
                                               <div className="flex items-center justify-between mt-3">
                                                 <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                                                  {new Date(item.surveyDate).toLocaleDateString()}
+                                                  {parseCalendarDate(item.surveyDate).toLocaleDateString()}
                                                 </span>
                                                 <div className="flex items-center gap-1.5">
                                                   {item.source === 'ebird' && (
@@ -2833,7 +2834,7 @@ export function MigrationPage() {
                         <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
                         <XAxis
                           dataKey="surveyDate"
-                          tickFormatter={(d) => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                          tickFormatter={(d) => parseCalendarDate(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                           stroke={chartColors.axis}
                         />
                         <YAxis
@@ -2841,7 +2842,7 @@ export function MigrationPage() {
                           stroke={chartColors.axis}
                         />
                         <Tooltip
-                          labelFormatter={(d) => new Date(d as string).toLocaleDateString()}
+                          labelFormatter={(d) => parseCalendarDate(d as string).toLocaleDateString()}
                           formatter={(value) => [(value as number).toLocaleString(), 'Count']}
                           contentStyle={{ backgroundColor: chartColors.tooltipBg, border: `1px solid ${chartColors.tooltipBorder}`, color: chartColors.tooltipText }}
                         />
@@ -2865,7 +2866,7 @@ export function MigrationPage() {
                             const statusCfg = status ? STATUS_CONFIG[status] : null
                             return (
                               <tr key={i}>
-                                <td className="p-3">{new Date(row.surveyDate).toLocaleDateString()}</td>
+                                <td className="p-3">{parseCalendarDate(row.surveyDate).toLocaleDateString()}</td>
                                 <td className="p-3">{row.speciesName}</td>
                                 <td className="p-3 text-right font-medium">{row.count.toLocaleString()}</td>
                                 <td className="p-3 text-right">
@@ -2984,7 +2985,7 @@ export function MigrationPage() {
                             {s.stateCode}
                           </span>
                           <span style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                            {s.peakWeek ? new Date(s.peakWeek).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
+                            {s.peakWeek ? parseCalendarDate(s.peakWeek).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
                           </span>
                           <span className="text-forest-600 dark:text-forest-400 font-medium">
                             {s.peakCount.toLocaleString()}
