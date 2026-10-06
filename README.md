@@ -29,13 +29,13 @@
   <a href="#scrapers">Scrapers</a> ·
   <a href="#api">API</a> ·
   <a href="#data-sources">Data sources</a> ·
+  <a href="#environment">Environment</a> ·
   <a href="#roadmap">Roadmap</a> ·
-  <a href="RUNBOOK.md">Runbook</a> ·
-  <a href="CURRENT_STATE.md">Current state</a>
+  <a href="apps/mobile/README.md">Mobile app</a>
 </p>
 
 <p align="center">
-  <img src="apps/web/public/og-image.png" alt="HuntStack: pre-hunt intelligence for the Central and Mississippi Flyways" width="100%">
+  <img src=".github/screenshots/migration.png" alt="The migration dashboard: refuge activity by state on the flyway map, with this weekend's call" width="100%">
 </p>
 
 ## Introduction
@@ -63,6 +63,18 @@ KS, OK and MO.
 <summary>
  Features
 </summary> <br />
+
+<p align="center">
+  <img width="49%" src=".github/screenshots/where-to-hunt.png" alt="Where to Hunt: refuges ranked by opportunity score, with the breakdown on each card"/>
+&nbsp;
+  <img width="49%" src=".github/screenshots/flyway.png" alt="Flyway progression: weekly counts by state, ordered north to south"/>
+</p>
+
+<p align="center">
+  <img width="49%" src=".github/screenshots/regulations.png" alt="Texas regulations: 2026–2027 goose seasons, dates, bag limits and restrictions"/>
+&nbsp;
+  <img width="49%" src=".github/screenshots/report.png" alt="The shareable migration conditions report"/>
+</p>
 
 <table>
   <tr>
@@ -118,7 +130,7 @@ Supabase SQL editor.
 ```bash
 pnpm dev          # API and web together
 pnpm dev:web      # web only, http://localhost:3000
-pnpm dev:api      # API only, http://localhost:4001 (Swagger at /docs)
+pnpm dev:api      # API only, http://localhost:4000 (Swagger at /docs)
 ```
 
 Tests:
@@ -231,7 +243,7 @@ huntstack/
 | `GET /api/search` | full-text search across regulations, species and locations |
 | `GET /api/regulations` · `GET /api/species` | regulations and the species catalog |
 
-Swagger runs at `http://localhost:4001/docs`.
+Swagger runs at `http://localhost:4000/docs`.
 
 </details>
 
@@ -251,9 +263,9 @@ VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 TOGETHER_API_KEY=
 EBIRD_API_KEY=
-VITE_API_URL=http://localhost:4001
+VITE_API_URL=http://localhost:4000
 VITE_MAPTILER_KEY=
-PORT=4001
+PORT=4000
 CORS_ORIGIN=http://localhost:3000
 SENTRY_DSN=                # optional
 VITE_SENTRY_DSN=           # optional
