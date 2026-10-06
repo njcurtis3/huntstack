@@ -173,7 +173,7 @@ and posts to `SCRAPER_ALERT_WEBHOOK` when a run fails or finds nothing.
 | Midwinter Waterfowl Inventory | TX, NM, AR, LA, KS, OK | USFWS survey | annual |
 | eBird | TX, NM, KS, OK, AR, LA, MO | Cornell Lab, statewide and per refuge | on demand, cached 3h |
 
-PDFs are extracted with `Qwen2.5-7B-Instruct-Turbo` on Together.ai at
+PDFs are extracted with `Llama-3.3-70B-Instruct-Turbo` on Together.ai at
 temperature 0.
 
 </details>
@@ -190,7 +190,7 @@ temperature 0.
 | Mobile | React Native, Expo, expo-router |
 | API | Fastify 4, TypeScript, Drizzle ORM, Zod |
 | Database | Supabase: PostgreSQL, PostGIS, pgvector |
-| LLM and embeddings | Together.ai: Qwen 2.5 7B, multilingual-e5-large-instruct |
+| LLM and embeddings | Together.ai: Llama 3.3 70B, multilingual-e5-large-instruct |
 | Scrapers | Python, Scrapling, pdfplumber |
 | Weather, birds, geocoding | NOAA, eBird, Nominatim |
 | Errors | Sentry, errors only |

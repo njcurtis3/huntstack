@@ -8,7 +8,7 @@ Usage:
     python -m huntstack_scrapers.extract_regulations
     python -m huntstack_scrapers.extract_regulations --state TX
     python -m huntstack_scrapers.extract_regulations --dry-run
-    python -m huntstack_scrapers.extract_regulations --model Qwen/Qwen2.5-7B-Instruct-Turbo
+    python -m huntstack_scrapers.extract_regulations --model meta-llama/Llama-3.3-70B-Instruct-Turbo
 """
 
 import os
@@ -34,12 +34,11 @@ logging.basicConfig(
 log = logging.getLogger("extract")
 
 # NOTE: Together.ai retired the Llama-3.1 Turbo family from serverless as of ~mid-2026 (now
-# dedicated-endpoint only — returns 400 model_not_available). Qwen2.5-7B-Instruct-Turbo is the
-# current serverless replacement: same family as the API's chat model and a like-for-like swap
-# for the original 8B baseline (fast/cheap, practical for the full 6-state seasonal refresh).
-# For a slower, higher-accuracy pass pass --model meta-llama/Llama-3.3-70B-Instruct-Turbo
-# (also serverless-verified 2026-07-27, but ~10x slower per call on the 552-doc TX set).
-DEFAULT_MODEL = "Qwen/Qwen2.5-7B-Instruct-Turbo"
+# dedicated-endpoint only — returns 400 model_not_available). Its replacement,
+# Qwen2.5-7B-Instruct-Turbo, followed ~Oct 2026. Llama-3.3-70B-Instruct-Turbo is the serverless
+# model that survived both rounds and the API's chat model too. It is ~10x slower per call than
+# the 7B was on the 552-doc TX set, so budget time for a full 6-state seasonal refresh.
+DEFAULT_MODEL = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
 TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
 V1_STATES = ["TX", "AR", "NM", "LA", "KS", "OK"]
 
