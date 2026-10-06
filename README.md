@@ -11,6 +11,9 @@
   <a href="https://github.com/njcurtis3/huntstack/actions/workflows/ci.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/njcurtis3/huntstack/ci.yml?branch=main&label=ci&style=flat-square" alt="ci" style="height: 20px;">
   </a>
+  <a href="https://github.com/njcurtis3/huntstack/releases">
+    <img src="https://img.shields.io/github/v/release/njcurtis3/huntstack?include_prereleases&style=flat-square&color=3fb950" alt="latest release" style="height: 20px;">
+  </a>
   <a href="#license">
     <img src="https://img.shields.io/badge/license-all%20rights%20reserved-8f8c84.svg?style=flat-square" alt="license: all rights reserved" style="height: 20px;">
   </a>
