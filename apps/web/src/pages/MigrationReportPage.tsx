@@ -4,6 +4,7 @@ import {
   Bird, Sparkles, Loader2, Wind, TrendingUp, TrendingDown, Minus, Zap, ExternalLink,
 } from 'lucide-react'
 import { api } from '../lib/api'
+import { parseCalendarDate } from '../lib/dates'
 
 // ─── Types (mirrored from MigrationPage) ──────────────────────────────────────
 
@@ -160,7 +161,7 @@ function StateReportCard({ sg }: { sg: StateGroup }) {
           )}
         </div>
         <span style={{ fontSize: 12, color: '#57606a' }}>
-          {new Date(sg.latestDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          {parseCalendarDate(sg.latestDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
         </span>
       </div>
 
