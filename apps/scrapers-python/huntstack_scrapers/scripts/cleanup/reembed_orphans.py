@@ -6,19 +6,16 @@ import os
 import sys
 import json
 import time
-import requests
 import psycopg2
 from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from huntstack_scrapers.pipelines import clean_text
+from huntstack_scrapers.pipelines import clean_text, embed_texts
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", ".env"))
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", ".env"))
 
 DATABASE_URL = os.environ["DATABASE_URL"]
-TOGETHER_API_KEY = os.environ["TOGETHER_API_KEY"]
-TOGETHER_API_URL = "https://api.together.xyz/v1/embeddings"
-EMBEDDING_MODEL = "BAAI/bge-base-en-v1.5"
+OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
 CHUNK_SIZE = 600
 CHUNK_OVERLAP = 100
@@ -53,17 +50,7 @@ def chunk_text(text):
 
 def generate_embedding(text):
     try:
-        resp = requests.post(
-            TOGETHER_API_URL,
-            headers={
-                "Authorization": f"Bearer {TOGETHER_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={"model": EMBEDDING_MODEL, "input": text},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        return resp.json()["data"][0]["embedding"]
+        return embed_texts([text], OPENAI_API_KEY, timeout=30)[0]
     except Exception as e:
         print(f"  Embedding error: {e}")
         return None

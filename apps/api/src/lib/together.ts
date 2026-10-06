@@ -1,6 +1,5 @@
 import Together from 'together-ai'
 
-const EMBEDDING_MODEL = 'intfloat/multilingual-e5-large-instruct'
 // Qwen2.5-7B-Instruct-Turbo left Together's serverless tier ~Oct 2026 (400 model_not_available).
 // Llama 3.3 70B is serverless and non-reasoning, so the whole max_tokens budget goes to the answer.
 const CHAT_MODEL = 'meta-llama/Llama-3.3-70B-Instruct-Turbo'
@@ -20,15 +19,6 @@ function getClient(): Together {
 
 export function isConfigured(): boolean {
   return !!process.env.TOGETHER_API_KEY
-}
-
-export async function generateEmbedding(text: string): Promise<number[]> {
-  const client = getClient()
-  const response = await client.embeddings.create({
-    model: EMBEDDING_MODEL,
-    input: text,
-  })
-  return response.data[0].embedding
 }
 
 export async function generateChatResponse(

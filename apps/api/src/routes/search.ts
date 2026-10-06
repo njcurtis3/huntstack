@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { ilike, or, eq, and, sql, count } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
-import { isConfigured, generateEmbedding } from '../lib/together.js'
+import { isEmbeddingConfigured, generateEmbedding } from '../lib/embeddings.js'
 import { regulations, species, states, locations } from '@huntstack/db/schema'
 import { searchQuerySchema } from '@huntstack/shared'
 
@@ -191,9 +191,9 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
     }
   })
 
-  // Semantic search using vector embeddings (Together.ai + pgvector)
+  // Semantic search using vector embeddings (OpenAI + pgvector)
   app.post('/semantic', {
-    // Calls Together.ai for an embedding on every request (real per-call cost) on an
+    // Calls OpenAI for an embedding on every request (real per-call cost) on an
     // unauthenticated route. Embeddings are ~50x cheaper than a chat completion, so this limit is
     // correspondingly looser than chat.ts's 20/hour — it exists to stop a loop, not to ration
     // normal use. See INFRASTRUCTURE_COSTS.md section 5.3.
@@ -232,10 +232,10 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
   }, async (request, reply) => {
     const { query, limit = 10 } = request.body as { query: string; limit?: number }
 
-    if (!isConfigured()) {
+    if (!isEmbeddingConfigured()) {
       return reply.status(503).send({
         error: true,
-        message: 'AI service not configured. Please set TOGETHER_API_KEY.',
+        message: 'Semantic search not configured. Please set OPENAI_API_KEY.',
       })
     }
 

@@ -383,24 +383,62 @@ class DatabasePipeline:
                 self.conn.rollback()
 
 
-TOGETHER_API_URL = "https://api.together.xyz/v1/embeddings"
-EMBEDDING_MODEL = "intfloat/multilingual-e5-large-instruct"
+# Embeddings moved from Together.ai to OpenAI in Oct 2026, when Together retired
+# e5-large-instruct from serverless with no replacement (its third embedding model pulled).
+# text-embedding-3-small takes a `dimensions` parameter, so it fills the existing vector(1024)
+# column with no migration. Must match apps/api/src/lib/embeddings.ts. Vectors from different
+# models are not comparable: switching models means re-embedding every chunk
+# (scripts/cleanup/reembed_all.py).
+OPENAI_EMBEDDINGS_URL = "https://api.openai.com/v1/embeddings"
+EMBEDDING_MODEL = "text-embedding-3-small"
+EMBEDDING_DIMENSIONS = 1024
+
+
+def embed_texts(texts: list[str], api_key: str, timeout: int = 60) -> list[list[float]]:
+    """Embed a batch of texts in one request, returned in input order.
+
+    Raises on any failure, with OpenAI's error body in the message — raise_for_status()
+    alone hides it, and that is how the Together retirements went unnoticed.
+    """
+    response = requests.post(
+        OPENAI_EMBEDDINGS_URL,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": EMBEDDING_MODEL,
+            "input": texts,
+            "dimensions": EMBEDDING_DIMENSIONS,
+        },
+        timeout=timeout,
+    )
+    if not response.ok:
+        raise RuntimeError(f"OpenAI embeddings {response.status_code}: {response.text}")
+    data = sorted(response.json()["data"], key=lambda d: d["index"])
+    embeddings = [d["embedding"] for d in data]
+    if len(embeddings) != len(texts) or any(len(e) != EMBEDDING_DIMENSIONS for e in embeddings):
+        raise RuntimeError(
+            f"OpenAI embeddings returned {len(embeddings)} vectors for {len(texts)} inputs, "
+            f"expected {EMBEDDING_DIMENSIONS} dims each"
+        )
+    return embeddings
 
 
 class EmbeddingPipeline:
-    """Pipeline to generate embeddings for RAG using Together.ai."""
+    """Pipeline to generate embeddings for RAG using OpenAI."""
 
     def __init__(self):
-        self.api_key = os.getenv("TOGETHER_API_KEY")
+        self.api_key = os.getenv("OPENAI_API_KEY")
         self.chunk_size = 600  # ~300-800 tokens for regulatory text
         self.chunk_overlap = 100
 
     def open_spider(self, spider):
-        """Verify Together.ai API key."""
+        """Verify the OpenAI API key."""
         if self.api_key:
-            spider.logger.info("Together.ai API key configured for embeddings")
+            spider.logger.info("OpenAI API key configured for embeddings")
         else:
-            spider.logger.warning("TOGETHER_API_KEY not set, embeddings will not be generated")
+            spider.logger.warning("OPENAI_API_KEY not set, embeddings will not be generated")
 
     def process_item(self, item: dict, spider) -> dict:
         """Generate embeddings for text content."""
@@ -474,23 +512,9 @@ class EmbeddingPipeline:
         return chunks
 
     def _generate_embedding(self, text: str, spider) -> list[float] | None:
-        """Generate embedding using Together.ai."""
+        """Generate embedding using OpenAI."""
         try:
-            response = requests.post(
-                TOGETHER_API_URL,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": EMBEDDING_MODEL,
-                    "input": text,
-                },
-                timeout=30,
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data["data"][0]["embedding"]
+            return embed_texts([text], self.api_key, timeout=30)[0]
         except Exception as e:
             spider.logger.error(f"Error generating embedding: {e}")
             return None

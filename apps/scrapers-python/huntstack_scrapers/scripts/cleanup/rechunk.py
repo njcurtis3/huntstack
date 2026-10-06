@@ -2,7 +2,7 @@
 Re-chunk all documents with cleaned text and fresh embeddings.
 
 Reads every document from the `documents` table, applies clean_text(),
-re-chunks, generates new embeddings via Together.ai, and replaces
+re-chunks, generates new embeddings via OpenAI, and replaces
 the old document_chunks rows.
 
 Usage:
@@ -27,14 +27,12 @@ import requests
 
 # Add parent dirs so we can import from the package
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from huntstack_scrapers.pipelines import clean_text
+from huntstack_scrapers.pipelines import clean_text, embed_texts
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", ".env"))
 
 DATABASE_URL = os.environ["DATABASE_URL"]
-TOGETHER_API_KEY = os.environ["TOGETHER_API_KEY"]
-TOGETHER_API_URL = "https://api.together.xyz/v1/embeddings"
-EMBEDDING_MODEL = "intfloat/multilingual-e5-large-instruct"
+OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 
 CHUNK_SIZE = 600
 CHUNK_OVERLAP = 100
@@ -59,32 +57,11 @@ def chunk_text(text: str) -> list[str]:
     return chunks
 
 
-# Persistent session — reuses TCP connections instead of opening one per chunk
-_session: requests.Session | None = None
-
-
-def get_session() -> requests.Session:
-    global _session
-    if _session is None:
-        _session = requests.Session()
-        _session.headers.update({
-            "Authorization": f"Bearer {TOGETHER_API_KEY}",
-            "Content-Type": "application/json",
-        })
-    return _session
-
-
 def generate_embedding(text: str) -> list[float] | None:
-    """Generate embedding via Together.ai (IPv4-forced, connection-reusing session)."""
+    """Generate embedding via OpenAI (IPv4-forced), retrying transient failures."""
     for attempt in range(1, 5):
         try:
-            resp = get_session().post(
-                TOGETHER_API_URL,
-                json={"model": EMBEDDING_MODEL, "input": text},
-                timeout=30,
-            )
-            resp.raise_for_status()
-            return resp.json()["data"][0]["embedding"]
+            return embed_texts([text], OPENAI_API_KEY, timeout=30)[0]
         except Exception as e:
             wait = attempt * 2
             print(f"  Embedding error (attempt {attempt}/4): {e} — retrying in {wait}s")
@@ -165,7 +142,7 @@ def main():
                 ))
                 doc_chunks_inserted += 1
 
-            # Rate limit: ~2 calls/sec to avoid Together.ai throttling
+            # Rate limit: ~2 calls/sec, a holdover from Together.ai's throttling
             if embedding_calls % 2 == 0:
                 time.sleep(0.5)
 

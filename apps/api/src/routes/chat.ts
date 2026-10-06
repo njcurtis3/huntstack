@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
-import { isConfigured, generateEmbedding, generateChatResponse } from '../lib/together.js'
+import { isConfigured, generateChatResponse } from '../lib/together.js'
+import { isEmbeddingConfigured, generateEmbedding } from '../lib/embeddings.js'
 import { getDb } from '../lib/db.js'
 import { sql } from 'drizzle-orm'
 import { getPushFactorsForStates } from '../lib/weather.js'
@@ -288,6 +289,11 @@ async function retrieveContext(query: string): Promise<{
   documents: Array<{ content: string; metadata: Record<string, unknown> }>
   sources: Array<{ title: string; url?: string; snippet: string }>
 }> {
+  // Without an embeddings key, chat still answers from structured data; skip rather than log a
+  // failure on every message.
+  if (!isEmbeddingConfigured()) {
+    return { documents: [], sources: [] }
+  }
   try {
     const queryEmbedding = await generateEmbedding(query)
     const db = getDb()

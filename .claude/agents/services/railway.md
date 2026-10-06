@@ -104,7 +104,7 @@ python -c "import sys,json; d=json.load(sys.stdin); print(sorted((d.get('data') 
 ```
 
 Expected on the API service: `DATABASE_URL`, `SUPABASE_URL`,
-`SUPABASE_SERVICE_KEY`, `TOGETHER_API_KEY`, `EBIRD_API_KEY`, `SENTRY_DSN`,
+`SUPABASE_SERVICE_KEY`, `TOGETHER_API_KEY`, `OPENAI_API_KEY`, `EBIRD_API_KEY`, `SENTRY_DSN`,
 `CORS_ORIGIN`, `NODE_ENV`, `PORT`, `HOST`, `LOG_LEVEL`.
 
 Two things worth flagging if you see them:

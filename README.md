@@ -107,7 +107,7 @@ KS, OK and MO.
 - Node.js 22 or later, and pnpm 8 or later
 - Python 3.11 or later (for the scrapers)
 - A Supabase project with the `postgis` and `vector` extensions enabled
-- A Together.ai API key, and an eBird API key
+- A Together.ai API key, an OpenAI API key (embeddings), and an eBird API key
 
 </details>
 
@@ -190,7 +190,8 @@ temperature 0.
 | Mobile | React Native, Expo, expo-router |
 | API | Fastify 4, TypeScript, Drizzle ORM, Zod |
 | Database | Supabase: PostgreSQL, PostGIS, pgvector |
-| LLM and embeddings | Together.ai: Llama 3.3 70B, multilingual-e5-large-instruct |
+| LLM | Together.ai: Llama 3.3 70B |
+| Embeddings | OpenAI: text-embedding-3-small at 1024 dims |
 | Scrapers | Python, Scrapling, pdfplumber |
 | Weather, birds, geocoding | NOAA, eBird, Nominatim |
 | Errors | Sentry, errors only |
@@ -262,6 +263,7 @@ SUPABASE_SERVICE_KEY=
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 TOGETHER_API_KEY=
+OPENAI_API_KEY=            # embeddings; chat works without it, semantic search does not
 EBIRD_API_KEY=
 VITE_API_URL=http://localhost:4000
 VITE_MAPTILER_KEY=
