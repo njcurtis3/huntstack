@@ -2,7 +2,7 @@
 LLM-based extraction of bird count data from survey PDFs and HTML.
 
 Replaces hand-written regex parsers in parsers/agfc_pdf.py and parsers/ldwf_pdf.py.
-Reuses the same Together.ai API key and calling pattern as extract_regulations.py.
+Reuses the LLM endpoint configuration (llm_config.py) shared with extract_regulations.py.
 
 The extractor returns a list of ParseResult objects, so it plugs directly into
 the existing refuge_counts spider pipeline with zero changes to pipelines.py.
@@ -15,13 +15,14 @@ import requests
 
 log = logging.getLogger(__name__)
 
-TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
+from huntstack_scrapers.llm_config import llm_api_key, llm_chat_url, llm_model
+
 # Together.ai retired the Llama-3.1 Turbo family from serverless ~mid-2026 (returns 400
 # model_not_available). This broke refuge-count PDF extraction for the AGFC/LDWF aerial-survey
 # sources exactly as it broke regulation extraction. Its replacement, Qwen2.5-7B-Instruct-Turbo,
 # left serverless in turn ~Oct 2026; Llama-3.3-70B-Instruct-Turbo is the current serverless model
-# (see extract_regulations.py). Overridable via SCRAPEGRAPHAI_MODEL.
-DEFAULT_MODEL = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+# (see extract_regulations.py). The model comes from LLM_MODEL (llm_config.py); SCRAPEGRAPHAI_MODEL
+# still overrides it for this extractor alone.
 
 BIRD_COUNT_SYSTEM = """You are a wildlife survey data extraction assistant.
 Extract ALL bird species count data from this waterfowl survey document.
@@ -52,14 +53,14 @@ Return ONLY the JSON object. No explanation, no markdown fences."""
 
 def _call_llm(text: str, source_url: str = "") -> dict:
     """
-    Call Together.ai to extract bird count data from survey text.
+    Call the configured LLM to extract bird count data from survey text.
     Returns a dict with survey_date, species_counts, observers.
     """
-    api_key = os.getenv("TOGETHER_API_KEY")
+    api_key = llm_api_key()
     if not api_key:
-        raise RuntimeError("TOGETHER_API_KEY not set")
+        raise RuntimeError("LLM_API_KEY (or TOGETHER_API_KEY) not set")
 
-    model = os.getenv("SCRAPEGRAPHAI_MODEL", DEFAULT_MODEL)
+    model = os.getenv("SCRAPEGRAPHAI_MODEL") or llm_model()
 
     # Truncate to avoid token limits — survey pages are usually < 10k chars
     content = text[:12000] if len(text) > 12000 else text
@@ -67,7 +68,7 @@ def _call_llm(text: str, source_url: str = "") -> dict:
     prompt = f"Source: {source_url}\n\nSurvey text:\n{content}"
 
     resp = requests.post(
-        TOGETHER_API_URL,
+        llm_chat_url(),
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -84,7 +85,9 @@ def _call_llm(text: str, source_url: str = "") -> dict:
         },
         timeout=60,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        # The body names the problem (bad key, retired model, no credit); raise_for_status() hides it.
+        raise RuntimeError(f"Chat completion {resp.status_code}: {resp.text}")
     raw = resp.json()["choices"][0]["message"]["content"].strip()
 
     # Strip markdown fences if model adds them despite json_object mode

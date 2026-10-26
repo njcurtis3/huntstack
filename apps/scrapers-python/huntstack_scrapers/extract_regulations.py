@@ -1,7 +1,7 @@
 """
 LLM-based extraction of structured regulation data from scraped documents.
 
-Reads raw text from the `documents` table and uses Together.ai LLM to extract
+Reads raw text from the `documents` table and uses an LLM (see llm_config.py) to extract
 structured seasons, licenses, and regulations into their respective DB tables.
 
 Usage:
@@ -38,8 +38,7 @@ log = logging.getLogger("extract")
 # Qwen2.5-7B-Instruct-Turbo, followed ~Oct 2026. Llama-3.3-70B-Instruct-Turbo is the serverless
 # model that survived both rounds and the API's chat model too. It is ~10x slower per call than
 # the 7B was on the 552-doc TX set, so budget time for a full 6-state seasonal refresh.
-DEFAULT_MODEL = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
-TOGETHER_API_URL = "https://api.together.xyz/v1/chat/completions"
+# Endpoint, model and key come from llm_config.py (LLM_BASE_URL / LLM_MODEL / LLM_API_KEY).
 V1_STATES = ["TX", "AR", "NM", "LA", "KS", "OK"]
 
 # ============================================
@@ -47,6 +46,7 @@ V1_STATES = ["TX", "AR", "NM", "LA", "KS", "OK"]
 # ============================================
 
 from huntstack_scrapers.species_mapping import SPECIES_ALIASES
+from huntstack_scrapers.llm_config import llm_api_key, llm_chat_url, llm_model
 
 
 # ============================================
@@ -54,13 +54,13 @@ from huntstack_scrapers.species_mapping import SPECIES_ALIASES
 # ============================================
 
 def call_llm(prompt: str, system: str, model: str) -> str:
-    """Call Together.ai chat completion and return the response text."""
-    api_key = os.getenv("TOGETHER_API_KEY")
+    """Call the configured chat completion endpoint and return the response text."""
+    api_key = llm_api_key()
     if not api_key:
-        raise RuntimeError("TOGETHER_API_KEY not set")
+        raise RuntimeError("LLM_API_KEY (or TOGETHER_API_KEY) not set")
 
     resp = requests.post(
-        TOGETHER_API_URL,
+        llm_chat_url(),
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -79,7 +79,9 @@ def call_llm(prompt: str, system: str, model: str) -> str:
         },
         timeout=120,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        # The body names the problem (bad key, retired model, no credit); raise_for_status() hides it.
+        raise RuntimeError(f"Chat completion {resp.status_code}: {resp.text}")
     data = resp.json()
     return data["choices"][0]["message"]["content"]
 
@@ -803,7 +805,7 @@ def main():
     parser = argparse.ArgumentParser(description="Extract structured regulation data from scraped documents")
     parser.add_argument("--state", type=str, help="Process a specific state (e.g., TX)")
     parser.add_argument("--dry-run", action="store_true", help="Extract and validate but don't write to DB")
-    parser.add_argument("--model", type=str, default=DEFAULT_MODEL, help="Together.ai model to use")
+    parser.add_argument("--model", type=str, default=None, help="Model to use (default: LLM_MODEL, else the Together Llama 3.3 70B)")
     parser.add_argument("--year", type=int, default=2024, help="Season year (default: 2024)")
     args = parser.parse_args()
 
@@ -812,9 +814,10 @@ def main():
         log.error("DATABASE_URL not set")
         sys.exit(1)
 
-    if not os.getenv("TOGETHER_API_KEY"):
-        log.error("TOGETHER_API_KEY not set")
+    if not llm_api_key():
+        log.error("LLM_API_KEY (or TOGETHER_API_KEY) not set")
         sys.exit(1)
+    args.model = args.model or llm_model()
 
     conn = psycopg2.connect(db_url)
 
