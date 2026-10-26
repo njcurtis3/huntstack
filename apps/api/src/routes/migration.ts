@@ -5,6 +5,7 @@ import { getPushFactorsForStates } from '../lib/weather.js'
 import { generateChatResponse, isConfigured } from '../lib/together.js'
 import { getEBirdRegionalCounts, STATE_FLYWAY } from '../lib/ebird.js'
 import { BoundedCache } from '../lib/cache.js'
+import { decodePoint } from '../lib/jsonb.js'
 
 const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
 
@@ -96,7 +97,7 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
 
     const refugesByState = new Map<string, { lat: number; lng: number }[]>()
     for (const row of refugeRows as unknown as Array<{ state_code: string; center_point: unknown }>) {
-      const cp = row.center_point as { lat: number; lng: number } | null
+      const cp = decodePoint(row.center_point)
       if (cp) {
         if (!refugesByState.has(row.state_code)) refugesByState.set(row.state_code, [])
         refugesByState.get(row.state_code)!.push(cp)
@@ -238,7 +239,7 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
 
         const refugesByState = new Map<string, { lat: number; lng: number }[]>()
         for (const row of refugePoints as unknown as Array<{ state_code: string; center_point: unknown }>) {
-          const cp = row.center_point as { lat: number; lng: number } | null
+          const cp = decodePoint(row.center_point)
           if (cp) {
             if (!refugesByState.has(row.state_code)) refugesByState.set(row.state_code, [])
             refugesByState.get(row.state_code)!.push(cp)

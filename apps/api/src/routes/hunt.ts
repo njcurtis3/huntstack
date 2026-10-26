@@ -2,7 +2,7 @@ import { FastifyPluginAsync } from 'fastify'
 import { sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { getHuntingConditions, getPushFactorsForStates } from '../lib/weather.js'
-import { decodeJsonbField } from '../lib/jsonb.js'
+import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 import { FRESH_DAYS, FRESH_DAYS_MONTHLY } from '../lib/freshness.js'
 
 const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
@@ -174,7 +174,8 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
       ORDER BY c.state_code, c.location_name
     `)
 
-    const rows = countRows as unknown as CountRow[]
+    // center_point can arrive as a double-encoded string; normalize once so every later read sees {lat, lng}
+    const rows = (countRows as unknown as CountRow[]).map(r => ({ ...r, center_point: decodePoint(r.center_point) }))
 
     // Deduplicate: one row per location (pick highest count if multiple species)
     const locationMap = new Map<string, CountRow>()

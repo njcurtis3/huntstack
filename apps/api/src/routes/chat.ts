@@ -6,7 +6,7 @@ import { getDb } from '../lib/db.js'
 import { sql } from 'drizzle-orm'
 import { getPushFactorsForStates } from '../lib/weather.js'
 import { chatRequestSchema } from '@huntstack/shared'
-import { decodeJsonbField } from '../lib/jsonb.js'
+import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 
 // Fastify/AJV (schema.body below) is what actually enforces validation at
 // runtime; this type keeps the handler's view of the body in sync with that
@@ -605,7 +605,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
 
           const weatherResults = await Promise.all(
             (refuges as unknown as Array<Record<string, unknown>>).map(async (r) => {
-              const cp = r.center_point as { lat: number; lng: number } | null
+              const cp = decodePoint(r.center_point)
               if (!cp) return null
               try {
                 const conditions = await getHuntingConditions(cp.lat, cp.lng, r.state_code as string)
@@ -658,7 +658,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
 
           const refugesByState = new Map<string, { lat: number; lng: number }[]>()
           for (const row of refugeRows as unknown as Array<{ state_code: string; center_point: unknown }>) {
-            const cp = row.center_point as { lat: number; lng: number } | null
+            const cp = decodePoint(row.center_point)
             if (cp) {
               if (!refugesByState.has(row.state_code)) refugesByState.set(row.state_code, [])
               refugesByState.get(row.state_code)!.push(cp)
