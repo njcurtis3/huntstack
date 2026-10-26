@@ -1603,12 +1603,17 @@ export function MigrationPage() {
       arr.push(item)
       map.set(item.refugeId, arr)
     }
-    return Array.from(map.entries()).map(([refugeId, items]) => {
+    return Array.from(map.entries()).map(([refugeId, allItems]) => {
+      // eBird rows share a refuge's id, so one recent sighting used to make a whole group look
+      // current and drag years-old official counts into its totals. Judge freshness per row:
+      // a refuge with any fresh rows shows only those; one with none keeps its old rows, marked stale.
+      const freshItems = allItems.filter(c => parseCalendarDate(c.surveyDate).getTime() >= staleThresholdMs)
+      const isStale = freshItems.length === 0
+      const items = isStale ? allItems : freshItems
       const first = items[0]
       const totalBirds = items.reduce((s, c) => s + (c.count || 0), 0)
       const latestDate = items.reduce((best, c) =>
         c.surveyDate > best ? c.surveyDate : best, items[0].surveyDate)
-      const isStale = parseCalendarDate(latestDate).getTime() < staleThresholdMs
       const topAnomaly: AnomalyType = !isStale && items.some(c => c.anomaly === 'spike') ? 'spike'
         : !isStale && items.some(c => c.anomaly === 'drop') ? 'drop' : null
       // Dominant status: pick the status that appears most, preferring interesting ones
@@ -1652,13 +1657,21 @@ export function MigrationPage() {
       arr.push(rg)
       map.set(rg.state, arr)
     }
-    return Array.from(map.entries()).map(([state, refuges]) => {
-      const totalBirds = refuges.reduce((s, r) => s + r.totalBirds, 0)
-      const freshTotalBirds = refuges.filter(r => !r.isStale).reduce((s, r) => s + r.totalBirds, 0)
-      const allStale = refuges.every(r => r.isStale)
-      const speciesCount = new Set(refuges.flatMap(r => r.items.map(i => i.species))).size
-      const latestDate = refuges.reduce((best, r) => r.latestDate > best ? r.latestDate : best, refuges[0].latestDate)
+    return Array.from(map.entries()).map(([state, groups]) => {
+      // Fresh refuges first, largest first, so "Top refuge" in This Weekend is the busiest current one
+      const refuges = [
+        ...groups.filter(r => !r.isStale).sort((a, b) => b.totalBirds - a.totalBirds),
+        ...groups.filter(r => r.isStale),
+      ]
       const freshRefuges = refuges.filter(r => !r.isStale)
+      const freshTotalBirds = freshRefuges.reduce((s, r) => s + r.totalBirds, 0)
+      const allStale = freshRefuges.length === 0
+      // The card's headline numbers and "Updated" date describe current data only; an all-stale
+      // state keeps its old numbers under the "Previous season data" banner.
+      const shown = allStale ? refuges : freshRefuges
+      const totalBirds = shown.reduce((s, r) => s + r.totalBirds, 0)
+      const speciesCount = new Set(shown.flatMap(r => r.items.map(i => i.species))).size
+      const latestDate = shown.reduce((best, r) => r.latestDate > best ? r.latestDate : best, shown[0].latestDate)
       const topAnomaly: AnomalyType = freshRefuges.some(r => r.topAnomaly === 'spike') ? 'spike'
         : freshRefuges.some(r => r.topAnomaly === 'drop') ? 'drop' : null
       const statusPriority: MigrationStatus[] = ['arriving', 'first_survey', 'building', 'peak', 'declining', 'departing', null]
@@ -1668,7 +1681,7 @@ export function MigrationPage() {
         stateName: STATE_CODE_TO_NAME[state] ?? state,
         totalBirds,
         freshTotalBirds,
-        refugeCount: refuges.length,
+        refugeCount: shown.length,
         speciesCount,
         latestDate,
         topAnomaly,
@@ -1734,7 +1747,8 @@ export function MigrationPage() {
     const byYear: Record<number, Record<string, number>> = {}
     historicalTrends.forEach(t => {
       if (!byYear[t.year]) byYear[t.year] = { year: t.year }
-      byYear[t.year][t.state_code] = (byYear[t.year][t.state_code] || 0) + t.total_count
+      // total_count arrives as a string (Postgres bigint); without Number() this concatenated digits
+      byYear[t.year][t.state_code] = (byYear[t.year][t.state_code] || 0) + Number(t.total_count)
     })
     return Object.values(byYear).sort((a, b) => (a.year as number) - (b.year as number))
   }, [historicalTrends])
@@ -1753,6 +1767,11 @@ export function MigrationPage() {
     // Current season: Sep (year-1) → now.  Prior season: Sep (year-2) → Aug (year-1)
     const thisSep = `${seasonYear - 1}-09-01`
     const prevSep = `${seasonYear - 2}-09-01`
+    // Season-to-date on both sides: last season only up to today's calendar date one year ago.
+    // Comparing a few weeks of this season against all of last season read as a -98% collapse.
+    const yearAgo = new Date()
+    yearAgo.setFullYear(yearAgo.getFullYear() - 1)
+    const prevCutoff = `${yearAgo.getFullYear()}-${String(yearAgo.getMonth() + 1).padStart(2, '0')}-${String(yearAgo.getDate()).padStart(2, '0')}`
 
     const rows = flywayProgression.states
       .map(state => {
@@ -1760,7 +1779,7 @@ export function MigrationPage() {
           .filter(w => w.weekStart >= thisSep)
           .reduce((s, w) => s + w.totalCount, 0)
         const prevSeason = state.weeks
-          .filter(w => w.weekStart >= prevSep && w.weekStart < thisSep)
+          .filter(w => w.weekStart >= prevSep && w.weekStart < thisSep && w.weekStart <= prevCutoff)
           .reduce((s, w) => s + w.totalCount, 0)
         // Only include rows where both seasons have data
         if (thisSeason === 0 || prevSeason === 0) return null
@@ -1836,21 +1855,39 @@ export function MigrationPage() {
     return { action, reasoning, urgency, topState: top, coldFrontStates, topRefuge }
   }, [stateGroups, pushFactorsData, migrationIndex])
 
+  // The progression fetch spans two seasons so seasonComparison can see last season. The chart and
+  // its "peak weeks this season" must not: the server's peaks span both, so last winter's peaks were
+  // labeled as this season's. Keep current-season weeks only (in date order) and recompute peaks.
+  const currentProgression = useMemo(() => {
+    if (!flywayProgression) return null
+    const start = `${flywayProgression.seasonYear - 1}-09-01`
+    const weeks = flywayProgression.weeks.filter(w => w >= start).sort()
+    const states = flywayProgression.states
+      .map(state => {
+        const seasonWeeks = state.weeks.filter(w => w.weekStart >= start)
+        const peak = seasonWeeks.reduce<(typeof seasonWeeks)[number] | null>(
+          (best, w) => (!best || w.totalCount > best.totalCount ? w : best), null)
+        return { ...state, weeks: seasonWeeks, peakWeek: peak?.weekStart ?? null, peakCount: peak?.totalCount ?? 0 }
+      })
+      .filter(state => state.weeks.length > 0)
+    return { ...flywayProgression, weeks, states }
+  }, [flywayProgression])
+
   // Flyway progression chart — one entry per week, state codes as keys
   const progressionChartData = useMemo(() => {
-    if (!flywayProgression || flywayProgression.weeks.length === 0) return []
-    return flywayProgression.weeks.map(week => {
+    if (!currentProgression || currentProgression.weeks.length === 0) return []
+    return currentProgression.weeks.map(week => {
       const entry: Record<string, unknown> = {
         week,
         label: parseCalendarDate(week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       }
-      for (const state of flywayProgression.states) {
+      for (const state of currentProgression.states) {
         const match = state.weeks.find(w => w.weekStart === week)
         entry[state.stateCode] = match ? match.totalCount : null
       }
       return entry
     })
-  }, [flywayProgression])
+  }, [currentProgression])
 
   return (
     <div>
@@ -2684,6 +2721,7 @@ export function MigrationPage() {
                                         <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                                           <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                                             {parseCalendarDate(group.latestDate).toLocaleDateString()}
+                                            {group.isStale && ' · previous season, not in totals'}
                                           </span>
                                           {w && (
                                             <span className="flex items-center gap-1.5 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
@@ -2893,7 +2931,7 @@ export function MigrationPage() {
             )}
 
             {/* Flyway Progression Chart */}
-            {flywayProgression && progressionChartData.length > 0 && flywayProgression.states.length > 0 && (
+            {currentProgression && progressionChartData.length > 0 && currentProgression.states.length > 0 && (
               <div className="card p-6 mb-8">
                 <div className="flex items-start justify-between mb-4">
                   <div>
@@ -2905,7 +2943,7 @@ export function MigrationPage() {
                     </p>
                   </div>
                   <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                    {flywayProgression.seasonYear - 1}–{flywayProgression.seasonYear} season
+                    {currentProgression.seasonYear - 1}–{currentProgression.seasonYear} season
                   </span>
                 </div>
                 <ResponsiveContainer width="100%" height={300}>
@@ -2927,7 +2965,7 @@ export function MigrationPage() {
                       contentStyle={{ backgroundColor: chartColors.tooltipBg, border: `1px solid ${chartColors.tooltipBorder}`, color: chartColors.tooltipText }}
                     />
                     <Legend />
-                    {flywayProgression.states.map((state, i) => (
+                    {currentProgression.states.map((state, i) => (
                       <Line
                         key={state.stateCode}
                         type="monotone"
@@ -2940,7 +2978,7 @@ export function MigrationPage() {
                       />
                     ))}
                     {/* Peak week reference lines for states with notable peaks */}
-                    {flywayProgression.states
+                    {currentProgression.states
                       .filter(s => s.peakWeek && s.peakCount >= 1000)
                       .map((s, i) => {
                         const peakLabel = progressionChartData.find(d => d.week === s.peakWeek)?.label as string | undefined
@@ -2958,12 +2996,12 @@ export function MigrationPage() {
                   </LineChart>
                 </ResponsiveContainer>
                 {/* Peak week summary */}
-                {flywayProgression.states.some(s => s.peakWeek) && (
+                {currentProgression.states.some(s => s.peakWeek) && (
                   <div className="mt-4 flex flex-wrap gap-3">
                     <p className="text-xs font-medium w-full" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                       Peak weeks this season:
                     </p>
-                    {flywayProgression.states
+                    {currentProgression.states
                       .filter(s => s.peakWeek && s.peakCount > 0)
                       .map((s, i) => (
                         <div
