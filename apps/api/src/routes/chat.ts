@@ -160,7 +160,7 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
     if (!isConfigured()) {
       return reply.status(503).send({
         error: true,
-        message: 'AI service not configured. Please set TOGETHER_API_KEY.',
+        message: 'AI service not configured. Please set LLM_API_KEY.',
       })
     }
 
