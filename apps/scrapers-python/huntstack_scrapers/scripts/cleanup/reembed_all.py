@@ -29,7 +29,7 @@ from dotenv import load_dotenv
 # Force UTF-8 output so non-ASCII chunk text doesn't crash on Windows
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-from huntstack_scrapers.pipelines import EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, embed_texts
+from huntstack_scrapers.pipelines import EMBEDDING_DIMENSIONS, embed_texts, embedding_model, embeddings_api_key
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", ".env"))
 
@@ -60,7 +60,7 @@ def main():
                         help="Resume after this chunk id (printed after every batch)")
     args = parser.parse_args()
 
-    api_key = os.environ["OPENAI_API_KEY"]
+    api_key = embeddings_api_key() or sys.exit("EMBEDDINGS_API_KEY (or OPENAI_API_KEY) is not set")
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     cur = conn.cursor()
 
@@ -68,14 +68,14 @@ def main():
                 "WHERE attrelid = 'document_chunks'::regclass AND attname = 'embedding'")
     column_type = cur.fetchone()[0]
     if column_type != f"vector({EMBEDDING_DIMENSIONS})":
-        sys.exit(f"document_chunks.embedding is {column_type}, but {EMBEDDING_MODEL} is configured "
+        sys.exit(f"document_chunks.embedding is {column_type}, but {embedding_model()} is configured "
                  f"for {EMBEDDING_DIMENSIONS} dims. Migrate the column first.")
 
     cur.execute("SELECT COUNT(*), COALESCE(SUM(LENGTH(content)), 0) FROM document_chunks")
     total, total_chars = cur.fetchone()
     # ~4 chars per token; text-embedding-3-small is $0.02 per million tokens
     print(f"{total} chunks, ~{total_chars // 4:,} tokens, ~${total_chars / 4 / 1e6 * 0.02:.2f} "
-          f"with {EMBEDDING_MODEL} @ {EMBEDDING_DIMENSIONS} dims")
+          f"with {embedding_model()} @ {EMBEDDING_DIMENSIONS} dims")
 
     last_id = args.start_after
     done = 0
@@ -109,7 +109,7 @@ def main():
     print(f"Rebuilding {INDEX_NAME} so its clusters reflect the new vectors...")
     cur.execute(f"REINDEX INDEX {INDEX_NAME}")
     conn.commit()
-    print(f"Done. {done} chunks re-embedded with {EMBEDDING_MODEL}.")
+    print(f"Done. {done} chunks re-embedded with {embedding_model()}.")
     conn.close()
 
 

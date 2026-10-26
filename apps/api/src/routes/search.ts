@@ -235,7 +235,7 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
     if (!isEmbeddingConfigured()) {
       return reply.status(503).send({
         error: true,
-        message: 'Semantic search not configured. Please set OPENAI_API_KEY.',
+        message: 'Semantic search not configured. Please set EMBEDDINGS_API_KEY.',
       })
     }
 

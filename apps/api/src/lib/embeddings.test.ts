@@ -46,11 +46,25 @@ describe('embeddings', () => {
     })
   })
 
+  it('routes through EMBEDDINGS_BASE_URL / EMBEDDINGS_MODEL / EMBEDDINGS_API_KEY (OpenRouter)', async () => {
+    vi.stubEnv('EMBEDDINGS_BASE_URL', 'https://openrouter.ai/api/v1/')
+    vi.stubEnv('EMBEDDINGS_MODEL', 'openai/text-embedding-3-small')
+    vi.stubEnv('EMBEDDINGS_API_KEY', 'or-test')
+    const fetchMock = mockFetch(200, { data: [{ embedding: vector(EMBEDDING_DIMENSIONS) }] })
+
+    await generateEmbedding('x')
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe('https://openrouter.ai/api/v1/embeddings')
+    expect(init.headers.Authorization).toBe('Bearer or-test')
+    expect(JSON.parse(init.body).model).toBe('openai/text-embedding-3-small')
+  })
+
   it('throws without calling out when the key is missing', async () => {
     vi.stubEnv('OPENAI_API_KEY', '')
     const fetchMock = mockFetch(200, {})
 
-    await expect(generateEmbedding('x')).rejects.toThrow('OPENAI_API_KEY')
+    await expect(generateEmbedding('x')).rejects.toThrow('EMBEDDINGS_API_KEY')
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

@@ -10,12 +10,12 @@ import psycopg2
 from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from huntstack_scrapers.pipelines import clean_text, embed_texts
+from huntstack_scrapers.pipelines import clean_text, embed_texts, embeddings_api_key
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", ".env"))
 
 DATABASE_URL = os.environ["DATABASE_URL"]
-OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+OPENAI_API_KEY = embeddings_api_key() or sys.exit("EMBEDDINGS_API_KEY (or OPENAI_API_KEY) is not set")
 
 CHUNK_SIZE = 600
 CHUNK_OVERLAP = 100
