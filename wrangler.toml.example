@@ -1,3 +1,12 @@
+# RENAMED from wrangler.toml on 2026-10-26 -- do not rename it back.
+#
+# When a wrangler.toml exists in the repo, Cloudflare Pages treats it as the source of truth and
+# the dashboard's environment variables never reach the build ("Build environment variables:
+# (none found)" in the build log). Every VITE_* variable (API URL, Supabase, MapTiler, Sentry)
+# was missing from the deployed bundle, so the site called http://localhost:4000 and failed for
+# every visitor. With this file out of the way, the dashboard's build command, output directory
+# and variables apply again. This copy is kept only as documentation of those settings.
+#
 # Cloudflare Pages config for the huntstack-web frontend.
 #
 # This mirrors the settings currently configured in the Cloudflare dashboard
