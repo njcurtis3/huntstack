@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Mail } from 'lucide-react'
-
-const CONTACT_EMAIL = 'nathanjcurtis3@gmail.com'
+import { CONTACT_EMAIL } from '../lib/contact'
 
 export function ContactPage() {
   return (

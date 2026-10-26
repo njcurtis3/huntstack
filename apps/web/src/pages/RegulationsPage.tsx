@@ -5,6 +5,7 @@ import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simp
 import { api } from '../lib/api'
 import { useThemeStore } from '../stores/themeStore'
 import { getMapColors } from '../lib/themeColors'
+import { DismissibleNotice } from '../components/DismissibleNotice'
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json'
 
@@ -849,9 +850,9 @@ export function RegulationsPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Limited data notice */}
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md px-4 py-3 mb-6 text-sm text-yellow-800 dark:text-yellow-200">
+        <DismissibleNotice id="regulations-coverage" className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md px-4 py-3 mb-6 text-sm text-yellow-800 dark:text-yellow-200">
           Regulation data is currently limited to select states. We're actively working to expand coverage across all 50 states.
-        </div>
+        </DismissibleNotice>
 
         {/* Mode toggle */}
         <div

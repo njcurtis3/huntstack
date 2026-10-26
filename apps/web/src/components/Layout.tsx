@@ -11,11 +11,14 @@ import {
   Sun,
   Moon,
   Crosshair,
+  AlertCircle,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useThemeStore } from '../stores/themeStore'
 import { useAuthStore } from '../stores/authStore'
 import { AuthModal } from './AuthModal'
+import { DismissibleNotice } from './DismissibleNotice'
+import { feedbackMailto } from '../lib/contact'
 
 const primaryNav = [
   { name: 'Migration', href: '/migration', icon: Bird },
@@ -271,6 +274,28 @@ export function Layout() {
         )}
       </header>
 
+      {/* Beta notice — the data has legal stakes and testers need a way to report problems; dismissible per browser */}
+      <DismissibleNotice
+        id="beta-disclaimer"
+        className="border-b bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/50"
+        innerClassName="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 text-xs sm:text-sm text-amber-800 dark:text-amber-200"
+      >
+        <div className="flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <p className="flex-1 min-w-0">
+            <span className="font-semibold">Beta.</span>{' '}
+            Season dates, bag limits and bird counts are informational and may be out of date or wrong.
+            Confirm with the state wildlife agency before you hunt.{' '}
+            <a
+              href={feedbackMailto(typeof window !== 'undefined' ? window.location.href : location.pathname)}
+              className="font-semibold underline underline-offset-2 hover:no-underline whitespace-nowrap"
+            >
+              Send feedback
+            </a>
+          </p>
+        </div>
+      </DismissibleNotice>
+
       {/* Main Content */}
       <main className="flex-1">
         <Outlet />
@@ -311,6 +336,7 @@ export function Layout() {
               <ul className="space-y-2 text-sm">
                 <li><Link to="/about" className="text-accent-500 hover:underline">About</Link></li>
                 <li><Link to="/contact" className="text-accent-500 hover:underline">Contact</Link></li>
+                <li><a href={feedbackMailto(typeof window !== 'undefined' ? window.location.href : location.pathname)} className="text-accent-500 hover:underline">Send Feedback</a></li>
                 <li><Link to="/privacy" className="text-accent-500 hover:underline">Privacy</Link></li>
                 <li><Link to="/terms" className="text-accent-500 hover:underline">Terms</Link></li>
               </ul>
