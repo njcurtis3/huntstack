@@ -3,6 +3,7 @@ import { eq, and, gte, lte, desc, sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { locations, refugeCounts, species, states } from '@huntstack/db/schema'
 import { getEBirdCountsForRefuge } from '../lib/ebird.js'
+import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 
 export const refugeRoutes: FastifyPluginAsync = async (app) => {
   // List wildlife refuges
@@ -265,27 +266,34 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
         ${flyway ? sql`AND l.metadata->>'flyway' = ${flyway}` : sql``}
     `)
 
-    const ebirdResults = await Promise.allSettled(
-      (refugeCoords as unknown as Array<Record<string, unknown>>).map(r => {
-        let cp = r.center_point as { lat: number; lng: number } | string | null
-        if (typeof cp === 'string') { try { cp = JSON.parse(cp) } catch { cp = null } }
-        const coord = cp as { lat: number; lng: number } | null
-        if (!coord?.lat || !coord?.lng) return Promise.resolve([])
-        return getEBirdCountsForRefuge(
-          r.id as string,
-          r.name as string,
-          r.state_code as string,
-          (r.metadata as Record<string, unknown> | null)?.flyway as string | null ?? null,
-          coord.lat,
-          coord.lng,
-        )
-      })
-    )
-    const ebirdCounts = ebirdResults
-      .filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof getEBirdCountsForRefuge>>> => r.status === 'fulfilled')
-      .flatMap(r => r.value)
+    const fetchEBird = (r: Record<string, unknown>) => {
+      const coord = decodePoint(r.center_point)
+      if (!coord) return Promise.resolve([])
+      const meta = decodeJsonbField<{ flyway?: string; ebirdRadiusKm?: number }>(r.metadata)
+      return getEBirdCountsForRefuge(
+        r.id as string,
+        r.name as string,
+        r.state_code as string,
+        meta?.flyway ?? null,
+        coord.lat,
+        coord.lng,
+        // eBird-only areas (e.g. Panhandle playa clusters) ask for a wider radius
+        typeof meta?.ebirdRadiusKm === 'number' ? meta.ebirdRadiusKm : 25,
+      )
+    }
+    // A few at a time: firing one request per location at once (~40) got a third of them
+    // refused by eBird (429), and failures came back as [] — those locations silently showed
+    // nothing. getEBirdCountsForRefuge also retries a 429 with backoff.
+    const EBIRD_CONCURRENCY = 3
+    const refugeRows = refugeCoords as unknown as Array<Record<string, unknown>>
+    const ebirdCounts: Awaited<ReturnType<typeof getEBirdCountsForRefuge>> = []
+    for (let i = 0; i < refugeRows.length; i += EBIRD_CONCURRENCY) {
+      const batch = await Promise.allSettled(refugeRows.slice(i, i + EBIRD_CONCURRENCY).map(fetchEBird))
+      for (const r of batch) if (r.status === 'fulfilled') ebirdCounts.push(...r.value)
+    }
 
-    // Historical MWI (Midwinter Index) trends — annual population totals 2006–2016.
+    // Historical MWI (Midwinter Index) trends — annual population totals: 2006–2024 for the
+    // Central Flyway states (ingest_cf_mws.py extends the 2006–2016 CSV), 2006–2016 for AR/LA.
     // Used by MigrationPage to render the long-term population trend chart.
     // This is intentionally a separate signal from weekly refuge counts —
     // it shows multi-year population trajectory, not current season activity.

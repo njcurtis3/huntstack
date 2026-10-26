@@ -52,6 +52,7 @@ const EBIRD_SPECIES: Record<string, { slug: string; name: string }> = {
 export const STATE_FLYWAY: Record<string, string> = {
   TX: 'central', NM: 'central', KS: 'central', OK: 'central',
   AR: 'mississippi', LA: 'mississippi', MO: 'mississippi',
+  IL: 'mississippi', // INHS Forbes aerial inventory; not in the default eBird state list
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -125,7 +126,7 @@ interface EBirdObservation {
   obsValid: boolean
 }
 
-// ─── Per-refuge geo fetch (25km radius) ──────────────────────────────────────
+// ─── Per-location geo fetch (25km radius by default, up to eBird's 50km max) ──
 
 const MIN_COUNT = 5  // ignore very small/incidental sightings
 
@@ -136,11 +137,13 @@ export async function getEBirdCountsForRefuge(
   flyway: string | null,
   lat: number,
   lng: number,
+  radiusKm = 25,
 ): Promise<EBirdCount[]> {
   const apiKey = process.env.EBIRD_API_KEY
   if (!apiKey) return []
 
-  const cacheKey = `ebird:obs:${lat.toFixed(2)}:${lng.toFixed(2)}`
+  const dist = Math.min(Math.max(Math.round(radiusKm), 1), 50)  // eBird caps geo queries at 50km
+  const cacheKey = `ebird:obs:${lat.toFixed(2)}:${lng.toFixed(2)}:${dist}`
   const cached = obsCache.get(cacheKey)
   if (cached) return cached
 
@@ -148,20 +151,33 @@ export async function getEBirdCountsForRefuge(
     const url = new URL(`${EBIRD_BASE}/data/obs/geo/recent`)
     url.searchParams.set('lat', lat.toFixed(4))
     url.searchParams.set('lng', lng.toFixed(4))
-    url.searchParams.set('dist', '25')      // 25km radius
+    url.searchParams.set('dist', String(dist))
     url.searchParams.set('back', '28')      // 28 days — fetch both periods in one call
     // No 'cat' filter — eBird's category enum doesn't include 'waterfowl'.
     // Filter client-side via EBIRD_SPECIES whitelist (only waterfowl slugs).
     url.searchParams.set('maxResults', '2000')
 
-    const resp = await fetch(url.toString(), {
-      headers: {
-        'X-eBirdApiToken': apiKey,
-        'User-Agent': '(HuntStack, huntstack.com)',
-      },
-    })
+    // eBird answers bursts with 429 (its limits are unpublished): back off and retry
+    // rather than show the location as empty.
+    let resp: Response | null = null
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * 2 ** (attempt - 1)))
+      resp = await fetch(url.toString(), {
+        headers: {
+          'X-eBirdApiToken': apiKey,
+          'User-Agent': '(HuntStack, huntstack.com)',
+        },
+      })
+      if (resp.status !== 429) break
+    }
+    if (!resp) return []
 
-    if (!resp.ok) return []
+    if (!resp.ok) {
+      // Logged, not thrown: one failed location must not blank the dashboard — but it must not
+      // be invisible either (callers can't tell an error from a location with no sightings).
+      console.warn(`[eBird] geo query for ${refugeName} failed: HTTP ${resp.status} ${(await resp.text()).slice(0, 200)}`)
+      return []
+    }
 
     const obs: EBirdObservation[] = await resp.json()
 
@@ -236,7 +252,8 @@ export async function getEBirdCountsForRefuge(
     obsCache.set(cacheKey, result, GEO_TTL)
     return result
 
-  } catch {
+  } catch (err) {
+    console.warn(`[eBird] geo query for ${refugeName} threw: ${err instanceof Error ? err.message : String(err)}`)
     return []
   }
 }

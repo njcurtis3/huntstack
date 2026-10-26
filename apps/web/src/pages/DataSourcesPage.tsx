@@ -46,9 +46,19 @@ const REFUGE_COUNT_SOURCES: SourceGroup = {
       note: 'Monthly aerial survey PDFs',
     },
     {
+      name: 'Illinois Natural History Survey, Forbes Biological Station — Aerial Inventory (IL)',
+      url: 'https://forbes-bio-station.inhs.illinois.edu/research/waterfowl-aerial-inventories/',
+      note: 'Weekly flights over the Illinois and central Mississippi rivers, Sept–Jan; river-wide totals',
+    },
+    {
       name: 'Texas Parks & Wildlife — Mid-Winter Waterfowl Survey (TX)',
       url: 'https://tpwd.texas.gov/huntwild/wild/game_management/waterfowl/',
       note: 'Annual survey, published as Excel workbooks',
+    },
+    {
+      name: 'USFWS — Central Flyway Mid-Winter Waterfowl Survey report',
+      url: 'https://fws.gov/sites/default/files/documents/2025-02/central-flyway-midwinter-survey-report-2024.pdf',
+      note: 'Annual January counts for KS, NM, OK and TX, 2017–2024',
     },
   ],
 }
@@ -71,7 +81,7 @@ const OTHER_GROUPS: SourceGroup[] = [
   {
     title: 'Community Bird Observations',
     description:
-      'Regional species activity and 14-day trend comparisons, sourced from eBird\'s public checklist data, cross-referenced against refuge survey counts for the Migration dashboard.',
+      'Regional species activity and 14-day trend comparisons, sourced from eBird\'s public checklist data, cross-referenced against refuge survey counts for the Migration dashboard. eBird also covers places with no published refuge counts: the Texas Panhandle (Amarillo, Lubbock, Dalhart and Hereford-Dimmitt playas) and Cheyenne Bottoms, Kansas. These are the latest sightings reported by birders, not survey totals.',
     cadence: 'Live API',
     sources: [{ name: 'eBird (Cornell Lab of Ornithology)', url: 'https://ebird.org/' }],
   },

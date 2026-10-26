@@ -336,6 +336,15 @@ class RefugeCountsScraper:
         log.info(f"Found {found} PDFs for {source['name']}")
         return items
 
+    def _handle_results_fn(self, source: dict) -> list[dict]:
+        """The parser module fetched and parsed everything — wrap its results as items."""
+        results = source["results_fn"]()
+        log.info(f"Extracted {len(results)} survey dates from {source['name']}")
+        return [
+            self._make_item(source["name"], source["state_code"], result, url, source.get("survey_type", "weekly"))
+            for result, url in results
+        ]
+
     # ─── Main run ─────────────────────────────────────────────────────────────
 
     def run(self, filter_name: str | None = None) -> list[dict]:
@@ -370,6 +379,8 @@ class RefugeCountsScraper:
                     items = self._handle_pdf_url_list(source)
                 elif source_type == "excel_index":
                     items = self._handle_excel_index(source)
+                elif source_type == "results_fn":
+                    items = self._handle_results_fn(source)
                 else:
                     log.warning(f"Unknown source_type: {source_type}")
                     items = []

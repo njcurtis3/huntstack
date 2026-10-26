@@ -10,6 +10,9 @@ Source types:
   - "pdf_index": Index page with links to PDFs (spider follows links, downloads PDFs)
   - "pdf_url_list": Try a list of candidate PDF URLs directly (for JS-rendered index pages)
   - "excel_index": Fetch Excel file URLs from an index page, download + parse each
+  - "results_fn": The parser module fetches and parses everything itself; results_fn()
+                  returns [(ParseResult, source_url), ...] (for sources whose download
+                  can't fit the generic handlers, e.g. Box links that refuse HEAD)
 """
 
 from huntstack_scrapers.parsers.base import current_waterfowl_season_label
@@ -18,6 +21,7 @@ from huntstack_scrapers.parsers.loess_bluffs_pdf import parse_loess_bluffs_pdf, 
 from huntstack_scrapers.parsers.ldwf_pdf import parse_ldwf_pdf, fetch_ldwf_pdf_urls
 from huntstack_scrapers.parsers.clarence_cannon_html import parse_clarence_cannon_html
 from huntstack_scrapers.parsers.tpwd_excel import fetch_tpwd_excel_urls, parse_tpwd_excel
+from huntstack_scrapers.parsers.inhs_forbes_pdf import RIVER_SOURCES, fetch_forbes_results
 
 
 # Registry of all waterfowl count data sources.
@@ -84,6 +88,27 @@ WATERFOWL_SOURCES = [
         # since importing this module must not trigger live HTTP requests.
         "pdf_urls_fn": fetch_ldwf_pdf_urls,
         "pdf_parser": parse_ldwf_pdf,
+    },
+
+    # === INHS Forbes Biological Station — weekly aerial inventory, Sept-Jan (Mississippi Flyway) ===
+    # One index page lists both rivers' PDFs; fetch_forbes_results downloads each once per
+    # run and sorts them by the river named in the PDF. Stored as river-wide totals.
+    {
+        "name": RIVER_SOURCES["ILLINOIS"],
+        "state_code": "IL",
+        "url": "https://forbes-bio-station.inhs.illinois.edu/research/waterfowl-aerial-inventories/",
+        "source_type": "results_fn",
+        "survey_type": "aerial_weekly",
+        # Lambdas so importing this module never triggers HTTP
+        "results_fn": lambda: fetch_forbes_results("ILLINOIS"),
+    },
+    {
+        "name": RIVER_SOURCES["MISSISSIPPI"],
+        "state_code": "IL",
+        "url": "https://forbes-bio-station.inhs.illinois.edu/research/waterfowl-aerial-inventories/",
+        "source_type": "results_fn",
+        "survey_type": "aerial_weekly",
+        "results_fn": lambda: fetch_forbes_results("MISSISSIPPI"),
     },
 
     # === Texas TPWD Mid-Winter Waterfowl Survey (annual Excel files) ===

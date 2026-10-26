@@ -14,6 +14,7 @@ import { api } from '../lib/api'
 import { parseCalendarDate } from '../lib/dates'
 import { useThemeStore } from '../stores/themeStore'
 import { getMapColors, getChartColors } from '../lib/themeColors'
+import { DismissibleNotice } from '../components/DismissibleNotice'
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json'
 
@@ -335,7 +336,7 @@ const FLYWAY_STATE_ORDER: Record<string, string[]> = {
   mississippi: ['MN', 'WI', 'IA', 'IL', 'MO', 'TN', 'AR', 'MS', 'LA'],
   pacific:     ['WA', 'OR', 'ID', 'NV', 'CA'],
   atlantic:    ['ME', 'NY', 'PA', 'NJ', 'MD', 'VA', 'NC', 'SC', 'GA', 'FL'],
-  '':          ['ND', 'SD', 'MN', 'NE', 'IA', 'KS', 'MO', 'CO', 'OK', 'AR', 'TX', 'LA', 'NM', 'MS'],
+  '':          ['ND', 'SD', 'MN', 'NE', 'IA', 'IL', 'KS', 'MO', 'CO', 'OK', 'AR', 'TX', 'LA', 'NM', 'MS'],
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -1932,9 +1933,9 @@ export function MigrationPage() {
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Limited data notice */}
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md px-4 py-3 mb-6 text-sm text-yellow-800 dark:text-yellow-200">
+        <DismissibleNotice id="migration-coverage" className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md px-4 py-3 mb-6 text-sm text-yellow-800 dark:text-yellow-200">
           Refuge count data is currently limited to select states and sources. We're actively working to expand coverage across more refuges and flyways.
-        </div>
+        </DismissibleNotice>
 
         {/* Weekly Intelligence */}
         {(weeklySummary || weeklySummaryLoading) && (
@@ -3062,7 +3063,7 @@ export function MigrationPage() {
                   </LineChart>
                 </ResponsiveContainer>
                 <p className="text-xs mt-3" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                  Historical data from Midwinter Waterfowl Inventory (2006–2016).
+                  Midwinter Waterfowl Survey, January counts: 2006–2024 for KS, NM, OK and TX (USFWS Central Flyway reports); 2006–2016 for AR and LA.
                 </p>
               </div>
             )}

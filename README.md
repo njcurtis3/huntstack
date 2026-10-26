@@ -110,7 +110,8 @@ KS, OK and MO.
 - Node.js 22 or later, and pnpm 8 or later
 - Python 3.11 or later (for the scrapers)
 - A Supabase project with the `postgis` and `vector` extensions enabled
-- A Together.ai API key, an OpenAI API key (embeddings), and an eBird API key
+- An OpenAI-compatible LLM key for chat and embeddings (OpenRouter in production; Together.ai and OpenAI
+  still work as defaults), and an eBird API key
 
 </details>
 
@@ -173,11 +174,13 @@ and posts to `SCRAPER_ALERT_WEBHOOK` when a run fails or finds nothing.
 | Loess Bluffs NWR | MO | FWS PDF survey | weekly |
 | AGFC aerial survey | AR | state PDF, LLM-extracted | biweekly |
 | LDWF aerial survey | LA | state PDF, LLM-extracted | monthly |
-| Midwinter Waterfowl Inventory | TX, NM, AR, LA, KS, OK | USFWS survey | annual |
-| eBird | TX, NM, KS, OK, AR, LA, MO | Cornell Lab, statewide and per refuge | on demand, cached 3h |
+| INHS Forbes Biological Station aerial inventory | IL | Illinois River and central Mississippi River PDFs, river-wide totals | weekly, Sept–Jan |
+| Midwinter Waterfowl Inventory | TX, NM, AR, LA, KS, OK | USFWS survey; KS/NM/OK/TX through 2024 from the Central Flyway report (`ingest_cf_mws.py`), AR/LA through 2016 | annual |
+| eBird | TX, NM, KS, OK, AR, LA, MO, IL | Cornell Lab, statewide and per refuge, plus eBird-only areas: Amarillo, Lubbock, Dalhart, Hereford-Dimmitt (TX Panhandle) and Cheyenne Bottoms (KS) | on demand, cached 3h |
 
-PDFs are extracted with `Llama-3.3-70B-Instruct-Turbo` on Together.ai at
-temperature 0.
+AGFC and LDWF PDFs are extracted by an LLM at temperature 0 (`LLM_MODEL`; Llama 3.3 70B via
+OpenRouter in production). eBird "recent" observations are the latest sighting of each species
+at each place, not survey totals.
 
 </details>
 
@@ -265,8 +268,12 @@ SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_KEY=
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
-TOGETHER_API_KEY=
-OPENAI_API_KEY=            # embeddings; chat works without it, semantic search does not
+LLM_API_KEY=               # chat + scraper extraction; falls back to TOGETHER_API_KEY
+LLM_BASE_URL=              # e.g. https://openrouter.ai/api/v1 (default: Together.ai)
+LLM_MODEL=                 # e.g. meta-llama/llama-3.3-70b-instruct
+EMBEDDINGS_API_KEY=        # falls back to OPENAI_API_KEY; chat works without it, semantic search does not
+EMBEDDINGS_BASE_URL=       # e.g. https://openrouter.ai/api/v1 (default: OpenAI)
+EMBEDDINGS_MODEL=          # e.g. openai/text-embedding-3-small (must stay 1024-dim)
 EBIRD_API_KEY=
 VITE_API_URL=http://localhost:4000
 VITE_MAPTILER_KEY=
