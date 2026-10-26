@@ -526,7 +526,7 @@ export function WhereToHuntPage() {
               No hunting locations found
             </p>
             <p className="text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-              Try expanding your state selection or choosing a different species.
+              Recommendations use refuge counts from the last few weeks. Try expanding your state selection or choosing a different species, or check back after the next weekly survey.
             </p>
           </div>
         )}

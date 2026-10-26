@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { getHuntingConditions, getPushFactorsForStates } from '../lib/weather.js'
 import { decodeJsonbField } from '../lib/jsonb.js'
+import { FRESH_DAYS, FRESH_DAYS_MONTHLY } from '../lib/freshness.js'
 
 const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
 
@@ -125,6 +126,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
     // ── Step 1: Latest counts per location+species via CTE ──────────────────
     // Filter out MWI annual rows (historical only, not indicative of current activity)
     // Filter to wildlife_refuge type for relevance
+    // Drop counts too old to describe current activity (see lib/freshness.ts)
     const speciesFilter = speciesSlug
       ? sql`AND sp.slug = ${speciesSlug}`
       : sql`AND sp.category = 'waterfowl'`
@@ -153,6 +155,8 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         WHERE l.location_type = 'wildlife_refuge'
           AND l.name NOT LIKE '% - Statewide MWI'
           AND rc.survey_type != 'mwi_annual'
+          AND rc.survey_date >= ${targetDateStr}::date
+            - (CASE WHEN rc.survey_type = 'aerial_monthly' THEN ${FRESH_DAYS_MONTHLY}::int ELSE ${FRESH_DAYS}::int END) * INTERVAL '1 day'
           AND s.code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})
           ${speciesFilter}
       )

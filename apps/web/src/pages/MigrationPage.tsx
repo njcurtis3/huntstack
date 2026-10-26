@@ -294,6 +294,15 @@ function detectMovementDirection(
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+// Counts older than this are not actionable. Off-season (March-August) the previous season's
+// counts after Feb 1 still read as the latest picture; from September on, the season is live
+// and weekly surveys older than four weeks no longer say what the birds are doing.
+function staleThresholdFor(now: Date): Date {
+  const month = now.getMonth() // 0-indexed
+  if (month >= 2 && month <= 7) return new Date(now.getFullYear(), 1, 1)
+  return new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000)
+}
+
 const FLYWAY_OPTIONS = [
   { value: '', label: 'All Flyways' },
   { value: 'central', label: 'Central Flyway' },
@@ -1587,11 +1596,7 @@ export function MigrationPage() {
   }
 
   const refugeGroups = useMemo((): RefugeGroup[] => {
-    const today = new Date()
-    const isOffSeason = today.getMonth() >= 2
-    const staleThresholdMs = isOffSeason
-      ? new Date(today.getFullYear(), 1, 1).getTime() // Feb 1 of current year
-      : Date.now() - 60 * 24 * 60 * 60 * 1000
+    const staleThresholdMs = staleThresholdFor(new Date()).getTime()
     const map = new Map<string, EnrichedCount[]>()
     for (const item of sortedCounts) {
       const arr = map.get(item.refugeId) ?? []
@@ -1713,18 +1718,7 @@ export function MigrationPage() {
     return () => { cancelled = true }
   }, [filteredCounts])
 
-  // Staleness: data from the previous duck season (before ~Feb 1) is not actionable
-  // once we're in the off-season (March+). Use a season-aware cutoff:
-  //   - If today is March 1 or later, anything before Feb 1 of this year is previous-season
-  //   - Otherwise fall back to a 60-day rolling window
-  const now = new Date()
-  const staleThreshold = (() => {
-    const isOffSeason = now.getMonth() >= 2 // March (0-indexed) or later
-    if (isOffSeason) {
-      return new Date(now.getFullYear(), 1, 1) // Feb 1 of current year
-    }
-    return new Date(Date.now() - 60 * 24 * 60 * 60 * 1000) // 60-day rolling window in-season
-  })()
+  const staleThreshold = staleThresholdFor(new Date())
   const freshCounts = filteredCounts.filter(c => parseCalendarDate(c.surveyDate) >= staleThreshold)
 
   // Summary stats — use only fresh counts so stale data doesn't inflate totals
