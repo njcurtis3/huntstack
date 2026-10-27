@@ -266,6 +266,8 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
             AND se.year = ${targetYear}
             AND se.start_date <= ${targetDateStr}::date
             AND se.end_date >= ${targetDateStr}::date
+            -- Falconry-only segments (e.g. LA Nov 5-13, TX Feb 1-21) aren't open to gun hunters
+            AND se.season_type IS DISTINCT FROM 'falconry'
             ${speciesSlug ? sql`AND (sp.slug = ${speciesSlug} OR se.metadata->>'appliesTo' = 'ducks')` : sql`AND sp.category = 'waterfowl'`}
         `)
         for (const sr of seasonRows as unknown as SeasonRow[]) {
