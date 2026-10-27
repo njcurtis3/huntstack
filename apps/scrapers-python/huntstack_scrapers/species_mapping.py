@@ -38,6 +38,9 @@ SPECIES_ALIASES: dict[str, str] = {
     "butterball": "bufflehead",
     "ruddy duck": "ruddy-duck",
     "mottled duck": "mottled-duck",
+    # Ducks a survey counted but didn't split by species (AGFC: total ducks minus mallards).
+    # Its own row rather than a "total ducks" row, so sums across species stay correct.
+    "other ducks": "other-ducks",
     # Geese
     "snow goose": "snow-goose",
     "snow geese": "snow-goose",

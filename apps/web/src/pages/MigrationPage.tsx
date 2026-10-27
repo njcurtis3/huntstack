@@ -11,7 +11,7 @@ import {
 import { ComposableMap, Geographies, Geography, Annotation } from 'react-simple-maps'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../lib/api'
-import { parseCalendarDate } from '../lib/dates'
+import { isEarlierSeason, oldSurveyLabel, parseCalendarDate } from '../lib/dates'
 import { useThemeStore } from '../stores/themeStore'
 import { getMapColors, getChartColors } from '../lib/themeColors'
 import { DismissibleNotice } from '../components/DismissibleNotice'
@@ -1843,11 +1843,13 @@ export function MigrationPage() {
     let urgency: 'high' | 'medium' | 'low'
 
     const birdCount = top.freshTotalBirds > 0 ? top.freshTotalBirds : top.totalBirds
-    const staleNote = top.allStale ? ' (most recent survey data is 90+ days old — verify before planning a trip)' : ''
+    const staleNote = top.allStale ? ` (newest survey: ${oldSurveyLabel(top.latestDate)} — verify before planning a trip)` : ''
 
     if (top.allStale || stateGroups.every(sg => sg.allStale)) {
       action = `Season data is outdated`
-      reasoning = `Most recent refuge surveys are from the previous season. Check back when fall surveys resume (typically October).`
+      reasoning = stateGroups.every(sg => isEarlierSeason(sg.latestDate))
+        ? `The newest refuge surveys are from last season. Check back when this season's surveys start (October to late November, depending on the survey).`
+        : `No refuge has a survey from the last 4 weeks. Check back after the next round of surveys.`
       urgency = 'low'
     } else if (overallPush >= 2 && top.isArriving) {
       action = `Hunt ${top.stateName} this weekend`
@@ -2613,7 +2615,8 @@ export function MigrationPage() {
                         {sg.allStale && (
                           <div className="flex items-center gap-1.5 text-xs font-medium text-earth-600 dark:text-earth-400 bg-earth-100 dark:bg-earth-800/40 px-5 py-1.5">
                             <AlertCircle className="w-3 h-3" />
-                            Previous season data — not included in current snapshot totals
+                            {isEarlierSeason(sg.latestDate) ? 'Last season’s data' : 'No survey in the last 4 weeks'}
+                            {` (newest: ${oldSurveyLabel(sg.latestDate)}) — not in current totals`}
                           </div>
                         )}
                         {/* State-level anomaly banner */}
@@ -2746,8 +2749,9 @@ export function MigrationPage() {
                                         </div>
                                         <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                                           <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                                            {parseCalendarDate(group.latestDate).toLocaleDateString()}
-                                            {group.isStale && ' · previous season, not in totals'}
+                                            {group.isStale
+                                              ? `${oldSurveyLabel(group.latestDate)} · not in current totals`
+                                              : parseCalendarDate(group.latestDate).toLocaleDateString()}
                                           </span>
                                           {w && (
                                             <span className="flex items-center gap-1.5 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>

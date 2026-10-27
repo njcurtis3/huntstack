@@ -156,6 +156,7 @@ class RefugeCountsScraper:
             "survey_date": result.survey_date,
             "species_counts": result.species_counts,
             "observers": result.observers,
+            "notes": result.notes,
             "source_url": source_url,
             "survey_type": result.survey_type or survey_type,
             "scraped_at": datetime.utcnow().isoformat(),
@@ -254,7 +255,8 @@ class RefugeCountsScraper:
                 continue
 
             log.info(f"Extracted {len(result.species_counts)} species from {source['name']} ({result.survey_date})")
-            items.append(self._make_item(source["name"], source["state_code"], result, source["url"], source.get("survey_type", "weekly")))
+            # Cite the report itself, not the index page that lists every season's reports
+            items.append(self._make_item(source["name"], source["state_code"], result, pdf_url, source.get("survey_type", "weekly")))
 
         return items
 

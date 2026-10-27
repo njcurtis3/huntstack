@@ -361,7 +361,8 @@ class DatabasePipeline:
                         ON CONFLICT (location_id, species_id, survey_date, survey_type)
                         DO UPDATE SET count = EXCLUDED.count,
                                      observers = EXCLUDED.observers,
-                                     source_url = EXCLUDED.source_url
+                                     source_url = EXCLUDED.source_url,
+                                     notes = EXCLUDED.notes
                     """, (
                         location_id,
                         species_id,
@@ -370,7 +371,7 @@ class DatabasePipeline:
                         survey_type,
                         source_url,
                         observers,
-                        None,
+                        item.get("notes"),
                         json.dumps({
                             "scraped_at": item.get("scraped_at"),
                             "raw_species_name": species_name,
