@@ -72,6 +72,9 @@ STATE_SOURCES = {
         ],
         "allowed_domains": ["wildlife.dgf.nm.gov"],
         "link_keywords": ["migratory", "waterfowl", "duck", "goose", "licenses"],
+        # "licenses" also matches /fishing/licenses-permits/...; fishing pages are off-topic
+        # for chat (removed from documents 2026-10-27)
+        "exclude_path_keywords": ["/fishing/"],
         "pdf_keywords": ["waterfowl", "migratory", "duck"],
     },
     "LA": {
@@ -254,6 +257,11 @@ class StateRegulationsScraper:
         path = urlparse(href).path.lower()
         return any(kw in path for kw in keywords)
 
+    def _is_excluded_path(self, href: str, keywords: list[str]) -> bool:
+        """A link to a section the crawl should never enter, even if it matches link_keywords."""
+        path = urlparse(href).path.lower()
+        return any(kw in path for kw in keywords)
+
     def _is_relevant_pdf(self, href: str, keywords: list[str]) -> bool:
         href_lower = href.lower()
         return href_lower.endswith(".pdf") and any(kw in href_lower for kw in keywords)
@@ -353,6 +361,8 @@ class StateRegulationsScraper:
                 if full_url in visited or full_url in queue:
                     continue
                 if not self._is_allowed_domain(full_url, config["allowed_domains"]):
+                    continue
+                if self._is_excluded_path(full_url, config.get("exclude_path_keywords", [])):
                     continue
 
                 # Skip URLs that contain repeating path prefix segments (URL loop indicator)

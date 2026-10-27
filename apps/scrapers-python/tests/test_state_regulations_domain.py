@@ -58,3 +58,18 @@ class TestIsAllowedDomain:
         assert not scraper._is_allowed_domain(
             "https://notdgf.nm.gov/hunting", ["dgf.nm.gov"]
         )
+
+
+class TestExcludedPaths:
+    def test_nm_fishing_pages_are_excluded_even_though_they_match_licenses(self, scraper):
+        from huntstack_scrapers.scrapers.state_regulations import STATE_SOURCES
+
+        nm = STATE_SOURCES["NM"]
+        fishing = "https://wildlife.dgf.nm.gov/fishing/licenses-permits/requirements-fees/"
+        hunting = "https://wildlife.dgf.nm.gov/hunting/licenses-and-permits/license-requirements-fees/"
+        assert scraper._is_relevant_link(fishing, nm["link_keywords"])
+        assert scraper._is_excluded_path(fishing, nm["exclude_path_keywords"])
+        assert not scraper._is_excluded_path(hunting, nm["exclude_path_keywords"])
+
+    def test_no_exclusions_excludes_nothing(self, scraper):
+        assert not scraper._is_excluded_path("https://tpwd.texas.gov/fishing/", [])
