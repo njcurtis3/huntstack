@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
-import { getHuntingConditions, getPushFactorsForStates } from '../lib/weather.js'
+import { getHuntingConditions, getPushFactorsForStates, pushFactorAt } from '../lib/weather.js'
 import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 import { FRESH_DAYS, FRESH_DAYS_MONTHLY } from '../lib/freshness.js'
 
@@ -72,13 +72,44 @@ interface CountRow {
   previous_count: number | null
 }
 
-interface SeasonRow {
+export interface SeasonRow {
   state_code: string
   species_slug: string
   season_name: string
   start_date: string
   end_date: string
   bag_limit: unknown
+  applies_to: string | null
+  zone: string | null
+  // Set when seasons for this state+species are open in more than one zone on the target
+  // date. Locations aren't mapped to zones, so the card must not show one zone's dates.
+  other_zones_open?: boolean
+}
+
+// Seasons that cover every duck are stored once (metadata.appliesTo = 'ducks', anchored on
+// mallard because seasons.species_id is required) rather than once per species. A duck with
+// no season of its own falls back to its state's all-duck season. Geese never do, and neither
+// do dusky ducks: they open later than the other ducks, so the fallback would show them open
+// during their closed first days.
+const ALL_DUCKS_KEY = '*ducks'
+const NO_DUCK_FALLBACK = new Set(['canada-goose', 'snow-goose', 'ross-goose', 'white-fronted-goose', 'mottled-duck'])
+
+export function findOpenSeason(seasons: Map<string, SeasonRow>, stateCode: string, speciesSlug: string): SeasonRow | null {
+  const own = seasons.get(`${stateCode}:${speciesSlug}`)
+  if (own) return own
+  if (NO_DUCK_FALLBACK.has(speciesSlug)) return null
+  return seasons.get(`${stateCode}:${ALL_DUCKS_KEY}`) ?? null
+}
+
+// An all-duck season's bag limit is the aggregate; a species with its own cap inside it
+// (5 mallards, 3 pintails, 1 scaup...) shows that cap, with the aggregate kept alongside.
+export function bagLimitFor(season: SeasonRow | null, speciesSlug: string): unknown {
+  const bag = decodeJsonbField<Record<string, unknown>>(season?.bag_limit)
+  if (!bag) return null
+  const limits = bag.speciesLimits as Record<string, number> | undefined
+  const own = limits?.[speciesSlug]
+  if (typeof own !== 'number') return bag
+  return { ...bag, daily: own, aggregateDaily: bag.daily }
 }
 
 // ─── Route ───────────────────────────────────────────────────────────────────
@@ -210,7 +241,9 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
             se.name AS season_name,
             se.start_date,
             se.end_date,
-            se.bag_limit
+            se.bag_limit,
+            se.metadata->>'appliesTo' AS applies_to,
+            se.units->>0 AS zone
           FROM seasons se
           JOIN states s ON se.state_id = s.id
           JOIN species sp ON se.species_id = sp.id
@@ -218,22 +251,23 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
             AND se.year = ${targetYear}
             AND se.start_date <= ${targetDateStr}::date
             AND se.end_date >= ${targetDateStr}::date
-            ${speciesSlug ? sql`AND sp.slug = ${speciesSlug}` : sql`AND sp.category = 'waterfowl'`}
+            ${speciesSlug ? sql`AND (sp.slug = ${speciesSlug} OR se.metadata->>'appliesTo' = 'ducks')` : sql`AND sp.category = 'waterfowl'`}
         `)
         for (const sr of seasonRows as unknown as SeasonRow[]) {
-          const key = `${sr.state_code}:${sr.species_slug}`
-          if (!openSeasonMap.has(key)) openSeasonMap.set(key, sr)
+          const key = `${sr.state_code}:${sr.applies_to === 'ducks' ? ALL_DUCKS_KEY : sr.species_slug}`
+          const existing = openSeasonMap.get(key)
+          if (!existing) openSeasonMap.set(key, sr)
+          else if (existing.zone !== sr.zone) existing.other_zones_open = true
         }
       })(),
       // Push factors for all relevant states
       getPushFactorsForStates(stateCodes, refugesByState),
     ])
 
-    // Build per-state push factor lookup
-    const pushByState = new Map<string, { pushScore: number; coldFrontPresent: boolean; coldFrontIncoming: boolean }>()
-    for (const pf of pushResult.pushFactors) {
-      pushByState.set(pf.stateCode, { pushScore: pf.pushScore, coldFrontPresent: pf.coldFrontPresent, coldFrontIncoming: pf.coldFrontIncoming })
-    }
+    // Push factor for a location: its sub-state region's (e.g. Texas Panhandle) if it
+    // has one, otherwise its state's.
+    const pushFor = (row: CountRow) =>
+      pushFactorAt(row.state_code, row.center_point, pushResult.pushFactors, pushResult.regionalPushFactors)
 
     // ── Step 3: Compute trend + migration status + preliminary score ─────────
     const maxCount = Math.max(...uniqueRows.map(r => r.count ?? 0), 1)
@@ -281,11 +315,10 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
       // Spike: ≥30% increase AND count ≥500
       const isAnomaly = !!(deltaPercent !== null && deltaPercent >= 30 && (row.count ?? 0) >= 500)
 
-      const seasonKey = `${row.state_code}:${row.species_slug}`
-      const season = openSeasonMap.get(seasonKey) ?? null
+      const season = findOpenSeason(openSeasonMap, row.state_code, row.species_slug)
       const seasonOpen = season !== null
 
-      const statePush = pushByState.get(row.state_code)
+      const statePush = pushFor(row)
       const statePushScore = statePush?.pushScore ?? 0
 
       const trendScore = TREND_SCORES[trend] ?? 0
@@ -372,7 +405,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         ? weatherResults[candidateIdx].value as WeatherResult | null
         : null
 
-      const statePush = pushByState.get(item.row.state_code)
+      const statePush = pushFor(item.row)
 
       return {
         rank: i + 1,
@@ -397,10 +430,14 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         coldFrontPresent: statePush?.coldFrontPresent ?? false,
         coldFrontIncoming: statePush?.coldFrontIncoming ?? false,
         seasonOpen: item.seasonOpen,
-        seasonName: item.season?.season_name ?? null,
-        seasonStart: item.season?.start_date ?? null,
-        seasonEnd: item.season?.end_date ?? null,
-        bagLimit: decodeJsonbField(item.season?.bag_limit),
+        // Several zones open at once (e.g. Texas HPMMU and South Zone): say so instead of
+        // showing one zone's name and dates on a location that may be in another zone.
+        seasonName: item.season?.other_zones_open
+          ? "Open in some zones — check your zone's dates"
+          : item.season?.season_name ?? null,
+        seasonStart: item.season?.other_zones_open ? null : item.season?.start_date ?? null,
+        seasonEnd: item.season?.other_zones_open ? null : item.season?.end_date ?? null,
+        bagLimit: bagLimitFor(item.season, item.row.species_slug),
         weatherRating: weatherVal?.rating ?? null,
         temperature: weatherVal?.temperature ?? null,
         temperatureUnit: weatherVal?.temperatureUnit ?? null,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getMigrationStatus } from './hunt.js'
+import { bagLimitFor, findOpenSeason, getMigrationStatus, type SeasonRow } from './hunt.js'
 
 describe('getMigrationStatus', () => {
   it('maps a new location (no prior count) to first_survey', () => {
@@ -40,5 +40,59 @@ describe('getMigrationStatus', () => {
 
   it('falls back to no_data for an unrecognized trend', () => {
     expect(getMigrationStatus('bogus', 10)).toBe('no_data')
+  })
+})
+
+describe('findOpenSeason', () => {
+  const season = (over: Partial<SeasonRow>): SeasonRow => ({
+    state_code: 'TX', species_slug: 'mallard', season_name: 'Regular Season (Split 2) - North Zone',
+    start_date: '2026-12-05', end_date: '2027-01-31', bag_limit: null, applies_to: 'ducks', zone: 'North Zone', ...over,
+  })
+
+  it("uses a species' own season first", () => {
+    const own = season({ species_slug: 'snow-goose', applies_to: null, season_name: 'Light Geese - Western Zone' })
+    const map = new Map([['TX:snow-goose', own], ['TX:*ducks', season({})]])
+    expect(findOpenSeason(map, 'TX', 'snow-goose')).toBe(own)
+  })
+
+  it('falls back to the all-duck season for ducks without their own', () => {
+    const ducks = season({})
+    const map = new Map([['TX:*ducks', ducks]])
+    expect(findOpenSeason(map, 'TX', 'pintail')).toBe(ducks)
+    expect(findOpenSeason(map, 'TX', 'green-winged-teal')).toBe(ducks)
+  })
+
+  it('never opens geese or dusky ducks through the all-duck season', () => {
+    const map = new Map([['TX:*ducks', season({})]])
+    expect(findOpenSeason(map, 'TX', 'canada-goose')).toBeNull()
+    expect(findOpenSeason(map, 'TX', 'mottled-duck')).toBeNull()  // closed the first five days
+  })
+
+  it("doesn't borrow another state's season", () => {
+    const map = new Map([['TX:*ducks', season({})]])
+    expect(findOpenSeason(map, 'OK', 'pintail')).toBeNull()
+  })
+})
+
+describe('bagLimitFor', () => {
+  const aggregate: SeasonRow = {
+    state_code: 'TX', species_slug: 'mallard', season_name: 'x', start_date: '', end_date: '',
+    applies_to: 'ducks', zone: null,
+    bag_limit: { daily: 6, possession: 18, speciesLimits: { mallard: 5, pintail: 3, scaup: 1 } },
+  }
+
+  it("shows a species' own cap inside the aggregate", () => {
+    expect(bagLimitFor(aggregate, 'pintail')).toMatchObject({ daily: 3, aggregateDaily: 6, possession: 18 })
+    expect(bagLimitFor(aggregate, 'scaup')).toMatchObject({ daily: 1, aggregateDaily: 6 })
+  })
+
+  it('shows the aggregate for species without their own cap', () => {
+    expect(bagLimitFor(aggregate, 'gadwall')).toMatchObject({ daily: 6 })
+    expect(bagLimitFor(aggregate, 'gadwall')).not.toHaveProperty('aggregateDaily')
+  })
+
+  it('decodes a double-encoded bag limit and handles no season', () => {
+    expect(bagLimitFor({ ...aggregate, bag_limit: JSON.stringify(aggregate.bag_limit) }, 'mallard')).toMatchObject({ daily: 5 })
+    expect(bagLimitFor(null, 'mallard')).toBeNull()
   })
 })

@@ -120,6 +120,8 @@ type RegionalActivityData = {
 
 type PushFactor = {
   stateCode: string
+  regionId?: string
+  regionName?: string
   pushScore: number
   coldFrontPresent: boolean
   coldFrontIncoming: boolean
@@ -322,6 +324,17 @@ const FLYWAY_COLORS: Record<string, string> = {
 const STATE_LINE_COLORS = ['#1f883d', '#0969da', '#cf222e', '#bf8700', '#8250df', '#bf3989', '#0550ae']
 
 const PUSH_SCORE_LABELS = ['Low', 'Moderate', 'High', 'Extreme']
+
+// Headline pressure = the strongest state or region, as a whole step 0–3 for the
+// label/dot lookups (scores move in 0.5 steps; an incoming front counts half).
+function overallPushScoreOf(factors: { pushScore: number }[]): number {
+  const max = factors.reduce((m, f) => Math.max(m, f.pushScore), 0)
+  return Math.min(3, Math.floor(max))
+}
+
+function pushFactorShortLabel(f: PushFactor): string {
+  return f.regionId === 'TX-HP' ? 'TX Panhandle' : f.regionName ?? f.stateCode
+}
 const PUSH_SCORE_COLORS = [
   'text-earth-500 dark:text-earth-400',
   'text-amber-600 dark:text-amber-400',
@@ -621,23 +634,27 @@ function MigrationIndexPanel({ index, selectedFlyway, selectedSpecies }: {
   )
 }
 
-function PushFactorsPanel({ pushFactors, overallPushScore, states }: {
+function PushFactorsPanel({ pushFactors, regionalPushFactors, overallPushScore, states }: {
   pushFactors: PushFactor[]
+  regionalPushFactors: PushFactor[]
   overallPushScore: number
   states: string[]
 }) {
   const [expanded, setExpanded] = useState(false)
 
-  // Only show states that have any push signal or alerts
-  const activePush = pushFactors.filter(
-    f => f.pushScore > 0 || f.activeAlerts.length > 0
-  )
+  // Only show states that have any push signal or alerts. Regions (e.g. the Texas
+  // Panhandle) always show: their point is that they can differ from the state.
+  const activePush = [
+    ...pushFactors.filter(f => f.pushScore > 0 || f.activeAlerts.length > 0),
+    ...regionalPushFactors,
+  ]
 
-  // Aggregate signals across all states
-  const anyColdFront = pushFactors.some(f => f.coldFrontPresent)
-  const anyColdFrontIncoming = pushFactors.some(f => f.coldFrontIncoming)
-  const anyNorthWind = pushFactors.some(f => f.windIsFromNorth)
-  const anySubFreezing = pushFactors.some(f => f.temperature !== null && f.temperature < 32)
+  // Aggregate signals across all states and regions
+  const all = [...pushFactors, ...regionalPushFactors]
+  const anyColdFront = all.some(f => f.coldFrontPresent)
+  const anyColdFrontIncoming = all.some(f => f.coldFrontIncoming)
+  const anyNorthWind = all.some(f => f.windIsFromNorth)
+  const anySubFreezing = all.some(f => f.temperature !== null && f.temperature < 32)
 
   const scoreLabel = PUSH_SCORE_LABELS[Math.min(overallPushScore, 3)]
   const scoreColor = PUSH_SCORE_COLORS[Math.min(overallPushScore, 3)]
@@ -711,13 +728,17 @@ function PushFactorsPanel({ pushFactors, overallPushScore, states }: {
               <div className="flex flex-wrap gap-2">
                 {activePush.map(f => (
                   <div
-                    key={f.stateCode}
+                    key={f.regionId ?? f.stateCode}
+                    title={f.regionName ? `${f.regionName}: scored on its own weather, separately from the rest of the state` : undefined}
                     className="flex items-center gap-1.5 text-xs rounded px-2 py-1 border"
                     style={{ borderColor: `rgb(var(--color-border-primary))`, color: `rgb(var(--color-text-secondary))` }}
                   >
                     <span className="font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
-                      {f.stateCode}
+                      {pushFactorShortLabel(f)}
                     </span>
+                    {f.regionId && f.pushScore === 0 && (
+                      <span style={{ color: `rgb(var(--color-text-tertiary))` }}>calm</span>
+                    )}
                     {f.coldFrontPresent && <span title="Cold front present">🌬️</span>}
                     {f.coldFrontIncoming && <span title="Cold front incoming">📉</span>}
                     {f.windIsFromNorth && <span title="North wind">{f.windDirection}</span>}
@@ -1263,6 +1284,7 @@ export function MigrationPage() {
   }>>([])
   const [pushFactorsData, setPushFactorsData] = useState<{
     pushFactors: PushFactor[]
+    regionalPushFactors: PushFactor[]
     overallPushScore: number
   } | null>(null)
 
@@ -1465,9 +1487,11 @@ export function MigrationPage() {
           ['Severe', 'Extreme', 'Moderate'].includes(a.severity)
         )
         setWeatherAlerts(relevant.slice(0, 5))
+        const regionalPushFactors = pushData.regionalPushFactors ?? []
         setPushFactorsData({
           pushFactors: pushData.pushFactors,
-          overallPushScore: pushData.overallPushScore,
+          regionalPushFactors,
+          overallPushScore: overallPushScoreOf([...pushData.pushFactors, ...regionalPushFactors]),
         })
       } catch {
         // Silently fail — enhancement only
@@ -1996,6 +2020,7 @@ export function MigrationPage() {
             {pushFactorsData && (
               <PushFactorsPanel
                 pushFactors={pushFactorsData.pushFactors}
+                regionalPushFactors={pushFactorsData.regionalPushFactors}
                 overallPushScore={pushFactorsData.overallPushScore}
                 states={stateOptions.length > 0 ? stateOptions : ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']}
               />

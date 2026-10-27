@@ -305,6 +305,9 @@ export async function getHuntingConditions(
 
 export interface StatePushFactor {
   stateCode: string
+  /** Set on a sub-state region's factor (see PUSH_REGIONS); absent on a statewide one. */
+  regionId?: string
+  regionName?: string
   pushScore: number
   coldFrontPresent: boolean
   coldFrontIncoming: boolean
@@ -361,90 +364,193 @@ export function detectColdFront(periods: { temperature: number; startTime: strin
   return { coldFrontPresent, coldFrontIncoming }
 }
 
+// ─── Sub-state push regions ──────────────────────────────────────────────────
+// A statewide majority vote lets the region with the most refuges decide the
+// score. In Texas, 7 of 13 points sit on the Gulf Coast or in East Texas, so a
+// front over Amarillo never moved the Texas score. A region here is scored on
+// its own points only, alongside (not instead of) the statewide score.
+
+export interface PushRegion {
+  id: string
+  stateCode: string
+  name: string
+  /** Inclusive box; an omitted side is unbounded. */
+  bounds: { minLat?: number; maxLat?: number; minLng?: number; maxLng?: number }
+}
+
+export const PUSH_REGIONS: PushRegion[] = [
+  {
+    // Approximates TPWD's High Plains Mallard Management Unit (east edge US 183,
+    // south edge I-20) — close enough for weather, not for legal zone lookups.
+    id: 'TX-HP',
+    stateCode: 'TX',
+    name: 'Texas Panhandle & South Plains',
+    bounds: { minLat: 32.0, maxLng: -99.5 },
+  },
+]
+
+export function pushRegionFor(stateCode: string, point: { lat: number; lng: number } | null | undefined): PushRegion | null {
+  if (!point) return null
+  return PUSH_REGIONS.find(r => {
+    if (r.stateCode !== stateCode) return false
+    const b = r.bounds
+    return (b.minLat === undefined || point.lat >= b.minLat)
+      && (b.maxLat === undefined || point.lat <= b.maxLat)
+      && (b.minLng === undefined || point.lng >= b.minLng)
+      && (b.maxLng === undefined || point.lng <= b.maxLng)
+  }) ?? null
+}
+
+/** Active NWS alerts covering one point (so a region doesn't inherit the whole state's alerts). */
+async function getAlertsForPoint(lat: number, lng: number): Promise<WeatherAlert[]> {
+  const key = `alerts:pt:${lat.toFixed(2)},${lng.toFixed(2)}`
+  const cached = alertsCache.get(key)
+  if (cached) return cached
+  try {
+    const data = await noaaFetch<NOAAAlertsResponse>(`${NOAA_BASE}/alerts/active?point=${lat.toFixed(4)},${lng.toFixed(4)}`)
+    const alerts: WeatherAlert[] = data.features
+      .filter(f => f.properties.status === 'Actual')
+      .map(f => ({
+        id: f.properties.id,
+        event: f.properties.event,
+        headline: f.properties.headline,
+        description: f.properties.description,
+        severity: f.properties.severity,
+        urgency: f.properties.urgency,
+        effective: f.properties.effective,
+        expires: f.properties.expires,
+        areaDesc: f.properties.areaDesc,
+        senderName: f.properties.senderName,
+      }))
+    alertsCache.set(key, alerts, ALERTS_TTL)
+    return alerts
+  } catch (err) {
+    console.error('NOAA getAlertsForPoint error:', err)
+    return []
+  }
+}
+
+/**
+ * Majority-vote push signals across a set of forecasts. Pure, so it is tested
+ * directly; getPushFactorsForStates only does the fetching around it.
+ */
+export function scorePushForecasts(
+  forecasts: (ForecastPeriod[] | null)[],
+): Omit<StatePushFactor, 'stateCode' | 'regionId' | 'regionName' | 'activeAlerts'> {
+  // Filter to forecasts that returned data
+  const validForecasts = forecasts.filter((f): f is ForecastPeriod[] => f !== null && f.length > 0)
+
+  if (validForecasts.length === 0) {
+    return { pushScore: 0, coldFrontPresent: false, coldFrontIncoming: false, windDirection: null, windIsFromNorth: false, temperature: null, temperatureUnit: null, refugesSampled: 0 }
+  }
+
+  // Majority-vote each binary signal across all sampled refuges
+  let coldFrontPresentCount = 0
+  let coldFrontIncomingCount = 0
+  let northWindCount = 0
+  let subFreezingCount = 0
+  let tempSum = 0
+  let representativeWindDir: string | null = null
+  let representativeTempUnit: string | null = null
+
+  for (const forecast of validForecasts) {
+    const current = forecast.find(p => p.isDaytime) ?? forecast[0]
+    const { coldFrontPresent, coldFrontIncoming } = detectColdFront(forecast)
+    if (coldFrontPresent) coldFrontPresentCount++
+    if (coldFrontIncoming) coldFrontIncomingCount++
+    if (isNorthWind(current.windDirection)) northWindCount++
+    if (current.temperature < 32) subFreezingCount++
+    tempSum += current.temperature
+    // Use the first valid forecast's wind/unit as representative display values
+    if (!representativeWindDir) representativeWindDir = current.windDirection
+    if (!representativeTempUnit) representativeTempUnit = current.temperatureUnit
+  }
+
+  const n = validForecasts.length
+  const majority = n / 2  // >50% of refuges must show signal for it to count
+
+  const coldFrontPresent = coldFrontPresentCount > majority
+  const coldFrontIncoming = !coldFrontPresent && coldFrontIncomingCount > majority
+  const northWind = northWindCount > majority
+  const subFreezing = subFreezingCount > majority
+  const avgTemp = Math.round(tempSum / n)
+
+  // coldFrontIncoming contributes 0.5 — real signal for hunters planning 48h out,
+  // but weighted less than a front that is currently present (1.0)
+  const pushScore = (coldFrontPresent ? 1 : 0) + (coldFrontIncoming ? 0.5 : 0) + (northWind ? 1 : 0) + (subFreezing ? 1 : 0)
+
+  return {
+    pushScore,
+    coldFrontPresent,
+    coldFrontIncoming,
+    windDirection: representativeWindDir,
+    windIsFromNorth: northWind,
+    temperature: avgTemp,
+    temperatureUnit: representativeTempUnit,
+    refugesSampled: n,
+  }
+}
+
+function migrationAlertsFrom(alerts: WeatherAlert[]): StatePushFactor['activeAlerts'] {
+  return alerts
+    .filter(a => ['Extreme', 'Severe', 'Moderate'].includes(a.severity))
+    .slice(0, 3)
+    .map(a => ({ event: a.event, severity: a.severity, headline: a.headline }))
+}
+
 /**
  * Fetch push factors (cold front, north wind, sub-freezing) for a list of states.
  * Accepts a map of state → ALL known refuge center points (not just one).
  * Signals are majority-voted across all refuge forecasts for the state, producing
  * a more geographically representative push score than a single-point query.
- * Both hunt.ts and migration.ts use this shared helper.
+ * Also scores each PUSH_REGIONS region with at least one point, from its own
+ * points and its own alerts (regionalPushFactors). Both hunt.ts and migration.ts
+ * use this shared helper.
  */
 export async function getPushFactorsForStates(
   stateCodes: string[],
   refugesByState: Map<string, { lat: number; lng: number }[]>,
-): Promise<{ pushFactors: StatePushFactor[]; highPushStates: string[] }> {
-  const results = await Promise.allSettled(
+): Promise<{ pushFactors: StatePushFactor[]; regionalPushFactors: StatePushFactor[]; highPushStates: string[] }> {
+  const stateResults = await Promise.allSettled(
     stateCodes.map(async (stateCode): Promise<StatePushFactor> => {
       const coords = refugesByState.get(stateCode) ?? []
       const [forecasts, alerts] = await Promise.all([
         Promise.all(coords.map(cp => getForecast(cp.lat, cp.lng))),
         getAlerts(stateCode),
       ])
+      return { stateCode, ...scorePushForecasts(forecasts), activeAlerts: migrationAlertsFrom(alerts) }
+    })
+  )
 
-      const migrationAlerts = alerts
-        .filter(a => ['Extreme', 'Severe', 'Moderate'].includes(a.severity))
-        .slice(0, 3)
-        .map(a => ({ event: a.event, severity: a.severity, headline: a.headline }))
-
-      // Filter to forecasts that returned data
-      const validForecasts = forecasts.filter((f): f is ForecastPeriod[] => f !== null && f.length > 0)
-
-      if (validForecasts.length === 0) {
-        return { stateCode, pushScore: 0, coldFrontPresent: false, coldFrontIncoming: false, windDirection: null, windIsFromNorth: false, temperature: null, temperatureUnit: null, activeAlerts: migrationAlerts, refugesSampled: 0 }
-      }
-
-      // Majority-vote each binary signal across all sampled refuges
-      let coldFrontPresentCount = 0
-      let coldFrontIncomingCount = 0
-      let northWindCount = 0
-      let subFreezingCount = 0
-      let tempSum = 0
-      let representativeWindDir: string | null = null
-      let representativeTempUnit: string | null = null
-
-      for (const forecast of validForecasts) {
-        const current = forecast.find(p => p.isDaytime) ?? forecast[0]
-        const { coldFrontPresent, coldFrontIncoming } = detectColdFront(forecast)
-        if (coldFrontPresent) coldFrontPresentCount++
-        if (coldFrontIncoming) coldFrontIncomingCount++
-        if (isNorthWind(current.windDirection)) northWindCount++
-        if (current.temperature < 32) subFreezingCount++
-        tempSum += current.temperature
-        // Use the first valid forecast's wind/unit as representative display values
-        if (!representativeWindDir) representativeWindDir = current.windDirection
-        if (!representativeTempUnit) representativeTempUnit = current.temperatureUnit
-      }
-
-      const n = validForecasts.length
-      const majority = n / 2  // >50% of refuges must show signal for it to count
-
-      const coldFrontPresent = coldFrontPresentCount > majority
-      const coldFrontIncoming = !coldFrontPresent && coldFrontIncomingCount > majority
-      const northWind = northWindCount > majority
-      const subFreezing = subFreezingCount > majority
-      const avgTemp = Math.round(tempSum / n)
-
-      // coldFrontIncoming contributes 0.5 — real signal for hunters planning 48h out,
-      // but weighted less than a front that is currently present (1.0)
-      const pushScore = (coldFrontPresent ? 1 : 0) + (coldFrontIncoming ? 0.5 : 0) + (northWind ? 1 : 0) + (subFreezing ? 1 : 0)
-
+  // Runs after the statewide pass on purpose: forecasts are cached per NWS grid
+  // cell, so a region's points cost no extra forecast requests, only alerts.
+  const regionJobs = PUSH_REGIONS
+    .filter(r => stateCodes.includes(r.stateCode))
+    .map(r => ({ region: r, coords: (refugesByState.get(r.stateCode) ?? []).filter(cp => pushRegionFor(r.stateCode, cp)?.id === r.id) }))
+    .filter(j => j.coords.length > 0)
+  const regionResults = await Promise.allSettled(
+    regionJobs.map(async ({ region, coords }): Promise<StatePushFactor> => {
+      const [forecasts, alertLists] = await Promise.all([
+        Promise.all(coords.map(cp => getForecast(cp.lat, cp.lng))),
+        Promise.all(coords.map(cp => getAlertsForPoint(cp.lat, cp.lng))),
+      ])
+      const seen = new Set<string>()
+      const alerts = alertLists.flat().filter(a => (seen.has(a.id) ? false : (seen.add(a.id), true)))
       return {
-        stateCode,
-        pushScore,
-        coldFrontPresent,
-        coldFrontIncoming,
-        windDirection: representativeWindDir,
-        windIsFromNorth: northWind,
-        temperature: avgTemp,
-        temperatureUnit: representativeTempUnit,
-        activeAlerts: migrationAlerts,
-        refugesSampled: n,
+        stateCode: region.stateCode,
+        regionId: region.id,
+        regionName: region.name,
+        ...scorePushForecasts(forecasts),
+        activeAlerts: migrationAlertsFrom(alerts),
       }
     })
   )
 
-  const pushFactors = results
+  const fulfilled = (rs: PromiseSettledResult<StatePushFactor>[]) => rs
     .filter((r): r is PromiseFulfilledResult<StatePushFactor> => r.status === 'fulfilled')
     .map(r => r.value)
+  const pushFactors = fulfilled(stateResults)
+  const regionalPushFactors = fulfilled(regionResults)
 
   // Replace misleading max() with a list of states actually showing meaningful push
   // Threshold 1.5: at minimum two signals present (e.g. north wind + incoming front)
@@ -453,7 +559,24 @@ export async function getPushFactorsForStates(
     .sort((a, b) => b.pushScore - a.pushScore)
     .map(f => f.stateCode)
 
-  return { pushFactors, highPushStates }
+  return { pushFactors, regionalPushFactors, highPushStates }
+}
+
+/** "TX" for a statewide factor, "TX (Texas Panhandle & South Plains only)" for a regional one. */
+export function pushFactorLabel(pf: Pick<StatePushFactor, 'stateCode' | 'regionName'>): string {
+  return pf.regionName ? `${pf.stateCode} (${pf.regionName} only)` : pf.stateCode
+}
+
+/** The push factor that applies at a point: its region's if it has one, else its state's. */
+export function pushFactorAt(
+  stateCode: string,
+  point: { lat: number; lng: number } | null | undefined,
+  pushFactors: StatePushFactor[],
+  regionalPushFactors: StatePushFactor[],
+): StatePushFactor | undefined {
+  const region = pushRegionFor(stateCode, point)
+  return (region && regionalPushFactors.find(f => f.regionId === region.id))
+    ?? pushFactors.find(f => f.stateCode === stateCode)
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

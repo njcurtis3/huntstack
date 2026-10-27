@@ -588,23 +588,29 @@ class ApiClient {
   }
 
   async getMigrationPushFactors(states?: string) {
-    return this.request<{
-      pushFactors: Array<{
-        stateCode: string
-        pushScore: number
-        coldFrontPresent: boolean
-        coldFrontIncoming: boolean
-        windDirection: string | null
-        windIsFromNorth: boolean
-        temperature: number | null
-        temperatureUnit: string | null
-        activeAlerts: Array<{
-          event: string
-          severity: string
-          headline: string | null
-        }>
+    type PushFactorDTO = {
+      stateCode: string
+      /** Set on a sub-state region's factor, e.g. 'TX-HP' (Texas Panhandle & South Plains) */
+      regionId?: string
+      regionName?: string
+      pushScore: number
+      coldFrontPresent: boolean
+      coldFrontIncoming: boolean
+      windDirection: string | null
+      windIsFromNorth: boolean
+      temperature: number | null
+      temperatureUnit: string | null
+      activeAlerts: Array<{
+        event: string
+        severity: string
+        headline: string | null
       }>
-      overallPushScore: number
+    }
+    return this.request<{
+      pushFactors: PushFactorDTO[]
+      /** Absent from APIs older than v0.2.1 */
+      regionalPushFactors?: PushFactorDTO[]
+      highPushStates: string[]
       fetchedAt: string
     }>('/api/migration/push-factors', {
       params: states ? { states } : undefined,

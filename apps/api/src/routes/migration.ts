@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify'
 import { sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
-import { getPushFactorsForStates } from '../lib/weather.js'
+import { getPushFactorsForStates, pushFactorLabel } from '../lib/weather.js'
 import { generateChatResponse, isConfigured } from '../lib/together.js'
 import { getEBirdRegionalCounts, STATE_FLYWAY } from '../lib/ebird.js'
 import { BoundedCache } from '../lib/cache.js'
@@ -104,10 +104,12 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
-    const { pushFactors, highPushStates } = await getPushFactorsForStates(stateCodes, refugesByState)
+    const { pushFactors, regionalPushFactors, highPushStates } = await getPushFactorsForStates(stateCodes, refugesByState)
 
     return {
       pushFactors,
+      // Sub-state regions scored on their own points (today: the Texas Panhandle & South Plains)
+      regionalPushFactors,
       highPushStates,
       fetchedAt: new Date().toISOString(),
     }
@@ -246,15 +248,15 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
           }
         }
 
-        const { pushFactors } = await getPushFactorsForStates(statesInData, refugesByState)
-        const weatherLines = pushFactors.map(pf => {
+        const { pushFactors, regionalPushFactors } = await getPushFactorsForStates(statesInData, refugesByState)
+        const weatherLines = [...pushFactors, ...regionalPushFactors].map(pf => {
           const signals = [
             pf.coldFrontPresent && 'cold front present',
             pf.coldFrontIncoming && 'cold front incoming (48h)',
             pf.windIsFromNorth && `north winds (${pf.windDirection})`,
             pf.temperature !== null && pf.temperature < 32 && `sub-freezing (${pf.temperature}°${pf.temperatureUnit})`,
           ].filter(Boolean).join(', ')
-          return `- ${pf.stateCode}: push score ${pf.pushScore}/3${signals ? ' | Push signals: ' + signals : ''}`
+          return `- ${pushFactorLabel(pf)}: push score ${pf.pushScore}/3${signals ? ' | Push signals: ' + signals : ''}`
         })
         if (weatherLines.length > 0) {
           weatherContext = `\n\nCurrent weather/push conditions:\n${weatherLines.join('\n')}`

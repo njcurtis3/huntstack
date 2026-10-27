@@ -4,7 +4,7 @@ import { isConfigured, generateChatResponse } from '../lib/together.js'
 import { isEmbeddingConfigured, generateEmbedding } from '../lib/embeddings.js'
 import { getDb } from '../lib/db.js'
 import { sql } from 'drizzle-orm'
-import { getPushFactorsForStates } from '../lib/weather.js'
+import { getPushFactorsForStates, pushFactorLabel } from '../lib/weather.js'
 import { chatRequestSchema } from '@huntstack/shared'
 import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 
@@ -60,7 +60,7 @@ const SPECIES_ALIASES: Record<string, string> = {
 
 // Broad category keywords that indicate waterfowl interest
 const WATERFOWL_KEYWORDS = ['duck', 'ducks', 'goose', 'geese', 'waterfowl', 'teal']
-const MIGRATION_KEYWORDS = ['migration', 'migrating', 'flying', 'counts', 'refuge', 'survey', 'birds moving', 'what\'s flying']
+const MIGRATION_KEYWORDS = ['migration', 'migrating', 'flying', 'counts', 'refuge', 'survey', 'birds moving', 'what\'s flying', 'push']
 const LOCATION_KEYWORDS = ['where to hunt', 'where should i hunt', 'public land', 'public hunting', 'wma', 'wildlife management area', 'national forest', 'blm', 'wildlife refuge', 'hunting area', 'hunting location', 'place to hunt', 'spots to hunt']
 const WEATHER_KEYWORDS = ['weather', 'forecast', 'temperature', 'wind', 'cold front', 'rain', 'snow', 'freeze', 'conditions', 'hunting conditions', 'front']
 
@@ -82,7 +82,7 @@ interface StructuredContext {
   refugeCounts: Array<Record<string, unknown>>
   locations: Array<Record<string, unknown>>
   weather: Array<Record<string, unknown>>
-  pushFactors: Array<{ stateCode: string; pushScore: number; coldFrontPresent: boolean; coldFrontIncoming: boolean; windDirection: string | null; windIsFromNorth: boolean; temperature: number | null }>
+  pushFactors: Array<{ stateCode: string; regionName?: string; pushScore: number; coldFrontPresent: boolean; coldFrontIncoming: boolean; windDirection: string | null; windIsFromNorth: boolean; temperature: number | null }>
   sources: Array<{ title: string; url?: string; snippet: string }>
   lastScrapedByState: Record<string, string | null>
 }
@@ -395,10 +395,19 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
         const stateFilter = stateCodes.length > 0
           ? sql`st.code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})`
           : sql`TRUE`
+        // A question about one duck (pintails, teal) is also answered by the all-duck seasons,
+        // which are stored once on mallard with metadata.appliesTo = 'ducks'.
         const speciesFilter = speciesSlugs.length > 0
-          ? sql`sp.slug IN (${sql.join(speciesSlugs.map(s => sql`${s}`), sql`, `)})`
+          ? sql`(sp.slug IN (${sql.join(speciesSlugs.map(s => sql`${s}`), sql`, `)}) OR se.metadata->>'appliesTo' = 'ducks')`
           : sql`TRUE`
+        // Season year = the year the season opens; from August on, that's this calendar year.
+        const now = new Date()
+        const seasonYear = now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1
 
+        // Only each state's current season (its latest year up to seasonYear), in date order.
+        // Without the year filter and with newest-first ordering capped at 15 rows, older years
+        // crowded in and the earliest-opening seasons — Texas's Panhandle opener among them —
+        // were the ones cut, so chat answered "dates vary by zone" without giving any.
         const rows = await db.execute(sql`
           SELECT
             se.name AS season_name,
@@ -411,13 +420,17 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
             se.restrictions,
             se.source_url,
             st.code AS state_code,
-            sp.name AS species_name
+            CASE WHEN se.metadata->>'appliesTo' = 'ducks' THEN 'All ducks' ELSE sp.name END AS species_name
           FROM seasons se
           JOIN states st ON se.state_id = st.id
           JOIN species sp ON se.species_id = sp.id
           WHERE (${stateFilter}) AND (${speciesFilter})
-          ORDER BY se.start_date DESC
-          LIMIT 15
+            AND se.year = (
+              SELECT max(se2.year) FROM seasons se2
+              WHERE se2.state_id = se.state_id AND se2.year <= ${seasonYear}
+            )
+          ORDER BY st.code, se.start_date ASC
+          LIMIT 40
         `)
         result.seasons = rows as unknown as Array<Record<string, unknown>>
 
@@ -637,7 +650,8 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     }
 
     // ── Push factors (migration pressure signals) ─────────────────────────
-    if (isWaterfowl || isMigrationQuery) {
+    // Weather questions too: "any cold front in the Panhandle?" is a push-factor question
+    if (isWaterfowl || isMigrationQuery || isWeatherQuery) {
       queries.push((async () => {
         try {
           const targetStates = stateCodes.length > 0 ? stateCodes : ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
@@ -665,9 +679,10 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
             }
           }
 
-          const { pushFactors } = await getPushFactorsForStates(targetStates, refugesByState)
-          result.pushFactors = pushFactors.map(pf => ({
+          const { pushFactors, regionalPushFactors } = await getPushFactorsForStates(targetStates, refugesByState)
+          result.pushFactors = [...pushFactors, ...regionalPushFactors].map(pf => ({
             stateCode: pf.stateCode,
+            regionName: pf.regionName,
             pushScore: pf.pushScore,
             coldFrontPresent: pf.coldFrontPresent,
             coldFrontIncoming: pf.coldFrontIncoming,
@@ -701,10 +716,16 @@ function formatStructuredContext(ctx: StructuredContext): string {
       const endDate = s.end_date ? new Date(s.end_date as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '?'
       const bag = s.bag_limit ? formatBagLimit(s.bag_limit) : ''
       const hours = s.shooting_hours ? `, hours: ${formatShootingHours(s.shooting_hours)}` : ''
-      const restrictions = s.restrictions ? `, restrictions: ${(s.restrictions as string).substring(0, 100)}` : ''
+      // 400, not 100: Texas's restriction sentence lists the duck caps, and cutting it after
+      // "3 wood ducks" left the model to guess the pintail limit (it guessed wrong).
+      const restrictions = s.restrictions ? `, restrictions: ${(s.restrictions as string).substring(0, 400)}` : ''
       return `- ${s.state_code} | ${s.species_name}: ${s.season_name} (${startDate} - ${endDate})${bag}${hours}${restrictions}`
     })
-    sections.push(`## Current Seasons\n${lines.join('\n')}`)
+    // Zone names alone don't tell the model where a hunter is; say where the Panhandle zone is
+    const zoneNote = ctx.seasons.some(s => String(s.season_name).includes('High Plains Mallard Management Unit'))
+      ? '\nTexas duck zones: the High Plains Mallard Management Unit covers the Texas Panhandle and South Plains (e.g. Amarillo, Lubbock). Give the dates for the zone the user asks about.'
+      : ''
+    sections.push(`## Current Seasons\n${lines.join('\n')}${zoneNote}`)
   }
 
   // Licenses
@@ -783,14 +804,18 @@ function formatStructuredContext(ctx: StructuredContext): string {
     const lines = ctx.pushFactors.map(pf => {
       const signals: string[] = []
       if (pf.coldFrontPresent) signals.push('cold front arriving now')
-      if (pf.coldFrontIncoming) signals.push('cold front expected within 4 days')
+      if (pf.coldFrontIncoming) signals.push('cold front expected within 48 hours')
       if (pf.windIsFromNorth) signals.push(`north wind (${pf.windDirection})`)
       if (pf.temperature !== null && pf.temperature < 32) signals.push(`sub-freezing (${pf.temperature}°F)`)
-      const label = pf.pushScore >= 3 ? 'HIGH' : pf.pushScore === 2 ? 'MODERATE' : pf.pushScore === 1 ? 'LOW' : 'NONE'
+      // Scores step by 0.5 (an incoming front counts half), so compare with >= rather than ===
+      const label = pf.pushScore >= 3 ? 'HIGH' : pf.pushScore >= 2 ? 'MODERATE' : pf.pushScore > 0 ? 'LOW' : 'NONE'
       const signalStr = signals.length > 0 ? ` — ${signals.join(', ')}` : ' — no active push signals'
-      return `- ${pf.stateCode}: push score ${pf.pushScore}/3 (${label})${signalStr}`
+      return `- ${pushFactorLabel(pf)}: push score ${pf.pushScore}/3 (${label})${signalStr}`
     })
-    sections.push(`## Migration Push Factors\nHigher push scores mean birds are more likely to be actively moving. Cold fronts, north winds, and sub-freezing temps are the primary triggers.\n${lines.join('\n')}`)
+    const regionNote = ctx.pushFactors.some(pf => pf.regionName)
+      ? '\nA line marked "only" covers just that part of the state and is scored from its own weather; the state line is the statewide majority. For a location inside the region, use the region line.'
+      : ''
+    sections.push(`## Migration Push Factors\nHigher push scores mean birds are more likely to be actively moving. Cold fronts, north winds, and sub-freezing temps are the primary triggers.${regionNote}\n${lines.join('\n')}`)
   }
 
   return sections.join('\n\n')
@@ -808,6 +833,17 @@ export function formatBagLimit(bagLimit: unknown): string {
   if ('daily' in bl) parts.push(`daily: ${fmt(bl.daily)}`)
   if ('possession' in bl) parts.push(`possession: ${fmt(bl.possession)}`)
   if ('season' in bl) parts.push(`season: ${fmt(bl.season)}`)
+  // Per-species caps inside an aggregate (Texas: 6 ducks, no more than 5 mallards, 3 pintails...).
+  // Spelled out per species, largest first: jsonb reorders keys (shortest first), and a bare
+  // "scaup 1, mallard 5, pintail 3" list led the model to shift a number onto the wrong species.
+  const limits = bl.speciesLimits as Record<string, unknown> | undefined
+  if (limits && typeof limits === 'object' && Object.keys(limits).length > 0) {
+    const caps = Object.entries(limits)
+      .sort(([, a], [, b]) => Number(b) - Number(a))
+      .map(([slug, n]) => `${slug.replace(/-/g, ' ')}: ${fmt(n)} per day`)
+    parts.push(`within that, no more than ${caps.join('; ')}`)
+  }
+  if (typeof bl.notes === 'string' && bl.notes) parts.push(bl.notes)
   return parts.length > 0 ? `, bag limit: ${parts.join(', ')}` : ''
 }
 

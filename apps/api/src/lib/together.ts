@@ -34,6 +34,9 @@ export async function generateChatResponse(
     body: JSON.stringify({
       model: process.env.LLM_MODEL || DEFAULT_MODEL,
       max_tokens: 1024,
+      // Low temperature: answers are mostly dates and bag limits read from the context, where a
+      // creative paraphrase is a wrong number.
+      temperature: 0.2,
       messages: [
         { role: 'system', content: systemPrompt },
         ...(history ?? []),

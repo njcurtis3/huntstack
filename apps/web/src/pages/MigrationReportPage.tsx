@@ -236,7 +236,12 @@ export function MigrationReportPage() {
         if (states.length > 0) {
           try {
             const pd = await api.getMigrationPushFactors(states.join(','))
-            if (!cancelled) setPushData(pd)
+            if (!cancelled) {
+              // Headline = strongest state or region as a whole step 0–3 (scores move in 0.5 steps)
+              const all = [...pd.pushFactors, ...(pd.regionalPushFactors ?? [])]
+              const max = all.reduce((m, f) => Math.max(m, f.pushScore), 0)
+              setPushData({ pushFactors: all, overallPushScore: Math.min(3, Math.floor(max)) })
+            }
           } catch { /* optional */ }
         }
       } catch { /* silently handle */ } finally {

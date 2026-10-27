@@ -153,3 +153,16 @@ describe('truncateHistory', () => {
     expect(result.map(m => m.role)).toEqual(['user', 'assistant'])
   })
 })
+
+describe('formatBagLimit — species caps inside an aggregate', () => {
+  it('lists the per-species limits and notes', () => {
+    const result = formatBagLimit({
+      daily: 6, possession: 18,
+      speciesLimits: { mallard: 5, pintail: 3, 'mottled-duck': 1 },
+      notes: 'No more than 2 of the 5 mallards may be hens.',
+    })
+    expect(result).toBe(
+      ', bag limit: daily: 6, possession: 18, within that, no more than mallard: 5 per day; pintail: 3 per day; mottled duck: 1 per day, No more than 2 of the 5 mallards may be hens.',
+    )
+  })
+})

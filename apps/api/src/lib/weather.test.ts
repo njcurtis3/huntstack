@@ -5,7 +5,100 @@ import {
   detectColdFront,
   isNorthWind,
   parseWindSpeed,
+  pushFactorAt,
+  pushFactorLabel,
+  pushRegionFor,
+  scorePushForecasts,
+  type ForecastPeriod,
+  type StatePushFactor,
 } from './weather.js'
+
+// Real Texas scoring points from the locations table
+const AMARILLO = { lat: 35.15, lng: -101.85 }
+const LUBBOCK = { lat: 33.58, lng: -101.87 }
+const MULESHOE = { lat: 33.95, lng: -102.77 }
+const ANAHUAC = { lat: 29.61, lng: -94.53 }
+const CADDO_LAKE = { lat: 32.69, lng: -94.09 }
+const LAGUNA_ATASCOSA = { lat: 26.22, lng: -97.35 }
+
+describe('pushRegionFor', () => {
+  it('puts Panhandle and South Plains points in TX-HP', () => {
+    for (const p of [AMARILLO, LUBBOCK, MULESHOE]) expect(pushRegionFor('TX', p)?.id).toBe('TX-HP')
+  })
+
+  it('leaves Gulf Coast, East Texas and Rio Grande Valley points statewide', () => {
+    for (const p of [ANAHUAC, CADDO_LAKE, LAGUNA_ATASCOSA]) expect(pushRegionFor('TX', p)).toBeNull()
+  })
+
+  it('only matches its own state, and needs a point', () => {
+    // Clovis, NM sits inside the same lat/lng box
+    expect(pushRegionFor('NM', { lat: 34.4, lng: -103.2 })).toBeNull()
+    expect(pushRegionFor('TX', null)).toBeNull()
+  })
+})
+
+function forecast(opts: { startTemp: number; endTemp: number; wind: string }): ForecastPeriod[] {
+  const now = Date.now()
+  const hour = 60 * 60 * 1000
+  return [0, 12].map((h, i) => ({
+    name: `p${i}`,
+    startTime: new Date(now + h * hour).toISOString(),
+    endTime: new Date(now + (h + 12) * hour).toISOString(),
+    isDaytime: i === 0,
+    temperature: i === 0 ? opts.startTemp : opts.endTemp,
+    temperatureUnit: 'F',
+    windSpeed: '15 mph',
+    windDirection: opts.wind,
+    shortForecast: '',
+    detailedForecast: '',
+    precipitationChance: null,
+    humidity: 0,
+    dewpoint: 0,
+  }))
+}
+
+describe('scorePushForecasts', () => {
+  const front = forecast({ startTemp: 30, endTemp: 15, wind: 'N' })   // front now + north wind + sub-freezing
+  const calm = forecast({ startTemp: 75, endTemp: 72, wind: 'SSW' })
+
+  it('scores a region on its own points', () => {
+    const r = scorePushForecasts([front, front, front])
+    expect(r).toMatchObject({ pushScore: 3, coldFrontPresent: true, windIsFromNorth: true, refugesSampled: 3 })
+  })
+
+  it('lets a calm majority outvote a front (the statewide-Texas problem)', () => {
+    // 6 Panhandle points under a front, 7 Gulf/East points calm
+    const r = scorePushForecasts([...Array(6).fill(front), ...Array(7).fill(calm)])
+    expect(r.pushScore).toBe(0)
+  })
+
+  it('ignores failed forecasts and returns zero when none succeed', () => {
+    expect(scorePushForecasts([null, front, []]).refugesSampled).toBe(1)
+    expect(scorePushForecasts([null])).toMatchObject({ pushScore: 0, refugesSampled: 0, temperature: null })
+  })
+})
+
+describe('pushFactorAt', () => {
+  const base = { coldFrontPresent: false, coldFrontIncoming: false, windDirection: null, windIsFromNorth: false, temperature: null, temperatureUnit: null, activeAlerts: [], refugesSampled: 1 }
+  const tx: StatePushFactor = { ...base, stateCode: 'TX', pushScore: 0 }
+  const ok: StatePushFactor = { ...base, stateCode: 'OK', pushScore: 1 }
+  const hp: StatePushFactor = { ...base, stateCode: 'TX', regionId: 'TX-HP', regionName: 'Texas Panhandle & South Plains', pushScore: 3 }
+
+  it('uses the region factor inside the region', () => {
+    expect(pushFactorAt('TX', AMARILLO, [tx, ok], [hp])?.pushScore).toBe(3)
+  })
+
+  it('uses the state factor outside it, or when the region was not scored', () => {
+    expect(pushFactorAt('TX', ANAHUAC, [tx, ok], [hp])?.pushScore).toBe(0)
+    expect(pushFactorAt('TX', AMARILLO, [tx, ok], [])?.pushScore).toBe(0)
+    expect(pushFactorAt('OK', { lat: 36.8, lng: -98.2 }, [tx, ok], [hp])?.pushScore).toBe(1)
+  })
+
+  it('labels regional factors so chat and the weekly summary can tell them apart', () => {
+    expect(pushFactorLabel(tx)).toBe('TX')
+    expect(pushFactorLabel(hp)).toBe('TX (Texas Panhandle & South Plains only)')
+  })
+})
 
 describe('isNorthWind', () => {
   it('matches north-quadrant directions case-insensitively', () => {
