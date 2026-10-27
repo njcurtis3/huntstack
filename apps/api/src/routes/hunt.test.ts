@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bagLimitFor, findOpenSeason, getMigrationStatus, type SeasonRow } from './hunt.js'
+import { bagLimitFor, findOpenSeason, getMigrationStatus, seasonDatesApply, seasonDisplayName, type SeasonRow } from './hunt.js'
 
 describe('getMigrationStatus', () => {
   it('maps a new location (no prior count) to first_survey', () => {
@@ -94,5 +94,31 @@ describe('bagLimitFor', () => {
   it('decodes a double-encoded bag limit and handles no season', () => {
     expect(bagLimitFor({ ...aggregate, bag_limit: JSON.stringify(aggregate.bag_limit) }, 'mallard')).toMatchObject({ daily: 5 })
     expect(bagLimitFor(null, 'mallard')).toBeNull()
+  })
+})
+
+describe('seasonDisplayName / seasonDatesApply', () => {
+  const base: SeasonRow = {
+    state_code: 'OK', species_slug: 'mallard', season_name: 'Regular Duck Season - Panhandle Counties',
+    start_date: '2026-10-10', end_date: '2027-01-13', bag_limit: null, applies_to: 'ducks', zone: 'Panhandle Counties',
+  }
+
+  it('names the zone and hides its dates when only one zone is open', () => {
+    // Oct 27: only the Oklahoma Panhandle is open; Salt Plains NWR is in Zone 1
+    expect(seasonDisplayName(base)).toBe("Open only in Panhandle Counties — check your zone's dates")
+    expect(seasonDatesApply(base)).toBe(false)
+  })
+
+  it('says several zones are open when they are', () => {
+    expect(seasonDisplayName({ ...base, other_zones_open: true })).toBe("Open in some zones — check your zone's dates")
+    expect(seasonDatesApply({ ...base, other_zones_open: true })).toBe(false)
+  })
+
+  it('shows statewide seasons as they are', () => {
+    const statewide = { ...base, state_code: 'AR', season_name: 'Regular Duck Season (Split 1) - Statewide', zone: 'Statewide' }
+    expect(seasonDisplayName(statewide)).toBe('Regular Duck Season (Split 1) - Statewide')
+    expect(seasonDatesApply(statewide)).toBe(true)
+    expect(seasonDatesApply({ ...statewide, zone: null })).toBe(true)
+    expect(seasonDisplayName(null)).toBeNull()
   })
 })

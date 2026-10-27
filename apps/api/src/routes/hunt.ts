@@ -101,6 +101,21 @@ export function findOpenSeason(seasons: Map<string, SeasonRow>, stateCode: strin
   return seasons.get(`${stateCode}:${ALL_DUCKS_KEY}`) ?? null
 }
 
+// Locations aren't mapped to zones, so a season open in only part of the state must not be
+// shown as open at a location that may sit in another zone (e.g. Oklahoma's Panhandle season
+// opens Oct 10 while Salt Plains NWR, in Zone 1, opens Nov 14). Returns the card's season name.
+export function seasonDisplayName(season: SeasonRow | null): string | null {
+  if (!season) return null
+  if (season.other_zones_open) return "Open in some zones — check your zone's dates"
+  if (season.zone && !/statewide/i.test(season.zone)) return `Open only in ${season.zone} — check your zone's dates`
+  return season.season_name
+}
+
+/** True when the card should show the season's own dates (statewide, or no zone recorded). */
+export function seasonDatesApply(season: SeasonRow | null): boolean {
+  return !!season && !season.other_zones_open && (!season.zone || /statewide/i.test(season.zone))
+}
+
 // An all-duck season's bag limit is the aggregate; a species with its own cap inside it
 // (5 mallards, 3 pintails, 1 scaup...) shows that cap, with the aggregate kept alongside.
 export function bagLimitFor(season: SeasonRow | null, speciesSlug: string): unknown {
@@ -430,13 +445,11 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         coldFrontPresent: statePush?.coldFrontPresent ?? false,
         coldFrontIncoming: statePush?.coldFrontIncoming ?? false,
         seasonOpen: item.seasonOpen,
-        // Several zones open at once (e.g. Texas HPMMU and South Zone): say so instead of
-        // showing one zone's name and dates on a location that may be in another zone.
-        seasonName: item.season?.other_zones_open
-          ? "Open in some zones — check your zone's dates"
-          : item.season?.season_name ?? null,
-        seasonStart: item.season?.other_zones_open ? null : item.season?.start_date ?? null,
-        seasonEnd: item.season?.other_zones_open ? null : item.season?.end_date ?? null,
+        // Zoned seasons: name the zone (or say several are open) instead of showing one zone's
+        // dates on a location that may be in another zone. See seasonDisplayName.
+        seasonName: seasonDisplayName(item.season),
+        seasonStart: seasonDatesApply(item.season) ? item.season!.start_date : null,
+        seasonEnd: seasonDatesApply(item.season) ? item.season!.end_date : null,
         bagLimit: bagLimitFor(item.season, item.row.species_slug),
         weatherRating: weatherVal?.rating ?? null,
         temperature: weatherVal?.temperature ?? null,

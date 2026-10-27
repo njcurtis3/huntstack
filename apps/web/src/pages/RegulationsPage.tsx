@@ -324,7 +324,7 @@ function CompareTable({ stateCodes, statesList }: { stateCodes: string[], states
       if (dataMap[code] && !dataMap[code].loading) return
       setDataMap(prev => ({ ...prev, [code]: { seasons: [], licenses: [], loading: true, error: null } }))
       Promise.all([
-        api.getStateSeasons(code, { year: 2024 }),
+        api.getStateSeasons(code, { year: SEASON_YEAR }),
         api.getStateLicenses(code),
       ]).then(([seasonsResp, licensesResp]) => {
         setDataMap(prev => ({
