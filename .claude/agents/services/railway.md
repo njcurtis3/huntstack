@@ -1,6 +1,7 @@
 # Railway
 
-Hosts the API (`apps/api`), nixpacks build via `railway.toml`, auto-deploys on
+Hosts the API (`apps/api`), Railpack build configured by `.railway/railway.ts`
+(Railway IaC; replaced `railway.toml` 2026-10-27), auto-deploys on
 push to `main`. Deploys are gated on the health check `/api/health/ready`
 (DB reachability), so a failed deploy usually means the DB is unreachable.
 
@@ -133,6 +134,6 @@ Billing, plan usage, and spend history are dashboard-only.
 
 ## Repo cross-reference
 
-`railway.toml` deliberately omits `pnpm db:migrate`. That is a documented
+`.railway/railway.ts` (like the `railway.toml` before it) deliberately omits `pnpm db:migrate`. That is a documented
 decision, not a gap — see `RUNBOOK.md` "Why migrations aren't automated" and
 `CONSTRAINTS.md` §6.8. **Do not report its absence as a misconfiguration.**
