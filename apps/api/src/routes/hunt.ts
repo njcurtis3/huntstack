@@ -81,9 +81,20 @@ export interface SeasonRow {
   bag_limit: unknown
   applies_to: string | null
   zone: string | null
-  // Set when seasons for this state+species are open in more than one zone on the target
-  // date. Locations aren't mapped to zones, so the card must not show one zone's dates.
+  // Set by findOpenSeason. zone_matched: the season's zone is one the location is known to be
+  // in (locations.metadata.huntZones), so its name and dates apply there. other_zones_open: the
+  // location's zones are unknown and seasons are open in more than one zone, so the card must
+  // not show one zone's dates.
+  zone_matched?: boolean
   other_zones_open?: boolean
+}
+
+const isStatewide = (zone: string | null) => !zone || /statewide/i.test(zone)
+
+/** locations.metadata.huntZones: the season zone names (seasons.units) a location lies in. */
+export function huntZonesOf(metadata: unknown): string[] | null {
+  const zones = decodeJsonbField<Record<string, unknown>>(metadata)?.huntZones
+  return Array.isArray(zones) && zones.length > 0 && zones.every(z => typeof z === 'string') ? zones as string[] : null
 }
 
 // Seasons that cover every duck are stored once (metadata.appliesTo = 'ducks', anchored on
@@ -94,26 +105,46 @@ export interface SeasonRow {
 const ALL_DUCKS_KEY = '*ducks'
 const NO_DUCK_FALLBACK = new Set(['canada-goose', 'snow-goose', 'ross-goose', 'white-fronted-goose', 'mottled-duck'])
 
-export function findOpenSeason(seasons: Map<string, SeasonRow>, stateCode: string, speciesSlug: string): SeasonRow | null {
-  const own = seasons.get(`${stateCode}:${speciesSlug}`)
+// seasons: every season open on the target date, keyed `${state}:${species}` (or the all-duck key).
+// zones: the location's zones, or null when it hasn't been mapped. A mapped location only sees
+// statewide seasons and seasons in its own zones; a species whose own seasons are all in other
+// zones (e.g. NM Pacific Flyway scaup at a Central Flyway refuge) falls back to the all-duck season.
+export function findOpenSeason(
+  seasons: Map<string, SeasonRow[]>,
+  stateCode: string,
+  speciesSlug: string,
+  zones: string[] | null = null,
+): SeasonRow | null {
+  const pick = (rows: SeasonRow[] | undefined): SeasonRow | null => {
+    if (!rows || rows.length === 0) return null
+    if (zones) {
+      const hit = rows.find(r => isStatewide(r.zone) || zones.includes(r.zone!))
+      return hit ? { ...hit, zone_matched: true } : null
+    }
+    const first = rows[0]
+    return rows.some(r => r.zone !== first.zone) ? { ...first, other_zones_open: true } : first
+  }
+  const own = pick(seasons.get(`${stateCode}:${speciesSlug}`))
   if (own) return own
   if (NO_DUCK_FALLBACK.has(speciesSlug)) return null
-  return seasons.get(`${stateCode}:${ALL_DUCKS_KEY}`) ?? null
+  return pick(seasons.get(`${stateCode}:${ALL_DUCKS_KEY}`))
 }
 
-// Locations aren't mapped to zones, so a season open in only part of the state must not be
-// shown as open at a location that may sit in another zone (e.g. Oklahoma's Panhandle season
-// opens Oct 10 while Salt Plains NWR, in Zone 1, opens Nov 14). Returns the card's season name.
+// For a location with no zone mapping, a season open in only part of the state must not be
+// shown as open there: it may sit in another zone. Returns the card's season name.
 export function seasonDisplayName(season: SeasonRow | null): string | null {
   if (!season) return null
+  if (season.zone_matched) return season.season_name
   if (season.other_zones_open) return "Open in some zones — check your zone's dates"
-  if (season.zone && !/statewide/i.test(season.zone)) return `Open only in ${season.zone} — check your zone's dates`
+  if (!isStatewide(season.zone)) return `Open only in ${season.zone} — check your zone's dates`
   return season.season_name
 }
 
-/** True when the card should show the season's own dates (statewide, or no zone recorded). */
+/** True when the card should show the season's own dates (zone matched, statewide, or no zone recorded). */
 export function seasonDatesApply(season: SeasonRow | null): boolean {
-  return !!season && !season.other_zones_open && (!season.zone || /statewide/i.test(season.zone))
+  if (!season) return false
+  if (season.zone_matched) return true
+  return !season.other_zones_open && isStatewide(season.zone)
 }
 
 // An all-duck season's bag limit is the aggregate; a species with its own cap inside it
@@ -234,7 +265,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
     const uniqueRows = [...locationMap.values()]
 
     // ── Step 2: Query open seasons + fetch push factors in parallel ─────────
-    const openSeasonMap = new Map<string, SeasonRow>()
+    const openSeasonMap = new Map<string, SeasonRow[]>()
 
     // Build refugesByState map — collect ALL refuge coords per state for multi-point push scoring
     const refugesByState = new Map<string, { lat: number; lng: number }[]>()
@@ -272,9 +303,9 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         `)
         for (const sr of seasonRows as unknown as SeasonRow[]) {
           const key = `${sr.state_code}:${sr.applies_to === 'ducks' ? ALL_DUCKS_KEY : sr.species_slug}`
-          const existing = openSeasonMap.get(key)
-          if (!existing) openSeasonMap.set(key, sr)
-          else if (existing.zone !== sr.zone) existing.other_zones_open = true
+          const list = openSeasonMap.get(key)
+          if (list) list.push(sr)
+          else openSeasonMap.set(key, [sr])
         }
       })(),
       // Push factors for all relevant states
@@ -332,7 +363,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
       // Spike: ≥30% increase AND count ≥500
       const isAnomaly = !!(deltaPercent !== null && deltaPercent >= 30 && (row.count ?? 0) >= 500)
 
-      const season = findOpenSeason(openSeasonMap, row.state_code, row.species_slug)
+      const season = findOpenSeason(openSeasonMap, row.state_code, row.species_slug, huntZonesOf(row.location_metadata))
       const seasonOpen = season !== null
 
       const statePush = pushFor(row)
@@ -432,6 +463,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         locationType: item.row.location_type,
         state: item.row.state_code,
         flyway: (meta as Record<string, unknown> | null)?.flyway as string | null ?? null,
+        huntZones: huntZonesOf(meta),
         centerPoint: cp,
         websiteUrl: item.row.website_url,
         species: item.row.species_slug,

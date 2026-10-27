@@ -770,10 +770,13 @@ function formatStructuredContext(ctx: StructuredContext): string {
       const type = (l.location_type as string || '').replace(/_/g, ' ')
       const acres = l.acreage ? `, ${Number(l.acreage).toLocaleString()} acres` : ''
       const desc = l.description ? ` — ${(l.description as string).substring(0, 100)}` : ''
-      const flyway = (l.metadata as Record<string, unknown> | null)?.flyway
-      const flywayStr = flyway ? `, ${flyway} flyway` : ''
+      const meta = decodeJsonbField<Record<string, unknown>>(l.metadata)
+      const flywayStr = meta?.flyway ? `, ${meta.flyway} flyway` : ''
+      // Season zones the location lies in, so the model can pick that zone's dates
+      const zones = Array.isArray(meta?.huntZones) ? (meta!.huntZones as string[]) : []
+      const zoneStr = zones.length > 0 ? `, season zones: ${zones.join(' / ')}` : ''
       const restrictions = l.restrictions ? `, restrictions: ${(l.restrictions as string).substring(0, 80)}` : ''
-      return `- ${l.name} (${l.state_code}, ${type}${acres}${flywayStr})${desc}${restrictions}`
+      return `- ${l.name} (${l.state_code}, ${type}${acres}${flywayStr}${zoneStr})${desc}${restrictions}`
     })
     sections.push(`## Public Hunting Locations\n${lines.join('\n')}`)
   }

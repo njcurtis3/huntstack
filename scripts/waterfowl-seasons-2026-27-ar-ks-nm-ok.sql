@@ -24,6 +24,7 @@
 --       (first duck segment ends Nov 29: AGFC corrected a Dec 1 misprint,
 --        https://www.agfc.com/news/duck-season-error-in-two-agfc-publications/)
 --   KS  https://www.ksoutdoors.gov/outdoor-activities/hunting-in-kansas/when-to-hunt
+--       https://www.ksoutdoors.gov/outdoor-activities/hunting-in-kansas/what-to-hunt/migratory-birds/ducks (possession 18)
 --       (read in a browser: the site refuses automated requests)
 --   NM  2026-2027 New Mexico Migratory Game Bird Hunting Rules and Info (PDF, rev. 2026-07-13)
 --       https://wildlife.dgf.nm.gov/download/2026-2027-new-mexico-migratory-game-bird-hunting-rules-and-info/
@@ -59,9 +60,11 @@ bags(key, b, r) AS (VALUES
      'notes', 'No more than 2 of the 4 mallards may be hens; 2 black ducks. Mergansers are a separate limit of 5 (no more than 2 hooded). Coots 15. All other species: 6, including teal.'),
    '6 ducks: no more than 4 mallards (2 hens), 1 scaup, 3 wood ducks, 3 pintails, 2 redheads, 2 canvasbacks, 2 black ducks and 1 mottled duck. Mergansers: 5 (2 hooded). Coots: 15. Possession three times the daily limit. On most WMAs hunting ends at noon during the regular duck season.'),
   ('KS', jsonb_build_object('daily', 6, 'possession', 18,
-     'speciesLimits', jsonb_build_object('mallard', 5, 'wood-duck', 3, 'pintail', 3, 'redhead', 2, 'canvasback', 2, 'scaup', 2),
-     'notes', 'No more than 2 of the 5 mallards may be hens. Includes mergansers. Coots 15. Possession 3x daily (federal rule; KDWP lists daily limits only).'),
-   '6 ducks and mergansers: no more than 5 mallards (2 hens), 3 wood ducks, 3 pintails, 2 redheads, 2 canvasbacks and 2 scaup. Coots: 15. From Sept. 25, 2026 nonresidents must stop at 11:59 a.m. (except teal and the light goose conservation order).'),
+     -- Scaup 1: KDWP's Ducks page and the Central Flyway framework (1 scaup) say 1; its When to
+     -- Hunt page says 2. OK, NM and TX (all Central Flyway) list 1 for 2026-27.
+     'speciesLimits', jsonb_build_object('mallard', 5, 'wood-duck', 3, 'pintail', 3, 'redhead', 2, 'canvasback', 2, 'scaup', 1),
+     'notes', 'No more than 2 of the 5 mallards may be hens. Includes mergansers. Coots 15 (45 possession). Scaup: KDWP''s When to Hunt page says 2, its Ducks page and the federal Central Flyway limit say 1; confirm with KDWP.'),
+   '6 ducks and mergansers: no more than 5 mallards (2 hens), 3 wood ducks, 3 pintails, 2 redheads, 2 canvasbacks and 1 scaup (KDWP''s When to Hunt page says 2; confirm). Coots: 15. Possession 18. From Sept. 25, 2026 nonresidents must stop at 11:59 a.m. (except teal and the light goose conservation order).'),
   ('NM-CF', jsonb_build_object('daily', 6, 'possession', 18,
      'speciesLimits', jsonb_build_object('mallard', 5, 'wood-duck', 3, 'pintail', 3, 'redhead', 2, 'canvasback', 2, 'scaup', 1),
      'notes', 'No more than 2 of the 5 mallards may be female; Mexican ducks count as mallards. 2 hooded mergansers. Coots 15 (45 possession).'),
@@ -162,9 +165,9 @@ v(code, name, slug, season_type, start_date, end_date, units, bag_key, bag, hrs,
    '{"daily": 6, "possession": 18, "notes": "Blue-winged, cinnamon and green-winged teal in the aggregate."}'::jsonb, NULL, 'Teal only.', NULL, 'https://wildlife.dgf.nm.gov/download/2026-2027-new-mexico-migratory-game-bird-hunting-rules-and-info/'),
   ('NM', 'September Teal-Only Season - Central Flyway', 'green-winged-teal', 'teal', DATE '2026-09-12', DATE '2026-09-20', 'Central Flyway (North and South Zones)', NULL,
    '{"daily": 6, "possession": 18, "notes": "Blue-winged, cinnamon and green-winged teal in the aggregate."}'::jsonb, NULL, 'Teal only.', NULL, 'https://wildlife.dgf.nm.gov/download/2026-2027-new-mexico-migratory-game-bird-hunting-rules-and-info/'),
-  ('NM', 'Dark Geese - Central Flyway', 'canada-goose', 'general', DATE '2026-10-17', DATE '2027-01-31', 'Central Flyway (North and South Zones)', NULL,
+  ('NM', 'Dark Geese - Central Flyway', 'canada-goose', 'general', DATE '2026-10-17', DATE '2027-01-31', 'Central Flyway (North and South Zones, outside the MRGV)', NULL,
    '{"daily": 5, "possession": 15, "notes": "Canada and white-fronted geese in the aggregate."}'::jsonb, NULL, 'Valencia, Socorro and Sierra counties (MRGV) are closed in the regular dark goose season.', NULL, 'https://wildlife.dgf.nm.gov/download/2026-2027-new-mexico-migratory-game-bird-hunting-rules-and-info/'),
-  ('NM', 'Dark Geese - Central Flyway', 'white-fronted-goose', 'general', DATE '2026-10-17', DATE '2027-01-31', 'Central Flyway (North and South Zones)', NULL,
+  ('NM', 'Dark Geese - Central Flyway', 'white-fronted-goose', 'general', DATE '2026-10-17', DATE '2027-01-31', 'Central Flyway (North and South Zones, outside the MRGV)', NULL,
    '{"daily": 5, "possession": 15, "notes": "Canada and white-fronted geese in the aggregate."}'::jsonb, NULL, 'Valencia, Socorro and Sierra counties (MRGV) are closed in the regular dark goose season.', NULL, 'https://wildlife.dgf.nm.gov/download/2026-2027-new-mexico-migratory-game-bird-hunting-rules-and-info/'),
   ('NM', 'Dark Geese - Middle Rio Grande Valley', 'canada-goose', 'general', DATE '2026-12-19', DATE '2027-01-31', 'Middle Rio Grande Valley (Valencia, Socorro and Sierra counties)', NULL,
    '{"daily": 2, "season": 2, "notes": "Canada and white-fronted geese; 2 per day and 2 per season."}'::jsonb, NULL, NULL, NULL, 'https://wildlife.dgf.nm.gov/download/2026-2027-new-mexico-migratory-game-bird-hunting-rules-and-info/'),
