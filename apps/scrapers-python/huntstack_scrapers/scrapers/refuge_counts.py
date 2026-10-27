@@ -128,7 +128,8 @@ class RefugeCountsScraper:
     def _resolve_pdf_url(self, link: str, base_url: str) -> str | None:
         """Convert a link href to a downloadable PDF URL."""
         # Google Drive share links → direct download
-        gdrive = re.search(r"/d/([a-zA-Z0-9_-]+)", link)
+        # (/file/d/<id>/view, or open?id=<id> / uc?id=<id>)
+        gdrive = re.search(r"/d/([a-zA-Z0-9_-]+)", link) or re.search(r"[?&]id=([a-zA-Z0-9_-]+)", link)
         if gdrive:
             return f"https://drive.google.com/uc?export=download&id={gdrive.group(1)}"
         if link.endswith(".pdf"):
@@ -196,68 +197,6 @@ class RefugeCountsScraper:
         items = []
         for result in results:
             items.append(self._make_item(source["name"], source["state_code"], result, source["url"], source.get("survey_type", "weekly")))
-        return items
-
-    def _handle_pdf_index(self, source: dict) -> list[dict]:
-        """Index page → find PDF links → download + parse each."""
-        from huntstack_scrapers.parsers.agfc_pdf import parse_agfc_pdf
-
-        response = self._fetch_html(source["url"])
-        if not response or response.status != 200:
-            return []
-
-        raw_selector = source.get("pdf_link_selector", 'a[href*="drive.google.com"]')
-        # Strip ::attr(...) pseudo-element — Scrapling needs element selectors,
-        # not Scrapy-style attribute extractors. We read .attrib["href"] ourselves.
-        elem_selector = raw_selector.split("::")[0].strip()
-        anchors = response.css(elem_selector)
-        links = [
-            (a.attrib.get("href", ""), "".join(a.css("::text").getall()).strip())
-            for a in anchors
-        ]
-        log.info(f"Found {len(links)} PDF links on {source['name']} index")
-
-        # Index pages like AGFC's mix current-season survey PDFs with prior
-        # seasons and unrelated documents (e.g. "Boating Handbook"). When a
-        # season_filter is set, keep only links whose visible text contains a
-        # year from that season (e.g. "2025-2026" -> {2025, 2026}). If nothing
-        # matches — e.g. the page changed shape — fall back to unfiltered so a
-        # site restructure doesn't silently zero out the source.
-        season_filter = source.get("season_filter")
-        if season_filter:
-            season_years = {int(y) for y in re.findall(r"\d{4}", season_filter)}
-            filtered = [
-                (href, text) for href, text in links
-                if {int(y) for y in re.findall(r"\d{4}", text)} & season_years
-            ]
-            if filtered:
-                log.info(f"season_filter {season_filter!r} narrowed {len(links)} links to {len(filtered)}")
-                links = filtered
-            else:
-                log.warning(f"season_filter {season_filter!r} matched no links on {source['name']} — scraping all links unfiltered")
-
-        items = []
-        for link, _text in links:
-            pdf_url = self._resolve_pdf_url(link, source["url"])
-            if not pdf_url:
-                continue
-
-            log.info(f"Downloading PDF: {pdf_url}")
-            pdf_bytes = self._download_pdf(pdf_url)
-            time.sleep(DOWNLOAD_DELAY)
-
-            if not pdf_bytes:
-                continue
-
-            result = parse_agfc_pdf(pdf_bytes)
-            if not result:
-                log.warning(f"PDF parser returned no data for {pdf_url}")
-                continue
-
-            log.info(f"Extracted {len(result.species_counts)} species from {source['name']} ({result.survey_date})")
-            # Cite the report itself, not the index page that lists every season's reports
-            items.append(self._make_item(source["name"], source["state_code"], result, pdf_url, source.get("survey_type", "weekly")))
-
         return items
 
     def _handle_excel_index(self, source: dict) -> list[dict]:
@@ -373,18 +312,17 @@ class RefugeCountsScraper:
         for source in sources:
             source_type = source.get("source_type", "html")
             log.info(f"\n--- {source['name']} ({source_type}) ---")
-            stats = self.source_stats[source["name"]] = {
-                "items": 0, "rows": 0, "error": None, "store_errors": 0,
-                "unknown_names": set(), "missing_slugs": set(), "no_location": False,
-            }
+            stats = self._new_stats(source)
 
             try:
                 if source_type == "html":
                     items = self._handle_html(source)
                 elif source_type == "html_multi":
                     items = self._handle_html_multi(source)
-                elif source_type == "pdf_index":
-                    items = self._handle_pdf_index(source)
+                elif source_type == "manual_pdf":
+                    log.info(f"{source['name']} is added by hand: pipeline add-report {source['alias']} <link>")
+                    del self.source_stats[source["name"]]
+                    continue
                 elif source_type == "pdf_url_list":
                     items = self._handle_pdf_url_list(source)
                 elif source_type == "excel_index":
@@ -396,22 +334,7 @@ class RefugeCountsScraper:
                     items = []
 
                 all_items.extend(items)
-                stats["items"] = len(items)
-                for item in items:
-                    stats["unknown_names"].update(
-                        n for n in item.get("species_counts", {}) if is_unknown_species_name(n)
-                    )
-
-                if not self.dry_run:
-                    for item in items:
-                        stored = self._store_item(item)
-                        if stored is None:
-                            continue
-                        stats["rows"] += stored["rows"]
-                        stats["missing_slugs"].update(stored["missing_slugs"])
-                        stats["no_location"] = stats["no_location"] or stored["no_location"]
-                        if stored["error"]:
-                            stats["store_errors"] += 1
+                self._record(items, stats)
 
             except Exception as e:
                 log.error(f"Error scraping {source['name']}: {e}")
@@ -422,6 +345,74 @@ class RefugeCountsScraper:
 
         log.info(f"\nDone. Total items: {len(all_items)}")
         return all_items
+
+    def _new_stats(self, source: dict) -> dict:
+        stats = self.source_stats[source["name"]] = {
+            "items": 0, "rows": 0, "error": None, "store_errors": 0,
+            "unknown_names": set(), "missing_slugs": set(), "no_location": False,
+        }
+        return stats
+
+    def _record(self, items: list[dict], stats: dict) -> None:
+        """Count, check and (unless dry run) store one source's items."""
+        stats["items"] += len(items)
+        for item in items:
+            stats["unknown_names"].update(
+                n for n in item.get("species_counts", {}) if is_unknown_species_name(n)
+            )
+        if self.dry_run:
+            return
+        for item in items:
+            stored = self._store_item(item)
+            if stored is None:
+                continue
+            stats["rows"] += stored["rows"]
+            stats["missing_slugs"].update(stored["missing_slugs"])
+            stats["no_location"] = stats["no_location"] or stored["no_location"]
+            if stored["error"]:
+                stats["store_errors"] += 1
+
+    def add_reports(self, source: dict, links: list[str]) -> list[dict]:
+        """Download, parse and store reports someone found by hand (a "manual_pdf" source).
+
+        Only links on the source's report_hosts are fetched: the command takes a pasted URL,
+        and must never become a way to fetch an arbitrary or bot-protected page.
+        Links that fail are listed in source_stats[name]["problems"].
+        """
+        from urllib.parse import urlparse
+
+        if not self.dry_run:
+            self._open_db()
+        stats = self._new_stats(source)
+        stats["problems"] = []
+        items: list[dict] = []
+        try:
+            for link in links:
+                host = (urlparse(link).hostname or "").lower()
+                if host not in source["report_hosts"]:
+                    stats["problems"].append(f"{link}: not a {' / '.join(source['report_hosts'])} link")
+                    continue
+                pdf_url = self._resolve_pdf_url(link, link)
+                pdf_bytes = self._download_pdf(pdf_url) if pdf_url else None
+                if not pdf_bytes or not pdf_bytes.startswith(b"%PDF"):
+                    stats["problems"].append(f"{link}: didn't download a PDF (is it shared publicly?)")
+                    continue
+                result = source["parser"](pdf_bytes)
+                if not result:
+                    stats["problems"].append(f"{link}: report wording not recognised, nothing stored (see log)")
+                    continue
+                log.info(f"{source['name']}: {result.survey_date} {result.species_counts}")
+                items.append(self._make_item(source["name"], source["state_code"], result, pdf_url,
+                                             source.get("survey_type", "weekly")))
+            self._record(items, stats)
+        except Exception as e:
+            log.error(f"Error adding reports for {source['name']}: {e}")
+            stats["error"] = f"{type(e).__name__}: {e}"
+        finally:
+            if self._conn:
+                self._conn.close()
+                self._conn = None
+        return items
 
 
 class _ScraplingResponseShim:

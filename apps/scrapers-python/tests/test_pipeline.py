@@ -122,7 +122,81 @@ class TestRegistry:
             assert jobs[name].kind == "manual" and jobs[name].run is None
             assert not is_due(jobs[name], NOV_2, None)[0]
 
+    def test_hand_added_sources_are_manual_jobs(self):
+        jobs = {j.name: j for j in build_jobs()}
+        agfc = jobs["counts:arkansas-agfc-aerial-survey"]
+        assert agfc.kind == "manual" and agfc.run is None
+        assert "add-report agfc" in agfc.manual_steps
+        assert not is_due(agfc, NOV_2, None)[0]
+
     def test_every_auto_job_can_run_and_has_a_schedule(self):
         for job in build_jobs():
             if job.kind == "auto":
                 assert job.run is not None and job.every_days, job.name
+
+
+class TestManualReportNote:
+    MONTHS = {11, 12, 1, 2}
+
+    def test_reminds_when_a_report_is_probably_out(self):
+        from datetime import date
+        from huntstack_scrapers.pipeline.jobs import manual_report_note
+        # first December check, newest is last season's
+        note = manual_report_note(date(2026, 1, 23), date(2026, 12, 10), self.MONTHS, 21, "agfc.com")
+        assert note.startswith("CHECK agfc.com")
+
+    def test_quiet_when_recent_or_off_season(self):
+        from datetime import date
+        from huntstack_scrapers.pipeline.jobs import manual_report_note
+        assert manual_report_note(date(2026, 12, 23), date(2027, 1, 5), self.MONTHS, 21, "x").startswith("up to date")
+        assert manual_report_note(date(2026, 1, 23), date(2026, 10, 27), self.MONTHS, 21, "x").startswith("off-season")
+
+    def test_nothing_loaded_is_a_reminder(self):
+        from datetime import date
+        from huntstack_scrapers.pipeline.jobs import manual_report_note
+        assert manual_report_note(None, date(2026, 12, 1), self.MONTHS, 21, "x").startswith("CHECK")
+
+
+class TestAddReports:
+    def _source(self):
+        import huntstack_scrapers.sources as sources
+        return next(s for s in sources.WATERFOWL_SOURCES if s.get("alias") == "agfc")
+
+    def test_refuses_links_off_the_report_host(self, monkeypatch):
+        from huntstack_scrapers.scrapers.refuge_counts import RefugeCountsScraper
+
+        scraper = RefugeCountsScraper(dry_run=True)
+        monkeypatch.setattr(scraper, "_download_pdf", lambda url: (_ for _ in ()).throw(AssertionError("fetched")))
+        items = scraper.add_reports(self._source(), [
+            "https://www.agfc.com/education/waterfowl-surveys-and-reports/",
+            "https://drive.google.com.example.net/file/d/abc/view",
+        ])
+        assert items == []
+        assert len(scraper.source_stats["Arkansas - AGFC Aerial Survey"]["problems"]) == 2
+
+    def test_drive_link_shapes_resolve_to_a_download(self):
+        from huntstack_scrapers.scrapers.refuge_counts import RefugeCountsScraper
+
+        r = RefugeCountsScraper(dry_run=True)._resolve_pdf_url
+        want = "https://drive.google.com/uc?export=download&id=18z4J9oCkHmz-nB-YwryN1EcmA3fIOm5S"
+        for link in ("https://drive.google.com/file/d/18z4J9oCkHmz-nB-YwryN1EcmA3fIOm5S/view?usp=sharing",
+                     "https://drive.google.com/open?id=18z4J9oCkHmz-nB-YwryN1EcmA3fIOm5S",
+                     want):
+            assert r(link, link) == want
+
+    def test_not_a_pdf_is_reported(self, monkeypatch):
+        from huntstack_scrapers.scrapers.refuge_counts import RefugeCountsScraper
+
+        scraper = RefugeCountsScraper(dry_run=True)
+        monkeypatch.setattr(scraper, "_download_pdf", lambda url: b"<html>sign in</html>")
+        assert scraper.add_reports(self._source(), ["https://drive.google.com/file/d/abc/view"]) == []
+        assert "shared publicly" in scraper.source_stats["Arkansas - AGFC Aerial Survey"]["problems"][0]
+
+
+def test_cli_loads_and_rejects_unknown_hand_added_source():
+    import pytest
+    from huntstack_scrapers.pipeline.cli import main
+
+    with pytest.raises(SystemExit) as e:
+        main(["add-report", "nope", "https://drive.google.com/file/d/x/view"])
+    assert "agfc" in str(e.value)

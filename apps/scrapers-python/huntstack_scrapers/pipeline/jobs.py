@@ -149,3 +149,16 @@ def season_year(today: date) -> int:
     """Hunting season year as stored in seasons.year: the 2026-27 season is 2026. The new
     season's regulations are set by late summer, so from August on it's this year."""
     return today.year if today.month >= 8 else today.year - 1
+
+
+def manual_report_note(newest: date | None, today: date, report_months: set[int],
+                       gap_days: int, where: str) -> str:
+    """Status text for a source whose reports someone adds by hand: in its report months,
+    a reminder to look for a new one once the newest is gap_days old."""
+    have = f"newest {newest.isoformat()}" if newest else "none loaded"
+    if today.month not in report_months:
+        return f"off-season, nothing to check ({have})"
+    if newest is None or (today - newest).days > gap_days:
+        age = f", {(today - newest).days} days old" if newest else ""
+        return f"CHECK {where} for a new report ({have}{age}), then add it with add-report"
+    return f"up to date ({have})"

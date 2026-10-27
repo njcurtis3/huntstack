@@ -6,7 +6,6 @@ import sys
 import pytest
 import requests
 
-from huntstack_scrapers.parsers.base import current_waterfowl_season_label
 
 
 def test_importing_sources_makes_no_network_calls(monkeypatch):
@@ -28,13 +27,14 @@ def test_importing_sources_makes_no_network_calls(monkeypatch):
     assert len(module.WATERFOWL_SOURCES) > 0
 
 
-def test_agfc_season_filter_is_computed_not_hardcoded():
+def test_agfc_is_added_by_hand_never_fetched():
+    # agfc.com's index sits behind a Cloudflare bot check; nothing may fetch it
     import huntstack_scrapers.sources as sources
 
-    agfc = next(
-        s for s in sources.WATERFOWL_SOURCES if s["name"].startswith("Arkansas")
-    )
-    assert agfc["season_filter"] == current_waterfowl_season_label()
+    agfc = next(s for s in sources.WATERFOWL_SOURCES if s["name"].startswith("Arkansas"))
+    assert agfc["source_type"] == "manual_pdf"
+    assert agfc["report_hosts"] == ("drive.google.com",)
+    assert agfc["alias"] == "agfc"
 
 
 def test_ldwf_and_tpwd_sources_hold_unresolved_callables():

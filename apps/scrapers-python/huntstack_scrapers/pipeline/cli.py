@@ -6,6 +6,8 @@ HuntStack data pipeline.
     python -m huntstack_scrapers.pipeline update all --force  run every auto job now
     python -m huntstack_scrapers.pipeline update <job|glob>   run named jobs now, e.g. "counts:*"
     python -m huntstack_scrapers.pipeline list                every job and its schedule
+    python -m huntstack_scrapers.pipeline add-report agfc <link> [<link> ...]
+                                                              load reports found by hand
 
 Add --dry-run to `update` to parse without writing data or recording runs.
 
@@ -28,7 +30,7 @@ from datetime import date
 from dotenv import load_dotenv
 
 from huntstack_scrapers.pipeline import runlog
-from huntstack_scrapers.pipeline.jobs import Job, Outcome, RunContext, freshness, is_due
+from huntstack_scrapers.pipeline.jobs import Job, Outcome, RunContext, freshness, is_due, judge_refuge_run, slugify
 from huntstack_scrapers.pipeline.registry import build_jobs
 
 log = logging.getLogger("huntstack.pipeline")
@@ -189,6 +191,42 @@ def cmd_update(jobs: list[Job], targets: list[str], force: bool, dry_run: bool) 
     return 1 if failed else 0
 
 
+def cmd_add_report(source_key: str, links: list[str], dry_run: bool) -> int:
+    """Load reports someone found by hand for a "manual_pdf" source (e.g. AGFC)."""
+    from huntstack_scrapers.scrapers.refuge_counts import RefugeCountsScraper
+    from huntstack_scrapers.sources import WATERFOWL_SOURCES
+
+    manual = [s for s in WATERFOWL_SOURCES if s.get("source_type") == "manual_pdf"]
+    key = source_key.lower()
+    source = next((s for s in manual if key in (s["alias"], f"counts:{slugify(s['name'])}")), None)
+    if source is None:
+        raise SystemExit(f"No hand-added source {source_key!r}. Choose from: "
+                         + ", ".join(s["alias"] for s in manual))
+
+    job_name = f"counts:{slugify(source['name'])}"
+    today = date.today()
+    run_id = None if dry_run else runlog.start(job_name, "add-report")
+    scraper = RefugeCountsScraper(dry_run=dry_run)
+    items = scraper.add_reports(source, links)
+    stats = scraper.source_stats[source["name"]]
+    outcome = judge_refuge_run(stats, today, active=True)
+    problems = stats.get("problems") or []
+    if problems:
+        outcome.status = "failed" if not items else "warning"
+        outcome.message = "; ".join(problems) + ("; " + outcome.message if items else "")
+
+    for item in items:
+        counts = ", ".join(f"{k} {v:,}" for k, v in item["species_counts"].items())
+        print(f"  {item['survey_date']}: {counts}")
+    if run_id:
+        runlog.finish(run_id, outcome)
+    mark = {"success": "✓", "warning": "!", "failed": "✗"}.get(outcome.status, "?")
+    print(f"{mark} {outcome.status}: {outcome.message}{' (dry run: nothing written)' if dry_run else ''}")
+    print(json.dumps({"pipeline": "add-report", "job": job_name, "dry_run": dry_run,
+                      "status": outcome.status, "items": len(items)}))
+    return 1 if outcome.status == "failed" else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     load_dotenv(_find_dotenv())
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -210,7 +248,14 @@ def main(argv: list[str] | None = None) -> int:
     up.add_argument("targets", nargs="+", help='"all", or job names / globs such as "counts:*"')
     up.add_argument("--force", action="store_true", help="with all: run every auto job, due or not")
     up.add_argument("--dry-run", action="store_true", help="parse only: no data written, no runs recorded")
+    add = sub.add_parser("add-report", help="load reports found by hand (sources behind a bot check)")
+    add.add_argument("source", help='source alias, e.g. "agfc"')
+    add.add_argument("links", nargs="+", help="report links (Google Drive for agfc)")
+    add.add_argument("--dry-run", action="store_true", help="download and parse only: nothing written")
     args = parser.parse_args(argv)
+
+    if args.command == "add-report":
+        return cmd_add_report(args.source, args.links, args.dry_run)
 
     jobs = build_jobs()
     if args.command == "list":

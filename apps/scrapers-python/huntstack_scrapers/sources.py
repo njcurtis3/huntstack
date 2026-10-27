@@ -7,7 +7,9 @@ The refuge_counts spider reads this registry to determine what to scrape.
 Source types:
   - "html": Single page with survey data — parser returns ParseResult
   - "html_multi": Wide-format table (species rows × date columns) — parser returns list[ParseResult]
-  - "pdf_index": Index page with links to PDFs (spider follows links, downloads PDFs)
+  - "manual_pdf": Reports someone adds by hand: `pipeline add-report <alias> <link>`
+                  downloads and parses one. `update all` never fetches these; `status` says
+                  when a new report is probably out (see report_months / report_gap_days).
   - "pdf_url_list": Try a list of candidate PDF URLs directly (for JS-rendered index pages)
   - "excel_index": Fetch Excel file URLs from an index page, download + parse each
   - "results_fn": The parser module fetches and parses everything itself; results_fn()
@@ -15,7 +17,7 @@ Source types:
                   can't fit the generic handlers, e.g. Box links that refuse HEAD)
 """
 
-from huntstack_scrapers.parsers.base import current_waterfowl_season_label
+from huntstack_scrapers.parsers.agfc_pdf import parse_agfc_pdf
 from huntstack_scrapers.parsers.fws_html import parse_fws_refuge_page, parse_fws_story_page
 from huntstack_scrapers.parsers.loess_bluffs_pdf import parse_loess_bluffs_pdf, generate_loess_bluffs_urls
 from huntstack_scrapers.parsers.ldwf_pdf import parse_ldwf_pdf, fetch_ldwf_pdf_urls
@@ -44,15 +46,22 @@ WATERFOWL_SOURCES = [
         "survey_type": "weekly",
     },
 
-    # === Arkansas AGFC Aerial Surveys (biweekly PDFs) ===
+    # === Arkansas AGFC Aerial Surveys (3-4 PDF reports a winter, added by hand) ===
+    # The index page sits behind a Cloudflare bot check, and we don't get around bot checks,
+    # so nothing fetches it. Someone opens it in a browser and runs
+    # `pipeline add-report agfc <Google Drive link>` for each new report. The PDFs themselves
+    # are plain Google Drive downloads.
     {
         "name": "Arkansas - AGFC Aerial Survey",
         "state_code": "AR",
         "url": "https://www.agfc.com/education/waterfowl-surveys-and-reports/",
-        "source_type": "pdf_index",
+        "source_type": "manual_pdf",
         "survey_type": "aerial_biweekly",
-        "pdf_link_selector": 'a[href*="drive.google.com"]::attr(href)',
-        "season_filter": current_waterfowl_season_label(),  # only follow links under current season
+        "alias": "agfc",
+        "parser": parse_agfc_pdf,
+        "report_hosts": ("drive.google.com",),
+        "report_months": {11, 12, 1, 2},   # first survey late Nov/Dec, last late Jan
+        "report_gap_days": 21,             # surveys are 2-4 weeks apart
     },
 
     # === Loess Bluffs NWR Weekly PDFs ===

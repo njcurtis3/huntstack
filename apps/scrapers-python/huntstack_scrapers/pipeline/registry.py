@@ -6,6 +6,8 @@ Auto (run by `update all` when due):
   state-regulations  agency regulation pages -> documents (+ embeddings) for chat
 
 Manual (status only; never run by `update all`):
+  counts:<source>      a "manual_pdf" source (AGFC): `status` says when to look for a new
+                       report; `add-report <alias> <link>` loads it
   cf-mws               USFWS Central Flyway midwinter report: a PDF someone has to download
   seasons              hand-entered, agency-checked season dates and bag limits
   extract-regulations  LLM extraction that REPLACES a state's seasons and licenses
@@ -25,6 +27,7 @@ from huntstack_scrapers.pipeline.jobs import (
     expected_cf_mws_year,
     in_season,
     judge_refuge_run,
+    manual_report_note,
     season_year,
     slugify,
 )
@@ -41,8 +44,35 @@ def _scalar(conn, sql: str, params: tuple = ()):
 
 # ─── Bird counts ─────────────────────────────────────────────────────────────
 
+def _newest_count(conn, name: str) -> date | None:
+    return _scalar(conn, """
+        SELECT max(rc.survey_date)::date FROM refuge_counts rc
+        JOIN locations l ON l.id = rc.location_id WHERE l.name = %s
+    """, (name,))
+
+
+def _manual_report_job(source: dict) -> Job:
+    name = source["name"]
+    return Job(
+        name=f"counts:{slugify(name)}",
+        title=f"{name} ({source['state_code']}), added by hand",
+        kind="manual",
+        group="Bird counts",
+        newest=lambda conn: _newest_count(conn, name),
+        note=lambda conn, today: manual_report_note(
+            _newest_count(conn, name), today, source["report_months"], source["report_gap_days"], source["url"]),
+        manual_steps=(
+            f"Open {source['url']} in a browser. For each report newer than the newest loaded, copy its "
+            f"link and run: python -m huntstack_scrapers.pipeline add-report {source['alias']} <link> "
+            "(add --dry-run first to check what it reads)"
+        ),
+    )
+
+
 def _refuge_job(source: dict) -> Job:
     name = source["name"]
+    if source.get("source_type") == "manual_pdf":
+        return _manual_report_job(source)
     schedule = SURVEY_TYPE_SCHEDULE.get(source.get("survey_type", "weekly"), SURVEY_TYPE_SCHEDULE["weekly"])
     job = Job(
         name=f"counts:{slugify(name)}",
@@ -59,13 +89,7 @@ def _refuge_job(source: dict) -> Job:
         scraper.run(filter_name=name)
         return judge_refuge_run(scraper.source_stats.get(name), ctx.today, in_season(job, ctx.today))
 
-    def newest(conn) -> date | None:
-        return _scalar(conn, """
-            SELECT max(rc.survey_date)::date FROM refuge_counts rc
-            JOIN locations l ON l.id = rc.location_id WHERE l.name = %s
-        """, (name,))
-
-    job.run, job.newest = run, newest
+    job.run, job.newest = run, (lambda conn: _newest_count(conn, name))
     return job
 
 
