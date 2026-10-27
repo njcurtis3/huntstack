@@ -374,31 +374,58 @@ export interface PushRegion {
   id: string
   stateCode: string
   name: string
-  /** Inclusive box; an omitted side is unbounded. */
-  bounds: { minLat?: number; maxLat?: number; minLng?: number; maxLng?: number }
+  /**
+   * Ring of [lat, lng] vertices. Only the edge that runs through the state has to
+   * be accurate; the rest may overshoot the state line, since stateCode gates it.
+   */
+  polygon: [number, number][]
 }
 
 export const PUSH_REGIONS: PushRegion[] = [
   {
-    // Approximates TPWD's High Plains Mallard Management Unit (east edge US 183,
-    // south edge I-20) — close enough for weather, not for legal zone lookups.
+    // The High Plains Mallard Management Unit (TPWD's High Plains duck zone). Its
+    // east edge, per the 2026 federal memo (MGBHM-2026-01): US 183 from the Oklahoma
+    // line to Vernon, US 283 to Albany, TX 6/TX 351 to Abilene, US 277 to Del Rio.
+    // Vertices are the towns on that route, so the edge is accurate to a few miles.
     id: 'TX-HP',
     stateCode: 'TX',
-    name: 'Texas Panhandle & South Plains',
-    bounds: { minLat: 32.0, maxLng: -99.5 },
+    name: 'Texas High Plains',
+    polygon: [
+      [37.0, -99.22],     // north of the Red River crossing, outside Texas
+      [34.36, -99.22],    // US 183 at the Red River
+      [34.154, -99.265],  // Vernon
+      [33.594, -99.26],   // Seymour (US 283)
+      [33.179, -99.178],  // Throckmorton
+      [32.723, -99.297],  // Albany
+      [32.449, -99.733],  // Abilene (TX 6/TX 351)
+      [31.884, -100.294], // Bronte (US 277)
+      [31.464, -100.437], // San Angelo
+      [30.86, -100.601],  // Eldorado
+      [30.567, -100.643], // Sonora
+      [29.362, -100.897], // Del Rio
+      [29.327, -100.928], // International bridge
+      [25.0, -100.928],   // into Mexico; outside Texas
+      [25.0, -107.0],
+      [37.0, -107.0],
+    ],
   },
 ]
 
+/** Ray casting; points exactly on an edge may fall either side. */
+function inPolygon(point: { lat: number; lng: number }, ring: [number, number][]): boolean {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [yi, xi] = ring[i]
+    const [yj, xj] = ring[j]
+    if ((yi > point.lat) !== (yj > point.lat)
+      && point.lng < ((xj - xi) * (point.lat - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
 export function pushRegionFor(stateCode: string, point: { lat: number; lng: number } | null | undefined): PushRegion | null {
   if (!point) return null
-  return PUSH_REGIONS.find(r => {
-    if (r.stateCode !== stateCode) return false
-    const b = r.bounds
-    return (b.minLat === undefined || point.lat >= b.minLat)
-      && (b.maxLat === undefined || point.lat <= b.maxLat)
-      && (b.minLng === undefined || point.lng >= b.minLng)
-      && (b.maxLng === undefined || point.lng <= b.maxLng)
-  }) ?? null
+  return PUSH_REGIONS.find(r => r.stateCode === stateCode && inPolygon(point, r.polygon)) ?? null
 }
 
 /** Active NWS alerts covering one point (so a region doesn't inherit the whole state's alerts). */
@@ -562,7 +589,7 @@ export async function getPushFactorsForStates(
   return { pushFactors, regionalPushFactors, highPushStates }
 }
 
-/** "TX" for a statewide factor, "TX (Texas Panhandle & South Plains only)" for a regional one. */
+/** "TX" for a statewide factor, "TX (Texas High Plains only)" for a regional one. */
 export function pushFactorLabel(pf: Pick<StatePushFactor, 'stateCode' | 'regionName'>): string {
   return pf.regionName ? `${pf.stateCode} (${pf.regionName} only)` : pf.stateCode
 }

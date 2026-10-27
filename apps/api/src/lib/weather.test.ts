@@ -30,8 +30,25 @@ describe('pushRegionFor', () => {
     for (const p of [ANAHUAC, CADDO_LAKE, LAGUNA_ATASCOSA]) expect(pushRegionFor('TX', p)).toBeNull()
   })
 
+  it('follows the High Plains Mallard Management Unit line, not a box', () => {
+    // West of US 277 / US 283: in, including spots the old lat>=32 box missed
+    for (const p of [
+      { lat: 31.76, lng: -106.49 }, // El Paso
+      { lat: 31.46, lng: -100.5 },  // just west of San Angelo
+      { lat: 34.43, lng: -100.2 },  // Childress
+      { lat: 32.45, lng: -99.8 },   // just west of Abilene
+    ]) expect(pushRegionFor('TX', p)?.id).toBe('TX-HP')
+    // East of the line: out, including spots the old lng<=-99.5 box wrongly took
+    for (const p of [
+      { lat: 33.91, lng: -98.49 },  // Wichita Falls
+      { lat: 32.45, lng: -99.65 },  // just east of Abilene
+      { lat: 31.1, lng: -99.9 },    // between San Angelo and Brady
+      { lat: 29.42, lng: -98.49 },  // San Antonio
+    ]) expect(pushRegionFor('TX', p)).toBeNull()
+  })
+
   it('only matches its own state, and needs a point', () => {
-    // Clovis, NM sits inside the same lat/lng box
+    // Clovis, NM sits inside the polygon's outer bounds
     expect(pushRegionFor('NM', { lat: 34.4, lng: -103.2 })).toBeNull()
     expect(pushRegionFor('TX', null)).toBeNull()
   })
@@ -82,7 +99,7 @@ describe('pushFactorAt', () => {
   const base = { coldFrontPresent: false, coldFrontIncoming: false, windDirection: null, windIsFromNorth: false, temperature: null, temperatureUnit: null, activeAlerts: [], refugesSampled: 1 }
   const tx: StatePushFactor = { ...base, stateCode: 'TX', pushScore: 0 }
   const ok: StatePushFactor = { ...base, stateCode: 'OK', pushScore: 1 }
-  const hp: StatePushFactor = { ...base, stateCode: 'TX', regionId: 'TX-HP', regionName: 'Texas Panhandle & South Plains', pushScore: 3 }
+  const hp: StatePushFactor = { ...base, stateCode: 'TX', regionId: 'TX-HP', regionName: 'Texas High Plains', pushScore: 3 }
 
   it('uses the region factor inside the region', () => {
     expect(pushFactorAt('TX', AMARILLO, [tx, ok], [hp])?.pushScore).toBe(3)
@@ -96,7 +113,7 @@ describe('pushFactorAt', () => {
 
   it('labels regional factors so chat and the weekly summary can tell them apart', () => {
     expect(pushFactorLabel(tx)).toBe('TX')
-    expect(pushFactorLabel(hp)).toBe('TX (Texas Panhandle & South Plains only)')
+    expect(pushFactorLabel(hp)).toBe('TX (Texas High Plains only)')
   })
 })
 

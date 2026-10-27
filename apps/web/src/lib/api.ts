@@ -590,7 +590,7 @@ class ApiClient {
   async getMigrationPushFactors(states?: string) {
     type PushFactorDTO = {
       stateCode: string
-      /** Set on a sub-state region's factor, e.g. 'TX-HP' (Texas Panhandle & South Plains) */
+      /** Set on a sub-state region's factor, e.g. 'TX-HP' (Texas High Plains duck zone) */
       regionId?: string
       regionName?: string
       pushScore: number

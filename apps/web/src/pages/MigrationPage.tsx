@@ -333,7 +333,7 @@ function overallPushScoreOf(factors: { pushScore: number }[]): number {
 }
 
 function pushFactorShortLabel(f: PushFactor): string {
-  return f.regionId === 'TX-HP' ? 'TX Panhandle' : f.regionName ?? f.stateCode
+  return f.regionId === 'TX-HP' ? 'TX High Plains' : f.regionName ?? f.stateCode
 }
 const PUSH_SCORE_COLORS = [
   'text-earth-500 dark:text-earth-400',

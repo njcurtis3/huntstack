@@ -108,7 +108,7 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
 
     return {
       pushFactors,
-      // Sub-state regions scored on their own points (today: the Texas Panhandle & South Plains)
+      // Sub-state regions scored on their own points (today: the Texas High Plains duck zone)
       regionalPushFactors,
       highPushStates,
       fetchedAt: new Date().toISOString(),
