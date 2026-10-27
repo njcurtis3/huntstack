@@ -8,15 +8,16 @@
 -- stored) keep the "Open only in <zone>" card text.
 --
 -- Zone boundaries:
---   TX  duck: TPWD Outdoor Annual (HPMMU west of US 183/283/TX 6/US 277; South Zone south
+--   TX  (2026 memo adds a Northeast/Southeast goose split; TPWD 2026-27 still uses Eastern =
+--       both.) duck: TPWD Outdoor Annual (HPMMU west of US 183/283/TX 6/US 277; South Zone south
 --       of US 90 Del Rio-San Antonio and I-10 San Antonio-Orange). Goose: Western Zone
 --       west of I-35/35W and US 81/287; Eastern = remainder.
---   KS  Final 2025-26 federal frameworks (90 FR 40205-06, 2025-08-18); KDWP's 2026
---       Southeast Zone description is identical. Cheyenne Bottoms sits in the Early Zone
---       lobe between K-4 (north) and K-96 Great Bend-Hutchinson (south), east of US-281;
+--   KS  2026 MGBH memo (MGBHM-2026-01, docket FWS-HQ-MB-2026-3335; reworded but same
+--       lines as 90 FR 40205-06). Cheyenne Bottoms sits in the Early Zone
+--       lobe between K-4 at Hoisington (north) and US-56 Great Bend-Lyons (south), east of US-281;
 --       Quivira is south of K-96 and east of US-281 (Late Zone); Flint Hills NWR is south
 --       of K-68 and east of I-35 (Southeast Zone).
---   OK  Federal frameworks: High Plains (Panhandle) = Beaver, Cimarron, Texas counties.
+--   OK  2026 MGBH memo (unchanged from 2025-26): High Plains (Panhandle) = Beaver, Cimarron, Texas counties.
 --       All four refuges here are in Low Plains Zones 1 and 2 (same seasons).
 --   NM  NMDGF 2026-27 booklet: Central Flyway North Zone = north of I-40 and US 54;
 --       MRGV = Valencia, Socorro and Sierra counties (closed in the regular dark goose
