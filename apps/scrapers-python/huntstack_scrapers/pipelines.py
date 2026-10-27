@@ -2,6 +2,7 @@
 Scrapy pipelines for processing scraped hunting data.
 """
 
+import hashlib
 import os
 import re
 import json
@@ -416,6 +417,11 @@ def embedding_model() -> str:
 EMBEDDING_DIMENSIONS = 1024
 
 
+def chunk_hash(text: str) -> str:
+    """Postgres md5(content) of a chunk, so Python and SQL agree on which texts are equal."""
+    return hashlib.md5(text.encode("utf-8")).hexdigest()
+
+
 def embed_texts(texts: list[str], api_key: str, timeout: int = 60) -> list[list[float]]:
     """Embed a batch of texts in one request, returned in input order.
 
@@ -481,9 +487,23 @@ class EmbeddingPipeline:
 
         try:
             chunks = self._chunk_text(content)
+            # Agency sites repeat blocks of text on many pages (KDWP's stamp prices are on ~50).
+            # Store each text once: skip what another document already has, and repeats within
+            # this one. In Oct 2026, 57% of all chunks were such copies, crowding search results.
+            elsewhere = self._held_elsewhere(item, chunks, spider)
+            wanted, seen = [], set()
+            for i, chunk in enumerate(chunks):
+                key = chunk_hash(chunk)
+                if key in elsewhere or key in seen:
+                    continue
+                seen.add(key)
+                wanted.append((i, chunk))
+            if len(wanted) < len(chunks):
+                spider.logger.info(f"{len(chunks) - len(wanted)} chunks of {item.get('url')} are stored "
+                                   f"elsewhere or repeated; not storing them again")
 
             embedded = []
-            for i, chunk in enumerate(chunks):
+            for i, chunk in wanted:
                 embedding = self._generate_embedding(chunk, spider)
 
                 if embedding:
@@ -491,8 +511,9 @@ class EmbeddingPipeline:
 
             # Every embedding failing usually means the API is down, not that the
             # page is empty. Writing nothing here would let _store_chunks delete
-            # the document's existing chunks and leave it unsearchable.
-            if not embedded:
+            # the document's existing chunks and leave it unsearchable. (A page whose
+            # text is all held elsewhere has nothing to embed: its own chunks go.)
+            if wanted and not embedded:
                 spider.logger.warning(
                     f"No embeddings generated for {item.get('url')} — leaving existing chunks alone"
                 )
@@ -501,7 +522,7 @@ class EmbeddingPipeline:
             self._store_chunks(item, embedded, spider)
 
             spider.logger.info(
-                f"Generated {len(embedded)}/{len(chunks)} embeddings for {item.get('url')}"
+                f"Generated {len(embedded)}/{len(wanted)} embeddings for {item.get('url')}"
             )
 
         except Exception as e:
@@ -532,6 +553,35 @@ class EmbeddingPipeline:
             start = end - self.chunk_overlap
 
         return chunks
+
+    def _held_elsewhere(self, item: dict, chunks: list[str], spider) -> set[str]:
+        """Hashes of these chunks that a different document already stores.
+
+        Uses the md5(content) index from scripts/add-chunk-content-hash-index.sql. On any
+        error, returns nothing (store everything) rather than drop the page's text.
+        """
+        db_url = os.getenv("DATABASE_URL")
+        document_type = DOCUMENT_TYPE_BY_ITEM_TYPE.get(item.get("type"))
+        if not db_url or not document_type or not chunks:
+            return set()
+        try:
+            import psycopg2
+
+            conn = psycopg2.connect(db_url)
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT DISTINCT md5(c.content) FROM document_chunks c
+                        WHERE md5(c.content) = ANY(%s)
+                          AND c.document_id IS DISTINCT FROM (
+                              SELECT id FROM documents WHERE source_url = %s AND document_type = %s)
+                    """, ([chunk_hash(c) for c in chunks], item.get("url"), document_type))
+                    return {row[0] for row in cur.fetchall()}
+            finally:
+                conn.close()
+        except Exception as e:
+            spider.logger.warning(f"Couldn't check for chunks stored elsewhere ({e}); storing all")
+            return set()
 
     def _generate_embedding(self, text: str, spider) -> list[float] | None:
         """Generate embedding using OpenAI."""

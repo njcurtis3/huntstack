@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { isConfigured, generateChatResponse } from '../lib/together.js'
 import { isEmbeddingConfigured, generateEmbedding } from '../lib/embeddings.js'
+import { candidateCount, distinctChunks } from '../lib/retrieval.js'
 import { getDb } from '../lib/db.js'
 import { sql } from 'drizzle-orm'
 import { getPushFactorsForStates, pushFactorLabel } from '../lib/weather.js'
@@ -288,7 +289,9 @@ export function extractEntities(query: string): ExtractedEntities {
   }
 }
 
-// ─── Vector context retrieval (existing, unchanged) ──────────────────────────
+// ─── Vector context retrieval ────────────────────────────────────────────────
+
+const CONTEXT_CHUNKS = 5
 
 async function retrieveContext(query: string): Promise<{
   documents: Array<{ content: string; metadata: Record<string, unknown> }>
@@ -316,10 +319,10 @@ async function retrieveContext(query: string): Promise<{
       JOIN documents d ON dc.document_id = d.id
       WHERE dc.embedding IS NOT NULL
       ORDER BY dc.embedding <=> ${JSON.stringify(queryEmbedding)}::vector
-      LIMIT 5
+      LIMIT ${candidateCount(CONTEXT_CHUNKS)}
     `)
 
-    const rows = results as unknown as Array<{
+    const candidates = results as unknown as Array<{
       id: string
       content: string
       chunk_metadata: Record<string, unknown> | null
@@ -330,7 +333,7 @@ async function retrieveContext(query: string): Promise<{
       similarity: number
     }>
 
-    const relevant = rows.filter(r => r.similarity > 0.3)
+    const relevant = distinctChunks(candidates.filter(r => r.similarity > 0.3), CONTEXT_CHUNKS)
 
     return {
       documents: relevant.map(r => ({

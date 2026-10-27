@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify'
 import { ilike, or, eq, and, sql, count } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { isEmbeddingConfigured, generateEmbedding } from '../lib/embeddings.js'
+import { candidateCount, distinctChunks } from '../lib/retrieval.js'
 import { regulations, species, states, locations } from '@huntstack/db/schema'
 import { searchQuerySchema } from '@huntstack/shared'
 
@@ -230,7 +231,8 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
       },
     },
   }, async (request, reply) => {
-    const { query, limit = 10 } = request.body as { query: string; limit?: number }
+    const { query, limit: requested = 10 } = request.body as { query: string; limit?: number }
+    const limit = Math.min(Math.max(Math.trunc(requested) || 10, 1), 50)
 
     if (!isEmbeddingConfigured()) {
       return reply.status(503).send({
@@ -255,10 +257,10 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
         JOIN documents d ON dc.document_id = d.id
         WHERE dc.embedding IS NOT NULL
         ORDER BY dc.embedding <=> ${JSON.stringify(queryEmbedding)}::vector
-        LIMIT ${limit}
+        LIMIT ${candidateCount(limit)}
       `)
 
-      const rows = results as unknown as Array<{
+      const candidates = results as unknown as Array<{
         content: string
         title: string
         source_url: string | null
@@ -268,7 +270,7 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
       }>
 
       return {
-        results: rows.filter(r => r.similarity > 0.3).map(r => ({
+        results: distinctChunks(candidates.filter(r => r.similarity > 0.3), limit).map(r => ({
           content: r.content,
           title: r.title,
           sourceUrl: r.source_url,
