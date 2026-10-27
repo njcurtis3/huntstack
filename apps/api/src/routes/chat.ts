@@ -2,7 +2,7 @@ import { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { isConfigured, generateChatResponse } from '../lib/together.js'
 import { isEmbeddingConfigured, generateEmbedding } from '../lib/embeddings.js'
-import { candidateCount, distinctChunks } from '../lib/retrieval.js'
+import { searchChunks, type ChunkFilters } from '../lib/retrieval.js'
 import { getDb } from '../lib/db.js'
 import { sql } from 'drizzle-orm'
 import { getPushFactorsForStates, pushFactorLabel } from '../lib/weather.js'
@@ -63,7 +63,11 @@ const SPECIES_ALIASES: Record<string, string> = {
 
 // Broad category keywords that indicate waterfowl interest
 const WATERFOWL_KEYWORDS = ['duck', 'ducks', 'goose', 'geese', 'waterfowl', 'teal']
-const MIGRATION_KEYWORDS = ['migration', 'migrating', 'flying', 'counts', 'refuge', 'survey', 'birds moving', 'what\'s flying', 'push']
+const MIGRATION_KEYWORDS = ['migration', 'migrating', 'flying', 'counts', 'refuge', 'survey', 'birds moving', 'what\'s flying', 'push', 'numbers', 'population']
+// Questions about the rules. On these, survey and area reports are left out of document
+// search (lib/retrieval.ts REPORT_PATTERN) unless the question also asks about birds or places.
+// Word starts, so "seasons", "closing" and "required" count but "relationship" isn't HIP.
+const REGULATION_PATTERN = /\b(bag|limits?\b|possession|seasons?\b|open(s|er|ers|ing)?\b|clos(e|es|ed|ing)\b|dates?\b|licen[cs]e|stamps?\b|permits?\b|hip\b|regulation|rules?\b|legal|shooting (hours|time)|steel shot|non-?toxic|youth|zones?\b|split|fees?\b|cost|price|how much|requir|allowed)/
 const LOCATION_KEYWORDS = ['where to hunt', 'where should i hunt', 'public land', 'public hunting', 'wma', 'wildlife management area', 'national forest', 'blm', 'wildlife refuge', 'hunting area', 'hunting location', 'place to hunt', 'spots to hunt']
 const WEATHER_KEYWORDS = ['weather', 'forecast', 'temperature', 'wind', 'cold front', 'rain', 'snow', 'freeze', 'conditions', 'hunting conditions', 'front']
 
@@ -76,6 +80,7 @@ interface ExtractedEntities {
   isMigrationQuery: boolean
   isLocationQuery: boolean
   isWeatherQuery: boolean
+  isRegulationQuery: boolean
 }
 
 interface StructuredContext {
@@ -176,7 +181,7 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
 
       // Step 2: Retrieve context from both sources in parallel
       const [vectorContext, structuredCtx] = await Promise.all([
-        retrieveContext(message),
+        retrieveContext(message, documentFilters(entities)),
         retrieveStructuredContext(entities),
       ])
 
@@ -278,6 +283,7 @@ export function extractEntities(query: string): ExtractedEntities {
   const isMigrationQuery = MIGRATION_KEYWORDS.some(kw => lower.includes(kw))
   const isLocationQuery = LOCATION_KEYWORDS.some(kw => lower.includes(kw))
   const isWeatherQuery = WEATHER_KEYWORDS.some(kw => lower.includes(kw))
+  const isRegulationQuery = REGULATION_PATTERN.test(lower)
 
   return {
     stateCodes: [...stateCodes],
@@ -286,6 +292,18 @@ export function extractEntities(query: string): ExtractedEntities {
     isMigrationQuery,
     isLocationQuery,
     isWeatherQuery,
+    isRegulationQuery,
+  }
+}
+
+/**
+ * Document-search filters for a question: only the states it names, and no survey or area
+ * reports when it asks about rules but not about birds or places.
+ */
+export function documentFilters(entities: ExtractedEntities): ChunkFilters {
+  return {
+    stateCodes: entities.stateCodes,
+    skipReports: entities.isRegulationQuery && !entities.isMigrationQuery && !entities.isLocationQuery,
   }
 }
 
@@ -293,7 +311,7 @@ export function extractEntities(query: string): ExtractedEntities {
 
 const CONTEXT_CHUNKS = 5
 
-async function retrieveContext(query: string): Promise<{
+async function retrieveContext(query: string, filters: ChunkFilters): Promise<{
   documents: Array<{ content: string; metadata: Record<string, unknown> }>
   sources: Array<{ title: string; url?: string; snippet: string }>
 }> {
@@ -304,36 +322,7 @@ async function retrieveContext(query: string): Promise<{
   }
   try {
     const queryEmbedding = await generateEmbedding(query)
-    const db = getDb()
-    const results = await db.execute(sql`
-      SELECT
-        dc.id,
-        dc.content,
-        dc.metadata AS chunk_metadata,
-        d.title,
-        d.source_url,
-        d.document_type,
-        d.metadata AS doc_metadata,
-        1 - (dc.embedding <=> ${JSON.stringify(queryEmbedding)}::vector) AS similarity
-      FROM document_chunks dc
-      JOIN documents d ON dc.document_id = d.id
-      WHERE dc.embedding IS NOT NULL
-      ORDER BY dc.embedding <=> ${JSON.stringify(queryEmbedding)}::vector
-      LIMIT ${candidateCount(CONTEXT_CHUNKS)}
-    `)
-
-    const candidates = results as unknown as Array<{
-      id: string
-      content: string
-      chunk_metadata: Record<string, unknown> | null
-      title: string
-      source_url: string | null
-      document_type: string
-      doc_metadata: Record<string, unknown> | null
-      similarity: number
-    }>
-
-    const relevant = distinctChunks(candidates.filter(r => r.similarity > 0.3), CONTEXT_CHUNKS)
+    const relevant = await searchChunks(getDb(), queryEmbedding, CONTEXT_CHUNKS, filters)
 
     return {
       documents: relevant.map(r => ({

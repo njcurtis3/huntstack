@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   MAX_HISTORY_CHARS,
   MAX_HISTORY_MESSAGES,
+  documentFilters,
   extractEntities,
   formatBagLimit,
   formatMidwinterHistory,
@@ -9,6 +10,41 @@ import {
   formatSurveyZones,
   truncateHistory,
 } from './chat.js'
+
+describe('documentFilters', () => {
+  const filters = (q: string) => documentFilters(extractEntities(q))
+
+  it('limits document search to the states a question names', () => {
+    expect(filters('Texas light goose conservation order').stateCodes).toEqual(['TX'])
+    expect(filters('when does duck season open?').stateCodes).toEqual([])
+  })
+
+  it('leaves out reports on a rules question', () => {
+    for (const q of [
+      'Arkansas duck season bag limit mallards',
+      'What is the daily duck bag limit in Arkansas this season, and how many can be mallards?',
+      'do I need a HIP stamp in Kansas',
+      'when does teal season close in Oklahoma',
+      'what licenses are required for nonresidents in New Mexico',
+      'shooting hours in Louisiana',
+    ]) {
+      expect(filters(q).skipReports, q).toBe(true)
+    }
+  })
+
+  it('keeps reports when the question is about birds or places, or not about rules', () => {
+    for (const q of [
+      'how many ducks are in Arkansas right now',
+      'latest refuge counts for the season in Kansas',
+      'duck numbers in Arkansas this season',
+      'where should I hunt in Kansas this season',
+      'what do mallards eat',
+      'is my relationship with ducks healthy',
+    ]) {
+      expect(filters(q).skipReports, q).toBe(false)
+    }
+  })
+})
 
 describe('extractEntities', () => {
   it('extracts a state name and species alias', () => {
@@ -65,6 +101,7 @@ describe('extractEntities', () => {
       isMigrationQuery: false,
       isLocationQuery: false,
       isWeatherQuery: false,
+      isRegulationQuery: false,
     })
   })
 })

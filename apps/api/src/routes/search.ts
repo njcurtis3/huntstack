@@ -1,8 +1,9 @@
 import { FastifyPluginAsync } from 'fastify'
-import { ilike, or, eq, and, sql, count } from 'drizzle-orm'
+import { ilike, or, eq, and, count } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { isEmbeddingConfigured, generateEmbedding } from '../lib/embeddings.js'
-import { candidateCount, distinctChunks } from '../lib/retrieval.js'
+import { searchChunks } from '../lib/retrieval.js'
+import { documentFilters, extractEntities } from './chat.js'
 import { regulations, species, states, locations } from '@huntstack/db/schema'
 import { searchQuerySchema } from '@huntstack/shared'
 
@@ -243,34 +244,11 @@ export const searchRoutes: FastifyPluginAsync = async (app) => {
 
     try {
       const queryEmbedding = await generateEmbedding(query)
-      const db = getDb()
-
-      const results = await db.execute(sql`
-        SELECT
-          dc.content,
-          d.title,
-          d.source_url,
-          d.document_type,
-          d.metadata AS doc_metadata,
-          1 - (dc.embedding <=> ${JSON.stringify(queryEmbedding)}::vector) AS similarity
-        FROM document_chunks dc
-        JOIN documents d ON dc.document_id = d.id
-        WHERE dc.embedding IS NOT NULL
-        ORDER BY dc.embedding <=> ${JSON.stringify(queryEmbedding)}::vector
-        LIMIT ${candidateCount(limit)}
-      `)
-
-      const candidates = results as unknown as Array<{
-        content: string
-        title: string
-        source_url: string | null
-        document_type: string
-        doc_metadata: Record<string, unknown> | null
-        similarity: number
-      }>
+      // Same filters as chat: the states the query names, no reports on a rules question
+      const rows = await searchChunks(getDb(), queryEmbedding, limit, documentFilters(extractEntities(query)))
 
       return {
-        results: distinctChunks(candidates.filter(r => r.similarity > 0.3), limit).map(r => ({
+        results: rows.map(r => ({
           content: r.content,
           title: r.title,
           sourceUrl: r.source_url,
