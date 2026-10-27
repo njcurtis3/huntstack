@@ -31,6 +31,9 @@ class ParseResult:
     observers: str | None = None
     notes: str | None = None
     survey_type: str = "weekly"  # weekly, aerial_biweekly, etc.
+    # Per-region figures behind statewide counts, for parsers that check one table against
+    # another (AGFC: {"Delta": (mallards, total ducks), ...})
+    regions: dict | None = None
 
 
 # Shared date extraction patterns

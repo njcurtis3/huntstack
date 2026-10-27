@@ -6,6 +6,7 @@ import {
   formatBagLimit,
   formatMidwinterHistory,
   formatShootingHours,
+  formatSurveyZones,
   truncateHistory,
 } from './chat.js'
 
@@ -185,5 +186,24 @@ describe('extractEntities Panhandle places', () => {
   it('reads Amarillo and Lubbock as Texas', () => {
     expect(extractEntities('snow geese near Amarillo').stateCodes).toEqual(['TX'])
     expect(extractEntities('ducks around lubbock').stateCodes).toEqual(['TX'])
+  })
+})
+
+describe('formatSurveyZones', () => {
+  const row = (zone: string, mallards: number, totalDucks: number | null, avgM: number | null, avgT: number | null) => ({
+    region: 'Delta', zone, period: 'Jan-26', surveyDate: '2026-01-23 00:00:00',
+    mallards, totalDucks, avgMallards: avgM, avgTotalDucks: avgT,
+  })
+
+  it('lists zones busiest first against their average, and says they are part of the statewide count', () => {
+    const text = formatSurveyZones([
+      row('Cache', 30_234, 54_407, 60_000, 100_000),
+      row('Lower St. Francis', 74_095, 132_745, 50_000, null),
+    ])
+    const lines = text.split('\n')
+    expect(lines[0]).toContain('late-January survey ending 2026-01-23')
+    expect(lines[0]).toContain('not additional birds')
+    expect(lines[1]).toBe('- Lower St. Francis (Delta): 132,745 ducks, 74,095 mallards (+48% vs avg)')
+    expect(lines[2]).toBe('- Cache (Delta): 54,407 ducks (-46% vs avg), 30,234 mallards (-50% vs avg)')
   })
 })

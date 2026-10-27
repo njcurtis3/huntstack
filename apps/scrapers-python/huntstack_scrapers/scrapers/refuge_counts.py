@@ -372,6 +372,23 @@ class RefugeCountsScraper:
             if stored["error"]:
                 stats["store_errors"] += 1
 
+    def _store_zones(self, source: dict, batches: list[tuple[list, str, str]]) -> int:
+        """Store zone rows from add_reports, each dated with its report's survey date."""
+        from datetime import date
+
+        n = sum(len(rows) for rows, _, _ in batches)
+        if self.dry_run or not self._conn:
+            log.info(f"{source['name']}: {n} survey-zone rows (not stored: dry run)")
+            return 0
+        written = 0
+        for rows, survey_date, url in batches:
+            periods = {r.period for r in rows}
+            dates = {p: (date.fromisoformat(survey_date), True) for p in periods}
+            written += source["store_zones_fn"](self._conn, rows, dates, url)
+        self._conn.commit()
+        log.info(f"{source['name']}: stored {written} survey-zone rows")
+        return written
+
     def add_reports(self, source: dict, links: list[str]) -> list[dict]:
         """Download, parse and store reports someone found by hand (a "manual_pdf" source).
 
@@ -386,6 +403,7 @@ class RefugeCountsScraper:
         stats = self._new_stats(source)
         stats["problems"] = []
         items: list[dict] = []
+        zone_batches: list[tuple[list, str, str]] = []
         try:
             for link in links:
                 host = (urlparse(link).hostname or "").lower()
@@ -404,7 +422,14 @@ class RefugeCountsScraper:
                 log.info(f"{source['name']}: {result.survey_date} {result.species_counts}")
                 items.append(self._make_item(source["name"], source["state_code"], result, pdf_url,
                                              source.get("survey_type", "weekly")))
+                if source.get("zones_fn"):
+                    # Sub-regional rows (AGFC survey zones), each checked by the source's own fn
+                    rows, problems = source["zones_fn"](pdf_bytes, result)
+                    zone_batches.append((rows, result.survey_date, pdf_url))
+                    stats["problems"] += problems
             self._record(items, stats)
+            if zone_batches:
+                stats["zone_rows"] = self._store_zones(source, zone_batches)
         except Exception as e:
             log.error(f"Error adding reports for {source['name']}: {e}")
             stats["error"] = f"{type(e).__name__}: {e}"

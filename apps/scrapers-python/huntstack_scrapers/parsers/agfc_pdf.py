@@ -177,6 +177,7 @@ def parse_agfc_text(text: str) -> ParseResult | None:
         species_counts=counts,
         notes=notes,
         survey_type="aerial_biweekly",
+        regions={name: (m_, d) for name, m_, d in regions},
     )
 
 

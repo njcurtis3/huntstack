@@ -10,8 +10,9 @@ import {
 } from 'recharts'
 import { ComposableMap, Geographies, Geography, Annotation } from 'react-simple-maps'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../lib/api'
+import { api, type SurveyZone } from '../lib/api'
 import { isEarlierSeason, oldSurveyLabel, parseCalendarDate } from '../lib/dates'
+import { SurveyZoneBreakdown } from '../components/SurveyZoneBreakdown'
 import { useThemeStore } from '../stores/themeStore'
 import { getMapColors, getChartColors } from '../lib/themeColors'
 import { DismissibleNotice } from '../components/DismissibleNotice'
@@ -1264,6 +1265,7 @@ export function MigrationPage() {
   const [currentCounts, setCurrentCounts] = useState<CurrentCount[]>([])
   const [ebirdCounts, setEbirdCounts] = useState<CurrentCount[]>([])
   const [historicalTrends, setHistoricalTrends] = useState<HistoricalTrend[]>([])
+  const [surveyZones, setSurveyZones] = useState<SurveyZone[]>([])
   const [speciesOptions, setSpeciesOptions] = useState<SpeciesOption[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1344,6 +1346,7 @@ export function MigrationPage() {
         setCurrentCounts(dashboardData.currentCounts.map(c => ({ ...c, source: 'official' as const })))
         setEbirdCounts((dashboardData.ebirdCounts ?? []) as CurrentCount[])
         setHistoricalTrends(dashboardData.historicalTrends)
+        setSurveyZones(dashboardData.surveyZones ?? [])
         setSpeciesOptions(speciesData.species.map(s => ({ slug: s.slug, name: s.name })))
       } catch (err) {
         if (cancelled) return
@@ -2852,6 +2855,10 @@ export function MigrationPage() {
                                           )
                                         })}
                                       </div>
+                                      <SurveyZoneBreakdown
+                                        zones={surveyZones.filter(z => z.parentLocation === group.refugeName)}
+                                        isStale={group.isStale}
+                                      />
                                     </div>
                                   )}
                                 </div>

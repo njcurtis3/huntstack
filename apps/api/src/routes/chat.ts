@@ -84,6 +84,7 @@ interface StructuredContext {
   refugeCounts: Array<Record<string, unknown>>
   /** Sub-state midwinter survey series per year (today: TPWD High Plains, 1997–2018) */
   midwinterHistory: Array<{ region: string; year: number; species: string | null; total: number }>
+  surveyZones: SurveyZoneRow[]
   locations: Array<Record<string, unknown>>
   weather: Array<Record<string, unknown>>
   pushFactors: Array<{ stateCode: string; regionName?: string; pushScore: number; coldFrontPresent: boolean; coldFrontIncoming: boolean; windDirection: string | null; windIsFromNorth: boolean; temperature: number | null }>
@@ -364,6 +365,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     regulations: [],
     refugeCounts: [],
     midwinterHistory: [],
+    surveyZones: [],
     locations: [],
     weather: [],
     pushFactors: [],
@@ -585,6 +587,45 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
           }))
         })())
       }
+
+      // Where in Arkansas AGFC's newest survey found ducks, zone by zone, against each zone's
+      // average for that survey period ("is the Cache holding birds this year?")
+      if (stateCodes.includes('AR')) {
+        queries.push((async () => {
+          const rows = await db.execute(sql`
+            WITH z AS (
+              SELECT l.metadata->>'region' AS region, l.metadata->>'zone' AS zone,
+                     (l.metadata->>'zoneOrder')::int AS zone_order,
+                     rc.metadata->>'period' AS period, rc.survey_date,
+                     rc.count AS mallards, (rc.metadata->>'totalDucks')::int AS total_ducks
+              FROM refuge_counts rc
+              JOIN locations l ON l.id = rc.location_id
+              JOIN species sp ON sp.id = rc.species_id
+              WHERE l.location_type = 'survey_zone' AND sp.slug = 'mallard'
+            )
+            SELECT z.region, z.zone, z.period, z.survey_date, z.mallards, z.total_ducks,
+                   (SELECT round(avg(h.mallards))::int FROM z h WHERE h.zone = z.zone
+                      AND split_part(h.period, '-', 1) = split_part(z.period, '-', 1)
+                      AND h.survey_date < z.survey_date) AS avg_mallards,
+                   (SELECT round(avg(h.total_ducks))::int FROM z h WHERE h.zone = z.zone
+                      AND split_part(h.period, '-', 1) = split_part(z.period, '-', 1)
+                      AND h.survey_date < z.survey_date) AS avg_total_ducks
+            FROM z
+            WHERE z.survey_date = (SELECT max(survey_date) FROM z)
+            ORDER BY z.zone_order
+          `)
+          result.surveyZones = (rows as unknown as Array<Record<string, unknown>>).map(r => ({
+            region: r.region as string,
+            zone: r.zone as string,
+            period: r.period as string,
+            surveyDate: String(r.survey_date),
+            mallards: Number(r.mallards),
+            totalDucks: r.total_ducks == null ? null : Number(r.total_ducks),
+            avgMallards: r.avg_mallards == null ? null : Number(r.avg_mallards),
+            avgTotalDucks: r.avg_total_ducks == null ? null : Number(r.avg_total_ducks),
+          }))
+        })())
+      }
     }
 
     // ── Locations (public hunting areas) ────────────────────────────────
@@ -592,6 +633,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
       queries.push((async () => {
         const conditions = [
           sql`l.name NOT LIKE '%% - Statewide MWI'`,
+          sql`l.location_type <> 'survey_zone'`,
         ]
 
         if (stateCodes.length > 0) {
@@ -803,6 +845,10 @@ function formatStructuredContext(ctx: StructuredContext): string {
     sections.push(`## Long-Term Winter Survey History\n${formatMidwinterHistory(ctx.midwinterHistory)}`)
   }
 
+  if (ctx.surveyZones.length > 0) {
+    sections.push(`## Arkansas Survey Zones\n${formatSurveyZones(ctx.surveyZones)}`)
+  }
+
   // Locations
   if (ctx.locations.length > 0) {
     const lines = ctx.locations.map(l => {
@@ -864,6 +910,39 @@ function formatStructuredContext(ctx: StructuredContext): string {
 }
 
 /** One line per region (and species, when asked about one): "1997 401k, 1998 612k, …". */
+export type SurveyZoneRow = {
+  region: string
+  zone: string
+  period: string
+  surveyDate: string
+  mallards: number
+  totalDucks: number | null
+  avgMallards: number | null
+  avgTotalDucks: number | null
+}
+
+const PERIOD_NAMES: Record<string, string> = {
+  Nov: 'late-November', Dec: 'December', MWS: 'early-January midwinter', Jan: 'late-January',
+}
+
+/** AGFC's newest survey by zone, busiest first, each against its average for that period. */
+export function formatSurveyZones(rows: SurveyZoneRow[]): string {
+  const vsAvg = (n: number | null, avg: number | null) =>
+    n == null || !avg ? '' : ` (${n >= avg ? '+' : ''}${Math.round(((n - avg) / avg) * 100)}% vs avg)`
+  const first = rows[0]
+  const kind = PERIOD_NAMES[first.period.split('-')[0]] ?? first.period
+  const lines = [...rows]
+    .sort((a, b) => (b.totalDucks ?? b.mallards) - (a.totalDucks ?? a.mallards))
+    .map(r => `- ${r.zone} (${r.region}): `
+      + (r.totalDucks != null ? `${r.totalDucks.toLocaleString('en-US')} ducks${vsAvg(r.totalDucks, r.avgTotalDucks)}, ` : '')
+      + `${r.mallards.toLocaleString('en-US')} mallards${vsAvg(r.mallards, r.avgMallards)}`)
+  return [
+    `AGFC aerial survey estimates by survey zone, ${kind} survey ending ${first.surveyDate.slice(0, 10)} (newest AGFC survey; `
+      + 'averages are the same survey period in earlier years since 2011). These are parts of the statewide AGFC count, not additional birds.',
+    ...lines,
+  ].join('\n')
+}
+
 export function formatMidwinterHistory(
   rows: Array<{ region: string; year: number; species: string | null; total: number }>,
 ): string {

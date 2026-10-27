@@ -7,6 +7,21 @@ interface FetchOptions extends RequestInit {
   timeoutMs?: number
 }
 
+/** One survey zone of a statewide survey's newest survey (AGFC's Arkansas zones). */
+export type SurveyZone = {
+  parentLocation: string
+  region: string
+  zone: string
+  period: string
+  surveyDate: string
+  dateExact: boolean
+  mallards: number
+  totalDucks: number | null
+  avgMallards: number | null
+  avgTotalDucks: number | null
+  yearsInAverage: number
+}
+
 class ApiClient {
   private baseUrl: string
 
@@ -283,6 +298,7 @@ class ApiClient {
     species?: string
   }) {
     return this.request<{
+      surveyZones?: SurveyZone[]
       currentCounts: Array<{
         refugeId: string
         refugeName: string

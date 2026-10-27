@@ -18,6 +18,7 @@ Source types:
 """
 
 from huntstack_scrapers.parsers.agfc_pdf import parse_agfc_pdf
+from huntstack_scrapers.parsers.agfc_zones import store_zone_rows, zones_for_report
 from huntstack_scrapers.parsers.fws_html import parse_fws_refuge_page, parse_fws_story_page
 from huntstack_scrapers.parsers.loess_bluffs_pdf import parse_loess_bluffs_pdf, generate_loess_bluffs_urls
 from huntstack_scrapers.parsers.ldwf_pdf import parse_ldwf_pdf, fetch_ldwf_pdf_urls
@@ -59,6 +60,9 @@ WATERFOWL_SOURCES = [
         "survey_type": "aerial_biweekly",
         "alias": "agfc",
         "parser": parse_agfc_pdf,
+        # Mallards and total ducks by survey zone (Tables 1 and 2), for the report's own period
+        "zones_fn": zones_for_report,
+        "store_zones_fn": store_zone_rows,
         "report_hosts": ("drive.google.com",),
         "report_months": {11, 12, 1, 2},   # first survey late Nov/Dec, last late Jan
         "report_gap_days": 21,             # surveys are 2-4 weeks apart

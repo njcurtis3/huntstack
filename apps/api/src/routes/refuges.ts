@@ -328,7 +328,57 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
       ORDER BY 1, 2
     `)
 
+    // Where in a state a survey found its birds: the newest survey's zones (today: AGFC's 20
+    // Arkansas survey zones), each with its average for the same survey period in earlier
+    // years. Zone rows are survey_only, so they're never in currentCounts or any total.
+    const zoneRows = await db.execute(sql`
+      WITH z AS (
+        SELECT l.metadata->>'parentLocation' AS parent,
+               l.metadata->>'region' AS region,
+               l.metadata->>'zone' AS zone,
+               (l.metadata->>'zoneOrder')::int AS zone_order,
+               rc.metadata->>'period' AS period,
+               rc.survey_date,
+               (rc.metadata->>'dateExact')::boolean AS date_exact,
+               rc.count AS mallards,
+               (rc.metadata->>'totalDucks')::int AS total_ducks
+        FROM refuge_counts rc
+        JOIN locations l ON l.id = rc.location_id
+        JOIN species sp ON sp.id = rc.species_id
+        WHERE l.location_type = 'survey_zone' AND sp.slug = 'mallard'
+      ),
+      latest AS (SELECT parent, max(survey_date) AS survey_date FROM z GROUP BY parent)
+      SELECT z.parent, z.region, z.zone, z.period, z.survey_date, z.date_exact,
+             z.mallards, z.total_ducks, a.avg_mallards, a.avg_total_ducks, a.years
+      FROM z
+      JOIN latest ON latest.parent = z.parent AND latest.survey_date = z.survey_date
+      LEFT JOIN LATERAL (
+        SELECT round(avg(h.mallards))::int AS avg_mallards,
+               round(avg(h.total_ducks))::int AS avg_total_ducks,
+               count(*)::int AS years
+        FROM z h
+        WHERE h.zone = z.zone
+          AND split_part(h.period, '-', 1) = split_part(z.period, '-', 1)
+          AND h.survey_date < z.survey_date
+      ) a ON true
+      ORDER BY z.parent, z.zone_order
+    `)
+    const surveyZones = (zoneRows as unknown as Array<Record<string, unknown>>).map(r => ({
+      parentLocation: r.parent as string,
+      region: r.region as string,
+      zone: r.zone as string,
+      period: r.period as string,
+      surveyDate: r.survey_date as string,
+      dateExact: r.date_exact as boolean,
+      mallards: r.mallards as number,
+      totalDucks: r.total_ducks as number | null,
+      avgMallards: r.avg_mallards as number | null,
+      avgTotalDucks: r.avg_total_ducks as number | null,
+      yearsInAverage: r.years as number,
+    }))
+
     return {
+      surveyZones,
       currentCounts: results.map(r => {
         const currentCount = r.count as number
         const previousCount = r.previous_count as number | null

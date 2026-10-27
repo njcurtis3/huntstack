@@ -239,6 +239,7 @@ export const speciesRoutes: FastifyPluginAsync = async (app) => {
       .where(and(
         eq(refugeCounts.speciesId, sp.id),
         sql`${locations.name} NOT LIKE '% - Statewide MWI'`,
+        sql`(${locations.metadata}->>'survey_only') IS DISTINCT FROM 'true'`,
       ))
       .orderBy(desc(refugeCounts.surveyDate))
       .limit(50)

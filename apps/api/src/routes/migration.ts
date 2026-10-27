@@ -180,6 +180,8 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
         JOIN states s ON l.state_id = s.id
         JOIN species sp ON rc.species_id = sp.id
         WHERE l.name NOT LIKE '% - Statewide MWI'
+          -- survey-only rows (AGFC survey zones, TPWD High Plains) are already in a statewide count
+          AND (l.metadata->>'survey_only') IS DISTINCT FROM 'true'
           AND rc.survey_date >= NOW() - INTERVAL '30 days'
           ${flywayFilter}
           ${speciesFilter}
@@ -386,6 +388,8 @@ Keep it under 150 words. Be direct and actionable.`
       JOIN states s ON l.state_id = s.id
       JOIN species sp ON rc.species_id = sp.id
       WHERE l.name NOT LIKE '% - Statewide MWI'
+        -- survey-only rows (AGFC survey zones, TPWD High Plains) are already in a statewide count
+        AND (l.metadata->>'survey_only') IS DISTINCT FROM 'true'
         AND rc.survey_date BETWEEN ${startDate}::date AND ${endDate}::date
         ${speciesFilter}
         ${flywayFilter}
