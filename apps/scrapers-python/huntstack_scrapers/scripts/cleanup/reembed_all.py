@@ -107,6 +107,8 @@ def main():
         print(f"  {done}/{total} re-embedded (resume with --start-after {last_id})")
 
     print(f"Rebuilding {INDEX_NAME} so its clusters reflect the new vectors...")
+    # Supabase's default (32 MB) is too small: 33k chunks at 1024 dims needed 45 MB (2026-10-27)
+    cur.execute("SET maintenance_work_mem = '128MB'")
     cur.execute(f"REINDEX INDEX {INDEX_NAME}")
     conn.commit()
     print(f"Done. {done} chunks re-embedded with {embedding_model()}.")
