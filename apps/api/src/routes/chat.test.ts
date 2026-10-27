@@ -4,6 +4,7 @@ import {
   MAX_HISTORY_MESSAGES,
   extractEntities,
   formatBagLimit,
+  formatMidwinterHistory,
   formatShootingHours,
   truncateHistory,
 } from './chat.js'
@@ -164,5 +165,25 @@ describe('formatBagLimit — species caps inside an aggregate', () => {
     expect(result).toBe(
       ', bag limit: daily: 6, possession: 18, within that, no more than mallard: 5 per day; pintail: 3 per day; mottled duck: 1 per day, No more than 2 of the 5 mallards may be hens.',
     )
+  })
+})
+
+describe('formatMidwinterHistory', () => {
+  it('writes one sorted line per region and species, with short numbers', () => {
+    const out = formatMidwinterHistory([
+      { region: 'TX High Plains', year: 1998, species: 'Snow Goose', total: 70420 },
+      { region: 'TX High Plains', year: 1997, species: 'Snow Goose', total: 1_400_000 },
+      { region: 'TX High Plains', year: 1997, species: 'Mallard', total: 62080 },
+    ])
+    expect(out).toContain('- TX High Plains — Snow Goose: 1997 1.40M, 1998 70k')
+    expect(out).toContain('- TX High Plains — Mallard: 1997 62k')
+    expect(out).toMatch(/not current-season/)
+  })
+})
+
+describe('extractEntities Panhandle places', () => {
+  it('reads Amarillo and Lubbock as Texas', () => {
+    expect(extractEntities('snow geese near Amarillo').stateCodes).toEqual(['TX'])
+    expect(extractEntities('ducks around lubbock').stateCodes).toEqual(['TX'])
   })
 })

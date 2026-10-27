@@ -310,7 +310,22 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
       WHERE rc.survey_type = 'mwi_annual'
         ${speciesSlug ? sql`AND sp.slug = ${speciesSlug}` : sql``}
       GROUP BY EXTRACT(YEAR FROM rc.survey_date), s.code, sp.slug
-      ORDER BY year, s.code
+      UNION ALL
+      -- Sub-state midwinter series (today: TPWD's High Plains stratum, 1997–2018), keyed
+      -- by the location's regionLabel so the chart draws it as its own line
+      SELECT
+        EXTRACT(YEAR FROM rc.survey_date)::integer,
+        l.metadata->>'regionLabel',
+        sp.slug,
+        SUM(rc.count)
+      FROM refuge_counts rc
+      JOIN locations l ON rc.location_id = l.id
+      JOIN species sp ON rc.species_id = sp.id
+      WHERE rc.survey_type = 'annual_midwinter'
+        AND l.metadata->>'regionLabel' IS NOT NULL
+        ${speciesSlug ? sql`AND sp.slug = ${speciesSlug}` : sql``}
+      GROUP BY EXTRACT(YEAR FROM rc.survey_date), l.metadata->>'regionLabel', sp.slug
+      ORDER BY 1, 2
     `)
 
     return {

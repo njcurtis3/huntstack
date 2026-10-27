@@ -70,3 +70,23 @@ class TestUnknownName:
 
     def test_empty_string_returns_none(self):
         assert resolve_species_slug("") is None
+
+
+def test_tpwd_midwinter_abbreviations():
+    from huntstack_scrapers.species_mapping import resolve_species_slug
+
+    assert resolve_species_slug("G-W Teal") == "green-winged-teal"
+    assert resolve_species_slug("B-W/Cinn. Teal") == "blue-winged-teal"
+    assert resolve_species_slug("Snow/Blue/Ross' Goose") == "snow-goose"
+    assert resolve_species_slug("Goldeneye") is None
+
+
+def test_every_slug_resolves_to_itself():
+    # Regression: the storage pipeline re-resolves the slugs parsers return; slugs that
+    # weren't also aliases (green-winged-teal, canada-goose, snow-goose...) were dropped.
+    from huntstack_scrapers.species_mapping import _KNOWN_SLUGS, resolve_species_slug
+
+    for slug in ["green-winged-teal", "blue-winged-teal", "canada-goose", "snow-goose", "white-fronted-goose"]:
+        assert slug in _KNOWN_SLUGS
+    for slug in _KNOWN_SLUGS:
+        assert resolve_species_slug(slug) == slug

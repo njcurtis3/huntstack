@@ -131,6 +131,13 @@ REFUGE_SURVEY_MAPPING: dict[str, str | None] = {
     "Greater White-fronted Goose": "white-fronted-goose",
     "Greater White-Fronted": "white-fronted-goose",
     "Specklebelly Goose": "white-fronted-goose",
+    # TPWD midwinter workbook abbreviations
+    "G-W Teal": "green-winged-teal",
+    "B-W/Cinn. Teal": "blue-winged-teal",
+    "Snow/Blue/Ross' Goose": "snow-goose",
+    "Goldeneye": None,
+    "Black-bellied W.D.": None,
+    "Fulvous W.D.": None,
     # Aggregate rows — skip
     "Total Ducks": None,
     "Total Geese": None,
@@ -170,6 +177,11 @@ def resolve_species_slug(name: str) -> str | None:
     """
     if not name:
         return None
+    # Parsers already hand the pipeline slugs; a slug must resolve to itself. Without
+    # this, any slug that isn't also an alias ("green-winged-teal", "canada-goose")
+    # was silently dropped at storage time.
+    if name.strip() in _KNOWN_SLUGS:
+        return name.strip()
     normalized = name.strip().lower()
 
     # Try core alias match (case-insensitive)
@@ -192,3 +204,8 @@ def resolve_species_slug(name: str) -> str | None:
         return None  # Explicitly mapped to None (skip)
 
     return None
+
+
+_KNOWN_SLUGS: frozenset[str] = frozenset(
+    v for m in (SPECIES_ALIASES, MWI_COLUMN_MAPPING, REFUGE_SURVEY_MAPPING) for v in m.values() if v
+)

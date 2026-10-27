@@ -79,7 +79,8 @@ WHERE l.state_id = s.id AND l.name = m.name;
 
 DO $$ DECLARE n int; bad int; BEGIN
   SELECT count(*) INTO n FROM locations WHERE metadata ? 'huntZones';
-  IF n <> 27 THEN RAISE EXCEPTION 'expected 27 locations with huntZones, got %', n; END IF;
+  -- 27 mapped here; add-panhandle-ebird-locations-2.sql sets huntZones on 7 more itself
+  IF n < 27 THEN RAISE EXCEPTION 'expected at least 27 locations with huntZones, got %', n; END IF;
   -- every mapped zone name must exist as a 2026 season zone in that state
   SELECT count(*) INTO bad
   FROM locations l JOIN states s ON s.id = l.state_id,

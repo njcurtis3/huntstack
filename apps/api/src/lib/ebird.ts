@@ -27,12 +27,12 @@ const EBIRD_SPECIES: Record<string, { slug: string; name: string }> = {
   snogoo:  { slug: 'snow-goose',           name: 'Snow Goose' },
   cangoo:  { slug: 'canada-goose',         name: 'Canada Goose' },
   gwfgoo:  { slug: 'white-fronted-goose',  name: 'Greater White-fronted Goose' },
-  rossgo:  { slug: 'ross-goose',           name: "Ross's Goose" },
+  rosgoo:  { slug: 'ross-goose',           name: "Ross's Goose" },
   gadwal:  { slug: 'gadwall',              name: 'Gadwall' },
   norsho:  { slug: 'northern-shoveler',    name: 'Northern Shoveler' },
-  ambwig:  { slug: 'american-wigeon',      name: 'American Wigeon' },
+  amewig:  { slug: 'american-wigeon',      name: 'American Wigeon' },
   gnwtea:  { slug: 'green-winged-teal',    name: 'Green-winged Teal' },
-  blwtea:  { slug: 'blue-winged-teal',     name: 'Blue-winged Teal' },
+  buwtea:  { slug: 'blue-winged-teal',     name: 'Blue-winged Teal' },
   canvas:  { slug: 'canvasback',           name: 'Canvasback' },
   redhea:  { slug: 'redhead',              name: 'Redhead' },
   lessca:  { slug: 'scaup',               name: 'Scaup' },
@@ -40,12 +40,22 @@ const EBIRD_SPECIES: Record<string, { slug: string; name: string }> = {
   buffle:  { slug: 'bufflehead',           name: 'Bufflehead' },
   rudduc:  { slug: 'ruddy-duck',           name: 'Ruddy Duck' },
   rinduc:  { slug: 'ring-necked-duck',     name: 'Ring-necked Duck' },
-  mottdu:  { slug: 'mottled-duck',         name: 'Mottled Duck' },
-  // Snow x Ross's hybrid — count toward snow goose
-  sxrgoo:  { slug: 'snow-goose',           name: 'Snow Goose' },
+  motduc:  { slug: 'mottled-duck',         name: 'Mottled Duck' },
+  // Cackling geese are hunted as dark geese with Canadas (as the scrapers map them)
+  cacgoo1: { slug: 'canada-goose',         name: 'Canada Goose' },
+  y00470:  { slug: 'canada-goose',         name: 'Canada Goose' },  // Cackling/Canada Goose
+  // Snow x Ross's hybrid and Snow/Ross's — count toward snow goose
+  sxrgoo1: { slug: 'snow-goose',           name: 'Snow Goose' },
+  y00469:  { slug: 'snow-goose',           name: 'Snow Goose' },
+  scaup:   { slug: 'scaup',                name: 'Scaup' },  // Greater/Lesser Scaup
+  y00314:  { slug: 'blue-winged-teal',     name: 'Blue-winged Teal' },  // Blue-winged/Cinnamon Teal
   // Teal sp. — count toward green-winged as most common
-  teal1:   { slug: 'green-winged-teal',    name: 'Green-winged Teal' },
+  teal:    { slug: 'green-winged-teal',    name: 'Green-winged Teal' },
 }
+// Codes checked against eBird's /ref/taxonomy/ebird on 2026-10-27. Six were wrong before
+// (ambwig, blwtea, rossgo, mottdu, sxrgoo, teal1), so wigeon, blue-winged teal, Ross's
+// goose and mottled duck sightings were silently dropped. ebird.test.ts pins the list.
+export const EBIRD_SPECIES_CODES = Object.keys(EBIRD_SPECIES)
 
 // ─── State → flyway mapping (V1 states) ──────────────────────────────────────
 

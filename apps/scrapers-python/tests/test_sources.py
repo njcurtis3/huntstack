@@ -45,3 +45,16 @@ def test_ldwf_and_tpwd_sources_hold_unresolved_callables():
 
     assert callable(ldwf["pdf_urls_fn"])
     assert callable(tpwd["excel_urls_fn"])
+
+
+def test_tpwd_high_plains_source_only_reads_the_estimates_workbook(monkeypatch):
+    import huntstack_scrapers.sources as sources
+
+    hp = next(s for s in sources.WATERFOWL_SOURCES if s["name"] == "Texas High Plains - TPWD Midwinter Survey")
+    monkeypatch.setattr(sources, "fetch_tpwd_excel_urls", lambda: [
+        "https://tpwd.texas.gov/x/tx-mws-yearly-summary.xls",
+        "https://tpwd.texas.gov/x/mw_estimates_97-18.xls",
+    ])
+    assert hp["excel_urls_fn"]() == ["https://tpwd.texas.gov/x/mw_estimates_97-18.xls"]
+    # region mode never falls back to the statewide parse
+    assert hp["excel_parser"](b"not an excel file", "tx-mws-yearly-summary.xls") == []

@@ -123,4 +123,15 @@ WATERFOWL_SOURCES = [
         "excel_urls_fn": fetch_tpwd_excel_urls,
         "excel_parser": parse_tpwd_excel,
     },
+    # Same survey, High Plains stratum only (1997-2018, ducks and geese). Only the
+    # historical workbook has per-stratum sheets, so the yearly summary is skipped.
+    {
+        "name": "Texas High Plains - TPWD Midwinter Survey",
+        "state_code": "TX",
+        "url": "https://tpwd.texas.gov/huntwild/wild/game_management/waterfowl/",
+        "source_type": "excel_index",
+        "survey_type": "annual_midwinter",
+        "excel_urls_fn": lambda: [u for u in fetch_tpwd_excel_urls() if "estimates" in u.lower()],
+        "excel_parser": lambda excel_bytes, filename: parse_tpwd_excel(excel_bytes, filename, region="HP"),
+    },
 ]

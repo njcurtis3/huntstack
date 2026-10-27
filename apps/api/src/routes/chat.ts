@@ -17,6 +17,8 @@ type ChatRequestBody = z.infer<typeof chatRequestSchema>
 
 const STATE_ALIASES: Record<string, string> = {
   texas: 'TX', tx: 'TX',
+  // Panhandle places hunters name instead of the state ("snow geese near Amarillo")
+  amarillo: 'TX', lubbock: 'TX', 'texas panhandle': 'TX', 'south plains': 'TX',
   arkansas: 'AR', ar: 'AR',
   louisiana: 'LA', la: 'LA',
   'new mexico': 'NM', nm: 'NM',
@@ -80,6 +82,8 @@ interface StructuredContext {
   licenses: Array<Record<string, unknown>>
   regulations: Array<Record<string, unknown>>
   refugeCounts: Array<Record<string, unknown>>
+  /** Sub-state midwinter survey series per year (today: TPWD High Plains, 1997–2018) */
+  midwinterHistory: Array<{ region: string; year: number; species: string | null; total: number }>
   locations: Array<Record<string, unknown>>
   weather: Array<Record<string, unknown>>
   pushFactors: Array<{ stateCode: string; regionName?: string; pushScore: number; coldFrontPresent: boolean; coldFrontIncoming: boolean; windDirection: string | null; windIsFromNorth: boolean; temperature: number | null }>
@@ -359,6 +363,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     licenses: [],
     regulations: [],
     refugeCounts: [],
+    midwinterHistory: [],
     locations: [],
     weather: [],
     pushFactors: [],
@@ -544,12 +549,42 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
           JOIN states st ON l.state_id = st.id
           JOIN species sp ON rc.species_id = sp.id
           WHERE l.name NOT LIKE '%% - Statewide MWI'
+            AND (l.metadata->>'survey_only') IS DISTINCT FROM 'true'
             ${speciesFilter}
           ORDER BY rc.location_id, rc.species_id, rc.survey_date DESC
           LIMIT 20
         `)
         result.refugeCounts = rows as unknown as Array<Record<string, unknown>>
       })())
+
+      // Long-run winter numbers for a sub-state region, as context for "is this a good
+      // area?" — kept out of the recent counts above, since the newest year is 2018
+      if (stateCodes.includes('TX')) {
+        queries.push((async () => {
+          const rows = await db.execute(sql`
+            SELECT l.metadata->>'regionLabel' AS region,
+                   EXTRACT(YEAR FROM rc.survey_date)::int AS year,
+                   ${speciesSlugs.length > 0 ? sql`sp.name` : sql`NULL`} AS species,
+                   SUM(rc.count)::bigint AS total
+            FROM refuge_counts rc
+            JOIN locations l ON rc.location_id = l.id
+            JOIN states st ON l.state_id = st.id
+            JOIN species sp ON rc.species_id = sp.id
+            WHERE rc.survey_type = 'annual_midwinter'
+              AND l.metadata->>'regionLabel' IS NOT NULL
+              AND st.code = 'TX'
+              ${speciesSlugs.length > 0 ? sql`AND sp.slug IN (${sql.join(speciesSlugs.map(s => sql`${s}`), sql`, `)})` : sql``}
+            GROUP BY 1, 2, 3
+            ORDER BY 1, 3, 2
+          `)
+          result.midwinterHistory = (rows as unknown as Array<Record<string, unknown>>).map(r => ({
+            region: r.region as string,
+            year: Number(r.year),
+            species: (r.species as string | null) ?? null,
+            total: Number(r.total),
+          }))
+        })())
+      }
     }
 
     // ── Locations (public hunting areas) ────────────────────────────────
@@ -764,6 +799,10 @@ function formatStructuredContext(ctx: StructuredContext): string {
     sections.push(`## Recent Bird Survey Counts\n${lines.join('\n')}`)
   }
 
+  if (ctx.midwinterHistory.length > 0) {
+    sections.push(`## Long-Term Winter Survey History\n${formatMidwinterHistory(ctx.midwinterHistory)}`)
+  }
+
   // Locations
   if (ctx.locations.length > 0) {
     const lines = ctx.locations.map(l => {
@@ -822,6 +861,27 @@ function formatStructuredContext(ctx: StructuredContext): string {
   }
 
   return sections.join('\n\n')
+}
+
+/** One line per region (and species, when asked about one): "1997 401k, 1998 612k, …". */
+export function formatMidwinterHistory(
+  rows: Array<{ region: string; year: number; species: string | null; total: number }>,
+): string {
+  const series = new Map<string, Array<{ year: number; total: number }>>()
+  for (const r of rows) {
+    const key = r.species ? `${r.region} — ${r.species}` : `${r.region} — all ducks and geese`
+    if (!series.has(key)) series.set(key, [])
+    series.get(key)!.push({ year: r.year, total: r.total })
+  }
+  const short = (n: number) => n >= 1_000_000 ? `${(n / 1_000_000).toFixed(2)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : String(n)
+  const lines = [...series].map(([key, pts]) => {
+    pts.sort((a, b) => a.year - b.year)
+    return `- ${key}: ${pts.map(p => `${p.year} ${short(p.total)}`).join(', ')}`
+  })
+  return [
+    'TPWD aerial midwinter survey estimates (January). Annual, not current-season data; TPWD has not published regional estimates after 2018.',
+    ...lines,
+  ].join('\n')
 }
 
 export function formatBagLimit(bagLimit: unknown): string {

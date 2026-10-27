@@ -12,6 +12,10 @@ https://tpwd.texas.gov/huntwild/wild/game_management/waterfowl/
    Layout: col 0 = species name, col 8 = state total (header row 1 says "2018 STATE TOTALS")
    Row 0 = zone headers, row 1 = column labels, rows 2+ = species data
 
+   The historical file also has one sheet per survey stratum ("HP estimates" = High
+   Plains, etc.). With region="HP", only that sheet is parsed; it includes geese,
+   which the statewide sheet does not.
+
 Survey dates are set to YYYY-01-15 (mid-January convention, matching when surveys occur).
 """
 
@@ -28,6 +32,9 @@ log = logging.getLogger(__name__)
 
 _TPWD_BASE = "https://tpwd.texas.gov"
 _WATERFOWL_PAGE = f"{_TPWD_BASE}/huntwild/wild/game_management/waterfowl/"
+
+# region code -> sheet in mw_estimates_97-18.xls
+REGION_SHEETS = {"HP": "HP estimates"}
 
 # Species names to skip (total rows, blank rows)
 _SKIP_NAMES = {
@@ -69,13 +76,16 @@ def fetch_tpwd_excel_urls() -> list[str]:
     return urls
 
 
-def parse_tpwd_excel(excel_bytes: bytes, filename: str) -> list[ParseResult]:
+def parse_tpwd_excel(excel_bytes: bytes, filename: str, region: str | None = None) -> list[ParseResult]:
     """
     Parse a TPWD Mid-Winter Survey Excel file.
 
     Detects format by filename:
     - mw_estimates_97-18.xls  → multi-year historical (parse_historical)
     - tx-mws-yearly-summary.xls → per-sheet yearly (parse_yearly_summary)
+
+    With region (a REGION_SHEETS key), parses that stratum's sheet of the historical
+    file instead, and nothing from any other file.
 
     Returns a list of ParseResult objects, one per survey year.
     """
@@ -86,6 +96,11 @@ def parse_tpwd_excel(excel_bytes: bytes, filename: str) -> list[ParseResult]:
         return []
 
     fname = filename.lower()
+
+    if region is not None:
+        if "estimates" not in fname:
+            return []
+        return _parse_historical(excel_bytes, REGION_SHEETS[region])
 
     if "estimates_97" in fname or "estimates" in fname:
         return _parse_historical(excel_bytes)
@@ -99,17 +114,17 @@ def parse_tpwd_excel(excel_bytes: bytes, filename: str) -> list[ParseResult]:
         return results
 
 
-def _parse_historical(excel_bytes: bytes) -> list[ParseResult]:
+def _parse_historical(excel_bytes: bytes, sheet_name: str = "State Wide estimates") -> list[ParseResult]:
     """
-    Parse mw_estimates_97-18.xls.
-    Sheet: 'State Wide estimates'
+    Parse one sheet of mw_estimates_97-18.xls (default 'State Wide estimates'; every
+    stratum sheet has the same layout).
     Row 2: year headers starting at col 2
     Rows 3+: species in col 1, counts in cols 2–N
     """
     import pandas as pd
 
     try:
-        df = pd.read_excel(BytesIO(excel_bytes), sheet_name="State Wide estimates", header=None)
+        df = pd.read_excel(BytesIO(excel_bytes), sheet_name=sheet_name, header=None)
     except Exception as e:
         log.error(f"Failed to read historical Excel: {e}")
         return []

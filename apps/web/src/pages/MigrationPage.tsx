@@ -3088,7 +3088,7 @@ export function MigrationPage() {
                   </LineChart>
                 </ResponsiveContainer>
                 <p className="text-xs mt-3" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                  Midwinter Waterfowl Survey, January counts: 2006–2024 for KS, NM, OK and TX (USFWS Central Flyway reports); 2006–2016 for AR and LA.
+                  Midwinter Waterfowl Survey, January counts: 2006–2024 for KS, NM, OK and TX (USFWS Central Flyway reports); 2006–2016 for AR and LA. TX High Plains: TPWD's Panhandle and South Plains survey region, 1997–2018 (the last year TPWD published regional estimates).
                 </p>
               </div>
             )}
