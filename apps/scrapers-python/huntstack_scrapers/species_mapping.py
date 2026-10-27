@@ -4,6 +4,8 @@ Centralized species name -> slug mapping for all ingestion pipelines.
 Used by: extract_regulations.py, ingest_mwi.py, refuge_counts spider.
 """
 
+import re
+
 # Core slug mapping — covers regulation text, common names, abbreviations
 SPECIES_ALIASES: dict[str, str] = {
     # Ducks
@@ -154,6 +156,8 @@ REFUGE_SURVEY_MAPPING: dict[str, str | None] = {
     "Redhead": "redhead",
     "Ring-necked Duck": "ring-necked-duck",
     "Scaup": "scaup",
+    "Lesser Scaup": "scaup",    # Washita, Clarence Cannon (found by the pipeline's check)
+    "Greater Scaup": "scaup",
     # Loess Bluffs PDF species — not tracked
     "Trumpeter Swan": None,
     "Tundra Swan": None,
@@ -204,6 +208,34 @@ def resolve_species_slug(name: str) -> str | None:
         return None  # Explicitly mapped to None (skip)
 
     return None
+
+
+_WATERFOWL_WORDS = re.compile(
+    r"duck|teal|goose|geese|mallard|pintail|gadwall|wigeon|widgeon|shoveler|canvasback|redhead|"
+    r"scaup|bufflehead|goldeneye|merganser|swan|brant|whistling|dabbler|diver",
+    re.IGNORECASE,
+)
+
+
+def is_unknown_species_name(name: str) -> bool:
+    """True when a parsed name looks like waterfowl but maps to nothing: not a tracked
+    species and not a deliberately skipped one (totals, swans, mergansers...). These are the
+    silent drops: a new spelling in a source ("G-W Teal", "Lesser Scaup") lands here until
+    someone maps it, so the data pipeline reports it instead of letting it vanish.
+
+    Other birds on refuge sheets (herons, eagles, hawks) are never tracked, so they're
+    ignored rather than flagged.
+    """
+    if not name or not name.strip() or not _WATERFOWL_WORDS.search(name):
+        return False
+    if resolve_species_slug(name) is not None:
+        return False
+    stripped = name.strip()
+    return not (
+        stripped in MWI_COLUMN_MAPPING
+        or stripped in REFUGE_SURVEY_MAPPING
+        or stripped.lower() in SPECIES_ALIASES
+    )
 
 
 _KNOWN_SLUGS: frozenset[str] = frozenset(

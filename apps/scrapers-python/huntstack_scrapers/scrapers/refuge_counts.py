@@ -33,6 +33,7 @@ from scrapling.fetchers import Fetcher
 
 from huntstack_scrapers.sources import WATERFOWL_SOURCES
 from huntstack_scrapers.parsers.base import ParseResult
+from huntstack_scrapers.species_mapping import is_unknown_species_name
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +50,9 @@ class RefugeCountsScraper:
         self.dry_run = dry_run
         self.fetcher = Fetcher()
         self.items: list[dict] = []
+        # Per-source outcome of the last run(), read by the data pipeline's checks:
+        # {name: {"items", "rows", "error", "store_errors", "unknown_names", "missing_slugs", "no_location"}}
+        self.source_stats: dict[str, dict] = {}
 
         # DB connection (lazy — only opened if not dry_run)
         self._conn = None
@@ -85,10 +89,10 @@ class RefugeCountsScraper:
             f"{len(self._location_map)} refuge locations"
         )
 
-    def _store_item(self, item: dict):
+    def _store_item(self, item: dict) -> dict | None:
         """Persist a refuge_count item using the same logic as DatabasePipeline."""
         if not self._conn:
-            return
+            return None
 
         from huntstack_scrapers.pipelines import DatabasePipeline
         # Reuse the existing pipeline store method by creating a minimal mock
@@ -100,7 +104,7 @@ class RefugeCountsScraper:
 
         class _MockSpider:
             logger = log
-        pipeline._process_refuge_count(item, _MockSpider())
+        return pipeline._process_refuge_count(item, _MockSpider())
 
     # ─── Fetch helpers ────────────────────────────────────────────────────────
 
@@ -367,6 +371,10 @@ class RefugeCountsScraper:
         for source in sources:
             source_type = source.get("source_type", "html")
             log.info(f"\n--- {source['name']} ({source_type}) ---")
+            stats = self.source_stats[source["name"]] = {
+                "items": 0, "rows": 0, "error": None, "store_errors": 0,
+                "unknown_names": set(), "missing_slugs": set(), "no_location": False,
+            }
 
             try:
                 if source_type == "html":
@@ -386,13 +394,26 @@ class RefugeCountsScraper:
                     items = []
 
                 all_items.extend(items)
+                stats["items"] = len(items)
+                for item in items:
+                    stats["unknown_names"].update(
+                        n for n in item.get("species_counts", {}) if is_unknown_species_name(n)
+                    )
 
                 if not self.dry_run:
                     for item in items:
-                        self._store_item(item)
+                        stored = self._store_item(item)
+                        if stored is None:
+                            continue
+                        stats["rows"] += stored["rows"]
+                        stats["missing_slugs"].update(stored["missing_slugs"])
+                        stats["no_location"] = stats["no_location"] or stored["no_location"]
+                        if stored["error"]:
+                            stats["store_errors"] += 1
 
             except Exception as e:
                 log.error(f"Error scraping {source['name']}: {e}")
+                stats["error"] = f"{type(e).__name__}: {e}"
 
         if self._conn:
             self._conn.close()

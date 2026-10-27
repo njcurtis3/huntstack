@@ -1,4 +1,4 @@
-# HuntStack - Weekly Refuge Counts Scraper
+# HuntStack - Weekly data pipeline run (file name kept so the scheduled task needn't change)
 # Scheduled: Every Monday at 6:00 AM local time
 
 $RepoRoot = "C:\Users\natha\Desktop\repos\huntstack"
@@ -61,29 +61,27 @@ if (Test-Path $EnvFile) {
 # Run scraper from its directory (required for module resolution)
 Set-Location $ScraperDir
 
-Write-Log "Running: python -m huntstack_scrapers.scrapers.run refuge_counts"
-$output = & C:\Python313\python.exe -m huntstack_scrapers.scrapers.run refuge_counts 2>&1
+# Since 2026-10-27 this runs the data pipeline, not just the refuge counts: every job that is
+# due (weekly counts in season, monthly regulation pages, ...). The pipeline checks each job's
+# result, records it in pipeline_runs and posts warnings/failures to SCRAPER_ALERT_WEBHOOK
+# itself, so this script only alerts when the pipeline crashed before printing its summary.
+Write-Log "Running: python -m huntstack_scrapers.pipeline update all"
+$output = & C:\Python313\python.exe -m huntstack_scrapers.pipeline update all 2>&1
 
 # Log all output
 $output | ForEach-Object { Write-Log $_ }
 
 $exitCode = $LASTEXITCODE
-
-# Detect a "silent failure": the process exits 0 but extracted nothing (e.g. a source's URL
-# rotted, or the LLM extractor is broken â€” as happened when Together retired the pinned model).
-# The runner prints a JSON summary like {"spider": "refuge_counts", "items_count": N, ...}.
 $outputText = ($output | Out-String)
-$itemsCount = if ($outputText -match '"items_count":\s*(\d+)') { [int]$matches[1] } else { $null }
+$summarized = $outputText -match '"pipeline":\s*"update"'
 
-if ($exitCode -ne 0) {
-    Write-Log "=== Scraper FAILED (exit $exitCode) ==="
-    Send-Alert "[HuntStack] Refuge scraper FAILED (exit $exitCode) on $(Get-Date -Format 'yyyy-MM-dd'). See $LogFile"
-} elseif ($null -ne $itemsCount -and $itemsCount -eq 0) {
-    Write-Log "=== Scraper exited 0 but extracted 0 items â€” treating as silent failure ==="
-    Send-Alert "[HuntStack] Refuge scraper ran but extracted 0 items on $(Get-Date -Format 'yyyy-MM-dd') â€” likely a broken source or extractor. See $LogFile"
+if (-not $summarized) {
+    Write-Log "=== Pipeline CRASHED (exit $exitCode, no summary) ==="
+    Send-Alert "[HuntStack] Data pipeline crashed (exit $exitCode) on $(Get-Date -Format 'yyyy-MM-dd'). See $LogFile"
+} elseif ($exitCode -ne 0) {
+    Write-Log "=== Pipeline finished with failed jobs (already alerted) ==="
 } else {
-    $countNote = if ($null -ne $itemsCount) { "$itemsCount items" } else { "count unknown" }
-    Write-Log "=== Scraper completed successfully (exit 0, $countNote) ==="
+    Write-Log "=== Pipeline completed (exit 0) ==="
 }
 
 # Prune logs older than 30 days

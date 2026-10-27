@@ -319,14 +319,20 @@ class DatabasePipeline:
         except Exception as e:
             spider.logger.error(f"Error storing regulation: {e}")
 
-    def _process_refuge_count(self, item: dict, spider):
-        """Store weekly refuge survey counts in refuge_counts table."""
+    def _process_refuge_count(self, item: dict, spider) -> dict:
+        """Store weekly refuge survey counts in refuge_counts table.
+
+        Returns what happened, for the data pipeline's checks: rows written, slugs with no
+        species row, whether the location was missing, and whether storing failed.
+        """
+        result = {"rows": 0, "missing_slugs": [], "no_location": False, "error": None}
         try:
             refuge_name = item.get("refuge_name")
             location_id = self.location_map.get(refuge_name)
             if not location_id:
                 spider.logger.warning(f"No location_id found for refuge: {refuge_name}")
-                return
+                result["no_location"] = True
+                return result
 
             survey_date = item.get("survey_date")
             species_counts = item.get("species_counts", {})
@@ -343,6 +349,7 @@ class DatabasePipeline:
                 species_id = self.species_map.get(slug)
                 if not species_id:
                     spider.logger.debug(f"Species slug '{slug}' not in DB, skipping")
+                    result["missing_slugs"].append(slug)
                     continue
 
                 with self.conn.cursor() as cur:
@@ -376,11 +383,14 @@ class DatabasePipeline:
                 f"Stored {inserted} species counts for {refuge_name} "
                 f"(date: {survey_date})"
             )
+            result["rows"] = inserted
 
         except Exception as e:
             spider.logger.error(f"Error storing refuge count: {e}")
+            result["error"] = str(e)
             if self.conn:
-                self.conn.rollback()
+                self.conn.rollback()  # leave the connection usable for the next item
+        return result
 
 
 # Embeddings moved from Together.ai to OpenAI in Oct 2026, when Together retired
