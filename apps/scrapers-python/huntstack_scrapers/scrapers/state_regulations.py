@@ -44,6 +44,10 @@ STATE_SOURCES = {
         ],
         "allowed_domains": ["tpwd.texas.gov"],
         "link_keywords": ["migratory-game-birds", "waterfowl", "licenses", "duck", "goose", "crane", "teal", "dove", "wma"],
+        # "licenses" also matches the fishing-only license pages; off-topic for chat (removed
+        # from documents 2026-10-28). Combination hunting+fishing packages live under
+        # /hunting-licenses-and-permits/ and /combination-hunting-fishing/, so they still come in.
+        "exclude_path_keywords": ["fishing-licenses-stamps-tags-packages", "tagging-red-drum"],
         "pdf_keywords": ["waterfowl", "migratory", "duck", "goose", "crane", "teal"],
     },
     "AR": {

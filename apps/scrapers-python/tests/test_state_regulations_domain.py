@@ -71,5 +71,23 @@ class TestExcludedPaths:
         assert scraper._is_excluded_path(fishing, nm["exclude_path_keywords"])
         assert not scraper._is_excluded_path(hunting, nm["exclude_path_keywords"])
 
+    def test_tx_fishing_license_pages_are_excluded_but_combo_packages_are_not(self, scraper):
+        from huntstack_scrapers.scrapers.state_regulations import STATE_SOURCES
+
+        tx = STATE_SOURCES["TX"]
+        base = "https://tpwd.texas.gov/regulations/outdoor-annual/licenses/"
+        for url in (
+            base + "fishing-licenses-stamps-tags-packages",
+            base + "fishing-licenses-stamps-tags-packages/free-fishing-opportunities",
+            base + "tagging-instructions/tagging-red-drum",
+        ):
+            assert scraper._is_relevant_link(url, tx["link_keywords"]), url
+            assert scraper._is_excluded_path(url, tx["exclude_path_keywords"]), url
+        for url in (
+            base + "combination-hunting-fishing/super-combo-combo-license-packages",
+            base + "hunting-licenses-and-permits/hunting-endorsements",
+        ):
+            assert not scraper._is_excluded_path(url, tx["exclude_path_keywords"]), url
+
     def test_no_exclusions_excludes_nothing(self, scraper):
         assert not scraper._is_excluded_path("https://tpwd.texas.gov/fishing/", [])
