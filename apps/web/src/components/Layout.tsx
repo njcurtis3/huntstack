@@ -20,16 +20,17 @@ import { AuthModal } from './AuthModal'
 import { DismissibleNotice } from './DismissibleNotice'
 import { feedbackMailto } from '../lib/contact'
 
+// In the order a hunter plans: where, are birds there, is it legal, anything else.
 const primaryNav = [
-  { name: 'Migration', href: '/migration', icon: Bird },
   { name: 'Where to Hunt', href: '/where-to-hunt', icon: Crosshair },
+  { name: 'Migration', href: '/migration', icon: Bird },
+  { name: 'Regulations', href: '/regulations', icon: FileText },
+  { name: 'Ask AI', href: '/chat', icon: MessageSquare },
 ]
 
 const secondaryNav = [
-  { name: 'Regulations', href: '/regulations', icon: FileText },
-  { name: 'Outfitters', href: '/outfitters', icon: Users },
-  { name: 'Ask AI', href: '/chat', icon: MessageSquare },
   { name: 'Map', href: '/map', icon: Map },
+  { name: 'Outfitters', href: '/outfitters', icon: Users },
 ]
 
 // Combined for mobile (Home first, then primary, then secondary)
@@ -77,7 +78,7 @@ export function Layout() {
 
             {/* Desktop Navigation */}
             <nav className="hidden md:flex items-center gap-1">
-              {/* Primary nav — Migration + Where to Hunt */}
+              {/* Primary nav — the planning tools */}
               {primaryNav.map((item) => {
                 const isActive = location.pathname === item.href ||
                   (item.href !== '/' && location.pathname.startsWith(item.href))

@@ -4,7 +4,7 @@
 </h1>
 
 <p align="center">
-  <i>Pre-hunt intelligence for waterfowl hunters: live refuge counts, migration timing and season rules, searchable, in one place.</i>
+  <i>Plan your waterfowl hunt in the Central and Mississippi flyways: season rules, refuge and survey counts, and hunt-day weather in one place, with an AI assistant that answers from them.</i>
 </p>
 
 <h4 align="center">
