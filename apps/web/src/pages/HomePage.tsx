@@ -80,7 +80,7 @@ export function HomePage() {
             </div>
 
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold leading-tight text-white">
-              Plan your next duck hunt
+              Plan your hunt
               <span className="text-forest-400">.</span>
             </h1>
             <p className="mt-5 text-lg md:text-xl text-earth-300 leading-relaxed">
