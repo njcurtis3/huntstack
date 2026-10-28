@@ -1,8 +1,31 @@
-# Together.ai
+# Together.ai and OpenRouter
 
 The only usage-priced dependency in the stack, and therefore the main cost risk.
 Read `INFRASTRUCTURE_COSTS.md` before answering any cost question — it has the
 per-route cost model already worked out.
+
+## Production runs on OpenRouter (since Oct 2026)
+
+Railway sets `LLM_BASE_URL` and `EMBEDDINGS_BASE_URL` to `https://openrouter.ai/api/v1`
+(`LLM_MODEL=meta-llama/llama-3.3-70b-instruct`, `EMBEDDINGS_MODEL=openai/text-embedding-3-small`),
+and the local scrapers do the same. Together below is the fallback when `LLM_API_KEY` is
+missing. The spend cap belongs on the OpenRouter key: a credit limit, no auto top-up.
+
+**Chat searches the web.** `POST /api/chat` adds OpenRouter's web plugin
+(`plugins: [{id: 'web', engine: 'exa', max_results: 5}]`, `lib/together.ts`
+`generateChatWithWebSearch`): about $0.007 per question for the search, on top of
+~$0.001 of tokens. The search results come back as `url_citation` annotations and
+reach the user as sources with `kind: 'web'`. `CHAT_WEB_SEARCH=off` turns it off
+without a code change. If a search request fails, chat answers once more without it.
+
+**Provider routing.** OpenRouter requests send `provider: {ignore: ['novita', 'cloudflare']}`
+(`OPENROUTER_IGNORE_PROVIDERS`). Those two serve Llama 3.3 70B with 12k / 24k contexts, and a
+broad question plus web results overflowed Novita with a hard 400 instead of a reroute. List
+a model's providers with `curl -s https://openrouter.ai/api/v1/models/<model>/endpoints`
+before changing `LLM_MODEL`.
+
+**Usage is visible here, unlike Together:** each response carries `usage.cost`, and the
+OpenRouter dashboard shows spend per key.
 
 - Base URL: `https://api.together.xyz/v1`
 - Auth: `Authorization: Bearer $TOGETHER_API_KEY` (reuse the repo `.env` key)
@@ -76,7 +99,7 @@ Together money has a dedicated control:
 
 | Route | Control |
 |---|---|
-| `POST /api/chat` | 20 req/hour/IP + server-side history truncation (`MAX_HISTORY_MESSAGES`, `MAX_HISTORY_CHARS`) |
+| `POST /api/chat` | 20 req/hour/IP + server-side history truncation (`MAX_HISTORY_MESSAGES`, `MAX_HISTORY_CHARS`); each question also pays one web search (~$0.007, `CHAT_WEB_SEARCH=off` to stop) |
 | `POST /api/search/semantic` | 60 req/hour/IP |
 | `GET /api/migration/weekly-summary` | 6h cache + 15-minute regeneration floor on `?refresh=true` |
 

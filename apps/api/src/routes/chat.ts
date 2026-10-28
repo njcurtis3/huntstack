@@ -1,6 +1,6 @@
 import { FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
-import { isConfigured, generateChatResponse } from '../lib/together.js'
+import { isConfigured, generateChatWithWebSearch } from '../lib/together.js'
 import { isEmbeddingConfigured, generateEmbedding } from '../lib/embeddings.js'
 import { searchChunks, type ChunkFilters } from '../lib/retrieval.js'
 import { getDb } from '../lib/db.js'
@@ -156,6 +156,8 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
                   title: { type: 'string' },
                   url: { type: 'string' },
                   snippet: { type: 'string' },
+                  // 'web' = found by the web search for this question; 'database' = HuntStack's own records
+                  kind: { type: 'string', enum: ['web', 'database'] },
                 },
               },
             },
@@ -185,15 +187,20 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
         retrieveStructuredContext(entities),
       ])
 
-      // Step 3: Build system prompt with both context types
+      // Step 3: Build system prompt with both context types; the model call also searches the web
+      // (OpenRouter's web plugin) and attaches those results after this prompt
+      const now = new Date()
       const structuredText = formatStructuredContext(structuredCtx)
-      const systemPrompt = buildSystemPrompt(vectorContext, structuredText)
-      const responseText = await generateChatResponse(message, systemPrompt, truncateHistory(history))
+      const systemPrompt = buildSystemPrompt(vectorContext, structuredText, now)
+      const { text: responseText, citations } = await generateChatWithWebSearch(
+        message, systemPrompt, truncateHistory(history), webSearchPrompt(now),
+      )
 
-      // Step 4: Merge sources from both retrievals
+      // Step 4: Sources — web pages first, then HuntStack's database
       const allSources = [
-        ...structuredCtx.sources,
-        ...vectorContext.sources,
+        ...citations.map(c => ({ ...c, kind: 'web' as const })),
+        ...structuredCtx.sources.map(s => ({ ...s, kind: 'database' as const })),
+        ...vectorContext.sources.map(s => ({ ...s, kind: 'database' as const })),
       ]
       // Deduplicate by URL
       const seen = new Set<string>()
@@ -990,48 +997,60 @@ export function formatShootingHours(hours: unknown): string {
 
 // ─── Build system prompt ─────────────────────────────────────────────────────
 
+/** The waterfowl season a date falls in, e.g. "2026-27" from July 2026 through June 2027. */
+export function currentSeasonLabel(now: Date): string {
+  const start = now.getUTCMonth() >= 6 ? now.getUTCFullYear() : now.getUTCFullYear() - 1
+  return `${start}-${String(start + 1).slice(2)}`
+}
+
+/** Heading OpenRouter puts above the web results it attaches to the conversation. */
+export function webSearchPrompt(now: Date): string {
+  return `=== WEB SEARCH RESULTS (searched ${now.toISOString().slice(0, 10)}) ===
+Cite each result you use as a markdown link named by its domain, e.g. [ksoutdoors.gov](https://ksoutdoors.gov/...).`
+}
+
 function buildSystemPrompt(
   vectorContext: {
     documents: Array<{ content: string; metadata: Record<string, unknown> }>
     sources: Array<{ title: string; url?: string; snippet: string }>
   },
   structuredText: string,
+  now: Date,
 ): string {
   const vectorText = vectorContext.documents
-    .map(doc => doc.content)
+    .map(doc => {
+      const title = doc.metadata.title ? `[${doc.metadata.title}${doc.metadata.sourceUrl ? ` — ${doc.metadata.sourceUrl}` : ''}]\n` : ''
+      return title + doc.content
+    })
     .join('\n\n---\n\n')
 
-  return `You are HuntStack AI, a helpful assistant specializing in hunting regulations, seasons, locations, and wildlife information across the United States.
+  return `You are HuntStack AI, a hunting assistant for waterfowl and other game across the United States. Today is ${now.toISOString().slice(0, 10)}; the current waterfowl season is ${currentSeasonLabel(now)}.
 
-Your role is to:
-1. Answer questions about hunting regulations accurately
-2. Provide information about seasons, bag limits, and license requirements
-3. Help users find hunting locations and outfitters
-4. Explain migratory bird patterns and flyway information
-5. When asked where to hunt or whether conditions are good, use Migration Push Factors and bird counts together to give actionable advice
-6. Always remind users to verify regulations with official state sources
+You get three kinds of information:
+1. WEB SEARCH RESULTS: pages found by searching the internet for this question, attached after these instructions when available. Use them as your main source for anything the database below does not cover.
+2. STRUCTURED DATA: HuntStack's own records, entered from state agency sources: season dates, bag limits, licenses, refuge bird counts, weather and migration scores. When it covers the question, its numbers are the most reliable.
+3. DOCUMENT CONTEXT: excerpts from state agency pages and PDFs saved in HuntStack's database. Use them to support and add detail.
 
-Important guidelines:
-- Answer ONLY using the provided context
-- If the answer is not in the context, say "I don't have that information in my database. Please check the official state wildlife agency website."
-- Be accurate and specific when citing regulations
-- Always mention which state's regulations you're referencing
-- Be helpful and conversational while remaining informative
-- When providing season dates, bag limits, or license prices, use the STRUCTURED DATA section first — it contains verified, structured records from state agencies
-- When explaining regulations in detail, use the DOCUMENT CONTEXT section for additional details
+Guidelines:
+- For season dates, bag limits and license prices, use STRUCTURED DATA first. If a web result gives a different number for the same season, give both and name each source.
+- Check which season a web page or document is about before using its dates. Do not present a past season's dates as this season's; label them if you use them at all.
+- For rules, prefer the state wildlife agency's own pages over third-party sites. Treat forums, outfitter, app and news sites as reports, not as the rules.
+- Cite web results inline as markdown links, e.g. [ksoutdoors.gov](https://ksoutdoors.gov/...).
+- If nothing here answers the question, say so plainly and point the user to the state wildlife agency. General hunting knowledge (gear, tactics, bird ID) is fine, but never invent dates, limits, prices or counts.
+- Always say which state's rules you mean, and remind users to confirm regulations with the official state agency.
 - When answering "where should I hunt?" or "are conditions good?", prioritize states with: (1) high push score, (2) arriving/building migration status, (3) high bird counts. A push score of 2–3 with arriving birds is the strongest buy signal.
-- NEVER repeat or reference section headers like "STRUCTURED DATA" or "DOCUMENT CONTEXT" in your response — those are internal context labels, not part of your answer
-- Format your response using markdown: use **bold** for emphasis, numbered lists for rankings, bullet lists for details
+- NEVER repeat or reference labels like "STRUCTURED DATA", "DOCUMENT CONTEXT" or "WEB SEARCH RESULTS" in your answer; they are internal.
+- Be conversational and specific. Format with markdown: **bold** for emphasis, numbered lists for rankings, bullet lists for details.
 
-${structuredText ? `=== STRUCTURED DATA (verified records from our database) ===
+${structuredText ? `=== STRUCTURED DATA (HuntStack records) ===
 
 ${structuredText}
 
-` : ''}${vectorText ? `=== DOCUMENT CONTEXT (scraped regulation pages and PDFs) ===
+` : ''}${vectorText ? `=== DOCUMENT CONTEXT (saved agency pages and PDFs) ===
 
 ${vectorText}
 
-` : ''}${!structuredText && !vectorText ? 'Note: No specific context was retrieved for this query. Provide general guidance and encourage the user to search for specific state regulations.\n' : ''}Use the above information to provide an accurate response. Do not fabricate details not present in the context.`
+` : ''}`
 }
 
 function generateConversationId(): string {

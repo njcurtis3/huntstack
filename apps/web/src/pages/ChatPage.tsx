@@ -10,7 +10,14 @@ interface Source {
   title: string
   url?: string
   snippet: string
+  /** 'web' = found by the web search for this answer; 'database' (or absent, older saved chats) = HuntStack's records */
+  kind?: 'web' | 'database'
 }
+
+const SOURCE_GROUPS = [
+  { label: 'From the web:', match: (s: Source) => s.kind === 'web' },
+  { label: 'From HuntStack data:', match: (s: Source) => s.kind !== 'web' },
+]
 
 interface Message {
   id: string
@@ -396,24 +403,28 @@ export function ChatPage() {
                     )}
 
                     {/* Sources */}
-                    {message.role === 'assistant' && message.sources && message.sources.length > 0 && (
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium" style={{ color: `rgb(var(--color-text-tertiary))` }}>Sources:</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {message.sources.map((source, i) => (
-                            <div key={i} className="text-xs rounded px-2 py-1" style={{ backgroundColor: `rgb(var(--color-bg-secondary))`, color: `rgb(var(--color-text-secondary))` }}>
-                              {source.url ? (
-                                <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:underline inline-flex items-center gap-1">
-                                  {source.title} <ExternalLink className="w-3 h-3" />
-                                </a>
-                              ) : (
-                                <span>{source.title}</span>
-                              )}
-                            </div>
-                          ))}
+                    {message.role === 'assistant' && message.sources && SOURCE_GROUPS.map(group => {
+                      const sources = message.sources!.filter(group.match)
+                      if (sources.length === 0) return null
+                      return (
+                        <div key={group.label} className="space-y-1">
+                          <p className="text-xs font-medium" style={{ color: `rgb(var(--color-text-tertiary))` }}>{group.label}</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {sources.map((source, i) => (
+                              <div key={i} className="text-xs rounded px-2 py-1 max-w-full" style={{ backgroundColor: `rgb(var(--color-bg-secondary))`, color: `rgb(var(--color-text-secondary))` }}>
+                                {source.url ? (
+                                  <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:underline inline-flex items-center gap-1 max-w-full">
+                                    <span className="truncate">{source.title}</span> <ExternalLink className="w-3 h-3 shrink-0" />
+                                  </a>
+                                ) : (
+                                  <span>{source.title}</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )
+                    })}
 
                     {/* Data freshness */}
                     {message.role === 'assistant' && message.dataFreshnessNote && (

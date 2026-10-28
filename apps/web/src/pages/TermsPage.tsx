@@ -25,7 +25,8 @@ export function TermsPage() {
           </h2>
           <p>
             HuntStack aggregates hunting regulations, seasons, bag limits, and license information from
-            public state and federal sources, and summarizes some of it using AI. This information is
+            public state and federal sources, and summarizes some of it using AI. The AI chat also draws on
+            web search results, which can include third-party sites we do not control. This information is
             provided for planning convenience only and may be incomplete, outdated, or misinterpreted by
             the summarization process. <strong>Always verify seasons, bag limits, licensing requirements,
             and legal hunting methods with the official state wildlife agency before you hunt.</strong> You

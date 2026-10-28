@@ -67,7 +67,7 @@ const OTHER_GROUPS: SourceGroup[] = [
   {
     title: 'Regulations & Licensing',
     description:
-      'State agency regulation documents, seasons, bag limits, and license requirements — extracted and indexed for the Regulations pages and the RAG-powered chat assistant. Currently covers Texas (fully populated), with New Mexico, Arkansas, Louisiana, Kansas, and Oklahoma seeded.',
+      'State agency regulation documents, seasons, bag limits, and license requirements — extracted and indexed for the Regulations pages and the AI chat. Currently covers Texas (fully populated), with New Mexico, Arkansas, Louisiana, Kansas, and Oklahoma seeded.',
     cadence: 'Checked periodically; re-scraped when agencies publish season updates',
     sources: [
       { name: 'Texas Parks & Wildlife Department', url: 'https://tpwd.texas.gov/' },
@@ -91,6 +91,16 @@ const OTHER_GROUPS: SourceGroup[] = [
       'Forecasts, alerts, and hunting-condition scoring (wind, precipitation, cold-front detection) for the Where to Hunt recommendations and refuge detail pages.',
     cadence: 'Live API',
     sources: [{ name: 'National Weather Service (NOAA)', url: 'https://www.weather.gov/documentation/services-web-api' }],
+  },
+  {
+    title: 'Web Search (AI Chat)',
+    description:
+      'Each chat question also searches the web, so answers can cover topics beyond our own data, like gear, tactics and states we have not added yet. Web results are cited by link under each answer, separately from our own data. Our season records still decide dates, bag limits and prices, and agency pages count over third-party sites.',
+    cadence: 'Live, per question',
+    sources: [
+      { name: 'OpenRouter web search', url: 'https://openrouter.ai/docs/guides/features/plugins/web-search' },
+      { name: 'Exa (search engine)', url: 'https://exa.ai/' },
+    ],
   },
   {
     title: 'Geocoding',

@@ -67,7 +67,8 @@ export function PrivacyPage() {
           <p>
             HuntStack aggregates public hunting data from government and community sources (USFWS, state
             wildlife agencies, NOAA, eBird). Using our AI chat or search features may send your query text
-            to our LLM provider (Together.ai) to generate a response. See the{' '}
+            to our AI provider (OpenRouter) to generate a response. The chat also runs a web search on your
+            question through OpenRouter's search partner (Exa). See the{' '}
             <a href="/data-sources" className="text-accent-500 hover:underline">Data Sources</a> page for
             the full list.
           </p>

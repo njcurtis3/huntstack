@@ -26,7 +26,7 @@ const features = [
   {
     icon: MessageSquare,
     title: 'Ask AI',
-    description: 'Natural language queries over structured data. Ask about licenses, seasons, or where birds are moving.',
+    description: 'Ask in plain language. Answers search the web and back it up with our season, license and migration data.',
     href: '/chat',
     cta: 'Ask a Question',
   },

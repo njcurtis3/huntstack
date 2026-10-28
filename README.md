@@ -86,7 +86,7 @@ KS, OK and MO.
   </tr>
   <tr>
     <td><b>Push factors and flyway flow</b><br>Cold fronts, north winds and sub-freezing temps from NOAA, scored per state. Flyway arrows on the map show which way the birds are moving, inferred from N→S count changes.</td>
-    <td><b>AI chat</b> (<code>/chat</code>)<br>Ask <i>"What do I need to hunt snow geese in New Mexico?"</i> or <i>"Where are the pintails right now?"</i> RAG over structured data and source documents, rate-limited per IP.</td>
+    <td><b>AI chat</b> (<code>/chat</code>)<br>Ask <i>"What do I need to hunt snow geese in New Mexico?"</i> or <i>"Where are the pintails right now?"</i> Each question searches the web, then adds HuntStack's own season records, refuge counts and saved agency documents; answers cite their sources, and the season records win on dates and bag limits. Rate-limited per IP.</td>
   </tr>
   <tr>
     <td><b>Regulations and licenses</b> (<code>/regulations</code>)<br>Seasons, bag limits, shooting hours, stamps and license requirements for TX, NM, AR, LA, KS and OK, with a side-by-side state comparison, instead of a stack of PDFs.</td>
@@ -246,7 +246,7 @@ huntstack/
 | `GET /api/hunt/recommendations` | ranked recommendations by species and location |
 | `GET /api/geo/zip/:zip` · `/search?q=` · `/reverse?lat=&lng=` | geocoding through Nominatim |
 | `GET /api/weather/forecast/:refugeId` · `/alerts` · `/hunting-conditions/:refugeId` | NOAA weather |
-| `POST /api/chat` | RAG chat over structured data |
+| `POST /api/chat` | AI chat: web search plus HuntStack data; sources tagged `web` or `database` |
 | `GET /api/search` | full-text search across regulations, species and locations |
 | `GET /api/regulations` · `GET /api/species` | regulations and the species catalog |
 
@@ -271,6 +271,9 @@ VITE_SUPABASE_ANON_KEY=
 LLM_API_KEY=               # chat + scraper extraction; falls back to TOGETHER_API_KEY
 LLM_BASE_URL=              # e.g. https://openrouter.ai/api/v1 (default: Together.ai)
 LLM_MODEL=                 # e.g. meta-llama/llama-3.3-70b-instruct
+CHAT_WEB_SEARCH=           # chat searches the web when LLM_BASE_URL is OpenRouter (~$0.007/question); "off" disables
+OPENROUTER_IGNORE_PROVIDERS= # providers to skip, default novita,cloudflare (context too small for chat)
+DB_POOL_MAX=               # API database connections, default 10; use 3 for a local server
 EMBEDDINGS_API_KEY=        # falls back to OPENAI_API_KEY; chat works without it, semantic search does not
 EMBEDDINGS_BASE_URL=       # e.g. https://openrouter.ai/api/v1 (default: OpenAI)
 EMBEDDINGS_MODEL=          # e.g. openai/text-embedding-3-small (must stay 1024-dim)
@@ -300,6 +303,7 @@ SCRAPER_ALERT_WEBHOOK=     # optional
 - [x] My Area proximity search, and shareable reports
 - [x] Where to Hunt: scored recommendations
 - [x] AI chat over structured data and documents
+- [x] Web search in the AI chat, with HuntStack data as support
 - [x] Regulations and licenses for TX, NM, AR, LA, KS and OK, with state comparison
 - [x] 2026–2027 season data
 - [x] Native app (Expo), Where to Hunt first

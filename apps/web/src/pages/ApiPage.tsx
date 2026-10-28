@@ -106,7 +106,7 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
     title: 'Chat',
     base: '/api/chat',
     endpoints: [
-      { method: 'POST', path: '/', description: 'RAG-powered AI chat over regulations and hunt data' },
+      { method: 'POST', path: '/', description: 'AI chat: searches the web, adds HuntStack regulations and hunt data; sources are tagged web or database' },
     ],
   },
 ]

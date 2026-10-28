@@ -478,7 +478,7 @@ class ApiClient {
   ) {
     return this.request<{
       response: string
-      sources: Array<{ title: string; url?: string; snippet: string }>
+      sources: Array<{ title: string; url?: string; snippet: string; kind?: 'web' | 'database' }>
       conversationId: string
       dataFreshnessNote?: string | null
     }>('/api/chat', {

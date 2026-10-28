@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   MAX_HISTORY_CHARS,
   MAX_HISTORY_MESSAGES,
+  currentSeasonLabel,
   documentFilters,
   extractEntities,
   formatBagLimit,
@@ -43,6 +44,15 @@ describe('documentFilters', () => {
     ]) {
       expect(filters(q).skipReports, q).toBe(false)
     }
+  })
+})
+
+describe('currentSeasonLabel', () => {
+  it('rolls over in July', () => {
+    expect(currentSeasonLabel(new Date('2026-10-28T12:00:00Z'))).toBe('2026-27')
+    expect(currentSeasonLabel(new Date('2027-01-15T12:00:00Z'))).toBe('2026-27')
+    expect(currentSeasonLabel(new Date('2027-07-01T12:00:00Z'))).toBe('2027-28')
+    expect(currentSeasonLabel(new Date('2099-03-01T12:00:00Z'))).toBe('2098-99')
   })
 })
 
