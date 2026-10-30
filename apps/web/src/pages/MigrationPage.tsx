@@ -1984,7 +1984,7 @@ export function MigrationPage() {
         {(weeklySummary || weeklySummaryLoading) && (
           <div className="rounded-lg border" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
             <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
-              <span className="text-base font-bold text-white">Weekly Intelligence</span>
+              <span className="text-base font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>Weekly Intelligence</span>
               <div className="flex items-center gap-3">
                 {weeklySummary && (
                   <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
@@ -2027,7 +2027,7 @@ export function MigrationPage() {
         {/* Quick Intel */}
         <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
           <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
-            <span className="text-base font-bold text-white">Quick Intel</span>
+            <span className="text-base font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>Quick Intel</span>
           </div>
           <div className="p-3 space-y-3">
             <MigrationIndexPanel
@@ -2059,7 +2059,7 @@ export function MigrationPage() {
           <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
             <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
               <div className="flex items-center gap-2">
-                <span className="text-base font-bold text-white">Regional Activity</span>
+                <span className="text-base font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>Regional Activity</span>
                 <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>Community observations</span>
               </div>
               <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>via eBird</span>
@@ -2080,7 +2080,7 @@ export function MigrationPage() {
         {/* My Area */}
         <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
           <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
-            <span className="text-base font-bold text-white">My Area</span>
+            <span className="text-base font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>My Area</span>
           </div>
           <div className="p-4">
           <div className="flex flex-col sm:flex-row gap-3 items-start flex-wrap">
@@ -2429,7 +2429,7 @@ export function MigrationPage() {
             {/* Snapshot */}
             <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
               <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
-                <span className="text-base font-bold text-white">Snapshot</span>
+                <span className="text-base font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>Snapshot</span>
               </div>
               <div className="p-4">
 
