@@ -1,6 +1,11 @@
 // ─── eBird API v2 integration ─────────────────────────────────────────────────
-// Provides recent community waterfowl observations near known refuges (geo),
-// and statewide regional activity counts for V1 states.
+// Provides recent community waterfowl observations near known refuges (geo), and per-species
+// reports by place for whole states (chat answers, statewide activity in ebird-activity.ts).
+//
+// eBird's /data/obs/{region}/recent, /historic and /geo/recent return ONE observation per
+// species: the latest in the whole region or radius (Texas, 30 days: 488 rows, one of them a
+// snow goose). Only the per-species endpoints (/recent/{species}) return every place, and
+// then only each place's latest report. Nothing here can total all reports over a window.
 // Data is live-fetched (no DB writes) with in-memory caches.
 // Gracefully returns [] on any error — dashboard works without eBird data.
 //
@@ -11,12 +16,11 @@ import { BoundedCache } from './cache.js'
 
 const EBIRD_BASE = 'https://api.ebird.org/v2'
 const GEO_TTL      = 6 * 60 * 60 * 1000  // 6 hours  — per-refuge geo queries
-const REGIONAL_TTL = 3 * 60 * 60 * 1000  // 3 hours  — statewide region queries
+const SPECIES_TTL  = 7 * 60 * 60 * 1000  // 7 hours  — per-species state queries; refreshed every 6h (ebird-activity.ts), so a page never waits on an expired entry
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 
 const obsCache      = new BoundedCache<EBirdCount[]>()
-const regionalCache = new BoundedCache<EBirdRegionalCount[]>()
 
 // ─── eBird species code → HuntStack slug ─────────────────────────────────────
 // eBird uses 6-letter alpha codes. Maps to our species slugs + display names.
@@ -67,25 +71,18 @@ export const STATE_FLYWAY: Record<string, string> = {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function getCutoffDate(daysAgo: number): string {
-  const d = new Date()
-  d.setDate(d.getDate() - daysAgo)
-  return d.toISOString().slice(0, 10)  // YYYY-MM-DD
-}
-
-function computeTrend(delta: number, deltaPercent: number | null): 'increasing' | 'decreasing' | 'stable' {
+export function computeTrend(delta: number, deltaPercent: number | null): 'increasing' | 'decreasing' | 'stable' {
   const absPct = deltaPercent !== null ? Math.abs(deltaPercent) : null
   if (absPct !== null && absPct < 5) return 'stable'
   return delta > 0 ? 'increasing' : 'decreasing'
 }
 
-// Activity level thresholds — applied to per-species counts within a 14-day window.
-// These are intentionally conservative starting points, not statistically derived.
-// eBird data is never persisted to DB so we can't calibrate offline.
-// To recalibrate: log live API responses for a full season and derive p50/p75/p90
-// breakpoints per species per state. Snow geese counts run much higher than
-// diving ducks, so per-species thresholds would be more accurate long-term.
-function computeActivityLevel(count: number): 'high' | 'moderate' | 'low' {
+// Activity level thresholds — applied to a species' birds in each place's latest report
+// statewide (ebird-activity.ts). Conservative starting points, not statistically derived.
+// ebird_activity_snapshots now keeps one row per state, species and day: after a season,
+// derive p50/p75/p90 breakpoints per species per state from it. Snow geese run much
+// higher than diving ducks, so per-species thresholds would be more accurate.
+export function computeActivityLevel(count: number): 'high' | 'moderate' | 'low' {
   if (count >= 5000) return 'high'
   if (count >= 500) return 'moderate'
   return 'low'
@@ -101,8 +98,8 @@ export interface EBirdCount {
   centerPoint: { lat: number; lng: number }
   species: string                   // our slug
   speciesName: string
-  count: number                     // sum of howMany in current 14-day window
-  surveyDate: string                // most recent obsDt in current window (YYYY-MM-DD)
+  count: number                     // latest report within the radius, last 14 days
+  surveyDate: string                // that report's date (YYYY-MM-DD)
   surveyType: 'ebird_recent'
   source: 'ebird'
   previousCount: number | null
@@ -112,19 +109,6 @@ export interface EBirdCount {
   trend: 'increasing' | 'decreasing' | 'stable' | 'new'
 }
 
-export interface EBirdRegionalCount {
-  state: string
-  flyway: string | null
-  species: string                   // slug
-  speciesName: string
-  currentCount: number              // sum howMany days 1-14
-  previousCount: number | null      // sum howMany days 15-30
-  delta: number | null
-  deltaPercent: number | null
-  trend: 'increasing' | 'decreasing' | 'stable' | 'new'
-  activityLevel: 'high' | 'moderate' | 'low'
-  fetchedAt: string
-}
 
 export interface EBirdObservation {
   speciesCode: string
@@ -164,7 +148,7 @@ export async function getEBirdCountsForRefuge(
     url.searchParams.set('lat', lat.toFixed(4))
     url.searchParams.set('lng', lng.toFixed(4))
     url.searchParams.set('dist', String(dist))
-    url.searchParams.set('back', '28')      // 28 days — fetch both periods in one call
+    url.searchParams.set('back', '14')
     // No 'cat' filter — eBird's category enum doesn't include 'waterfowl'.
     // Filter client-side via EBIRD_SPECIES whitelist (only waterfowl slugs).
     url.searchParams.set('maxResults', '2000')
@@ -197,67 +181,43 @@ export async function getEBirdCountsForRefuge(
       console.warn(`[eBird] geo query at ${lat.toFixed(2)},${lng.toFixed(2)} hit maxResults=2000 — data may be truncated`)
     }
 
-    // Split into current (days 1-14) and previous (days 15-28) windows
-    const cutoff = getCutoffDate(14)
-
-    const current = new Map<string, { slug: string; name: string; total: number; latestDate: string }>()
-    const previous = new Map<string, { slug: string; name: string; total: number; latestDate: string }>()
-
+    // One observation per species comes back: the latest report within the radius (several
+    // codes can map to one species, e.g. Snow Goose and Snow/Ross's Goose; keep the largest).
+    // There is no earlier report to compare with, so these rows carry no trend: the old
+    // days 15-28 "previous" window could only hold species with no report since, which left
+    // every row reading "First survey".
+    const latest = new Map<string, { slug: string; name: string; count: number; date: string }>()
     for (const o of obs) {
       const mapped = EBIRD_SPECIES[o.speciesCode]
       if (!mapped) continue
       if (o.howMany === null || o.howMany === undefined) continue  // presence-only
       if (!o.obsValid) continue  // skip flagged records
-
-      const dateStr = o.obsDt.substring(0, 10)
-      const bucket = dateStr >= cutoff ? current : previous
-
-      const existing = bucket.get(mapped.slug)
-      if (existing) {
-        existing.total += o.howMany
-        if (dateStr > existing.latestDate) existing.latestDate = dateStr
-      } else {
-        bucket.set(mapped.slug, { slug: mapped.slug, name: mapped.name, total: o.howMany, latestDate: dateStr })
+      const existing = latest.get(mapped.slug)
+      if (!existing || o.howMany > existing.count) {
+        latest.set(mapped.slug, { slug: mapped.slug, name: mapped.name, count: o.howMany, date: o.obsDt.substring(0, 10) })
       }
     }
 
     const result: EBirdCount[] = []
-    for (const [slug, curr] of current) {
-      if (curr.total < MIN_COUNT) continue
-
-      const prev = previous.get(slug)
-      const previousCount = prev?.total ?? null
-      const previousDate = prev ? prev.latestDate : null
-
-      let delta: number | null = null
-      let deltaPercent: number | null = null
-      let trend: EBirdCount['trend'] = 'new'
-
-      if (previousCount !== null) {
-        delta = curr.total - previousCount
-        deltaPercent = previousCount !== 0
-          ? Math.round(((curr.total - previousCount) / previousCount) * 1000) / 10
-          : null
-        trend = computeTrend(delta, deltaPercent)
-      }
-
+    for (const r of latest.values()) {
+      if (r.count < MIN_COUNT) continue
       result.push({
         refugeId: locationId,
         refugeName,
         state,
         flyway,
         centerPoint: { lat, lng },
-        species: curr.slug,
-        speciesName: curr.name,
-        count: curr.total,
-        surveyDate: curr.latestDate,
+        species: r.slug,
+        speciesName: r.name,
+        count: r.count,
+        surveyDate: r.date,
         surveyType: 'ebird_recent',
         source: 'ebird',
-        previousCount,
-        previousDate,
-        delta,
-        deltaPercent,
-        trend,
+        previousCount: null,
+        previousDate: null,
+        delta: null,
+        deltaPercent: null,
+        trend: 'new',
       })
     }
 
@@ -268,138 +228,6 @@ export async function getEBirdCountsForRefuge(
     console.warn(`[eBird] geo query for ${refugeName} threw: ${err instanceof Error ? err.message : String(err)}`)
     return []
   }
-}
-
-// ─── Statewide regional counts ────────────────────────────────────────────────
-// Uses eBird region endpoint (US-TX, US-NM, etc.) to get all community
-// observations statewide. Fetches back=30 days and splits by date window.
-
-export async function getEBirdRegionalCounts(
-  stateCodes: string[],
-  speciesSlugs?: string[],
-  daysBack: number = 30,
-): Promise<EBirdRegionalCount[]> {
-  const apiKey = process.env.EBIRD_API_KEY
-  if (!apiKey) return []
-
-  const cutoff = getCutoffDate(14)  // current = days 1-14, previous = days 15-30
-  const fetchedAt = new Date().toISOString()
-
-  // Check cache per state; collect cache misses
-  const cachedResults: EBirdRegionalCount[] = []
-  const statesToFetch: string[] = []
-
-  for (const stateCode of stateCodes) {
-    const key = `ebird:region:US-${stateCode}:${daysBack}d`
-    const cached = regionalCache.get(key)
-    if (cached) {
-      cachedResults.push(...cached)
-    } else {
-      statesToFetch.push(stateCode)
-    }
-  }
-
-  if (statesToFetch.length === 0) {
-    return filterBySpecies(cachedResults, speciesSlugs)
-  }
-
-  // Fetch cache-miss states in parallel
-  const fetchResults = await Promise.allSettled(
-    statesToFetch.map(async (stateCode) => {
-      const url = new URL(`${EBIRD_BASE}/data/obs/US-${stateCode}/recent`)
-      url.searchParams.set('back', String(daysBack))
-      url.searchParams.set('maxResults', '10000')
-
-      const resp = await fetch(url.toString(), {
-        headers: {
-          'X-eBirdApiToken': apiKey,
-          'User-Agent': '(HuntStack, huntstack.com)',
-        },
-      })
-
-      if (!resp.ok) return { stateCode, counts: [] as EBirdRegionalCount[] }
-
-      const obs: EBirdObservation[] = await resp.json()
-
-      if (obs.length === 10000) {
-        console.warn(`[eBird] region US-${stateCode} back=${daysBack} hit maxResults=10000 — data may be truncated`)
-      }
-
-      // Aggregate by species into current and previous windows
-      const currBucket = new Map<string, { slug: string; name: string; total: number }>()
-      const prevBucket = new Map<string, { slug: string; name: string; total: number }>()
-
-      for (const o of obs) {
-        const mapped = EBIRD_SPECIES[o.speciesCode]
-        if (!mapped) continue
-        if (o.howMany === null || o.howMany === undefined) continue
-        // Note: do NOT filter obsValid for regional data — high validity rate statewide
-
-        const dateStr = o.obsDt.substring(0, 10)
-        const bucket = dateStr >= cutoff ? currBucket : prevBucket
-
-        const existing = bucket.get(mapped.slug)
-        if (existing) {
-          existing.total += o.howMany
-        } else {
-          bucket.set(mapped.slug, { slug: mapped.slug, name: mapped.name, total: o.howMany })
-        }
-      }
-
-      const counts: EBirdRegionalCount[] = []
-      for (const [slug, curr] of currBucket) {
-        const prev = prevBucket.get(slug)
-        const previousCount = prev?.total ?? null
-
-        let delta: number | null = null
-        let deltaPercent: number | null = null
-        let trend: EBirdRegionalCount['trend'] = 'new'
-
-        if (previousCount !== null) {
-          delta = curr.total - previousCount
-          deltaPercent = previousCount !== 0
-            ? Math.round(((curr.total - previousCount) / previousCount) * 1000) / 10
-            : null
-          trend = computeTrend(delta, deltaPercent)
-        }
-
-        counts.push({
-          state: stateCode,
-          flyway: STATE_FLYWAY[stateCode] ?? null,
-          species: curr.slug,
-          speciesName: curr.name,
-          currentCount: curr.total,
-          previousCount,
-          delta,
-          deltaPercent,
-          trend,
-          activityLevel: computeActivityLevel(curr.total),
-          fetchedAt,
-        })
-      }
-
-      return { stateCode, counts }
-    })
-  )
-
-  // Store per-state results in cache and collect
-  const freshResults: EBirdRegionalCount[] = []
-  for (let i = 0; i < statesToFetch.length; i++) {
-    const result = fetchResults[i]
-    if (result.status === 'fulfilled') {
-      const key = `ebird:region:US-${result.value.stateCode}:${daysBack}d`
-      regionalCache.set(key, result.value.counts, REGIONAL_TTL)
-      freshResults.push(...result.value.counts)
-    }
-    // Silently skip failed states — partial results are better than nothing
-  }
-
-  return filterBySpecies([...cachedResults, ...freshResults], speciesSlugs)
-}
-
-function filterBySpecies(counts: EBirdRegionalCount[], slugs?: string[]): EBirdRegionalCount[] {
-  if (!slugs || slugs.length === 0) return counts
-  return counts.filter(c => slugs.includes(c.species))
 }
 
 // ─── Species reports by place (chat) ─────────────────────────────────────────
@@ -414,21 +242,35 @@ export interface EBirdSpeciesReport {
   speciesName: string
   /** Places with a report in the window */
   places: number
+  /** Birds in each place's latest report, added up (presence-only reports count 0) */
+  birds: number
   /** Up to 3 places with the largest latest report, largest first */
   topPlaces: Array<{ name: string; count: number; date: string }>
 }
 
 const speciesCache = new BoundedCache<EBirdObservation[]>()
+// The background refresh and a page load can ask for the same state and species at once
+const inFlight = new Map<string, Promise<EBirdObservation[]>>()
 
 /** eBird codes per slug, primary code first (EBIRD_SPECIES order) */
 function codesFor(slug: string): string[] {
   return Object.entries(EBIRD_SPECIES).filter(([, v]) => v.slug === slug).map(([code]) => code)
 }
 
-async function fetchSpeciesObs(apiKey: string, state: string, code: string, daysBack: number): Promise<EBirdObservation[]> {
+async function fetchSpeciesObs(apiKey: string, state: string, code: string, daysBack: number, fresh = false): Promise<EBirdObservation[]> {
   const key = `ebird:sp:US-${state}:${code}:${daysBack}d`
-  const cached = speciesCache.get(key)
-  if (cached) return cached
+  if (!fresh) {
+    const cached = speciesCache.get(key)
+    if (cached) return cached
+  }
+  const pending = inFlight.get(key)
+  if (pending) return pending
+  const request = requestSpeciesObs(apiKey, state, code, daysBack, key).finally(() => inFlight.delete(key))
+  inFlight.set(key, request)
+  return request
+}
+
+async function requestSpeciesObs(apiKey: string, state: string, code: string, daysBack: number, key: string): Promise<EBirdObservation[]> {
   const url = `${EBIRD_BASE}/data/obs/US-${state}/recent/${code}?back=${daysBack}`
   let resp: Response | null = null
   for (let attempt = 0; attempt < 4; attempt++) {
@@ -441,7 +283,7 @@ async function fetchSpeciesObs(apiKey: string, state: string, code: string, days
     return []
   }
   const obs: EBirdObservation[] = await resp.json()
-  speciesCache.set(key, obs, REGIONAL_TTL)
+  speciesCache.set(key, obs, SPECIES_TTL)
   return obs
 }
 
@@ -485,6 +327,7 @@ export function summarizeSpeciesReports(
     species: g.slug,
     speciesName: g.name,
     places: g.places.size,
+    birds: [...g.places.values()].reduce((n, v) => n + v.count, 0),
     topPlaces: [...g.places.entries()]
       .map(([name, v]) => ({ name: publicPlaceName(name, v.private), count: v.count, date: v.date }))
       .filter((p): p is { name: string; count: number; date: string } => p.name !== null && p.count > 0)
@@ -496,23 +339,31 @@ export function summarizeSpeciesReports(
 /** Default species for "where are the ducks/geese right now?" with none named */
 export const DEFAULT_REPORT_SPECIES = ['mallard', 'snow-goose', 'canada-goose', 'green-winged-teal', 'pintail']
 
+/** Every waterfowl species we map, once each */
+export const ALL_REPORT_SPECIES = [...new Set(Object.values(EBIRD_SPECIES).map(v => v.slug))]
+
+/** The eBird codes asked for: every code (snow goose includes Snow/Ross's) for one or two
+ *  species, the main code each for more. Stable, so cached requests are shared. */
+export function reportCodes(speciesSlugs: string[]): string[] {
+  return speciesSlugs.flatMap(s => (speciesSlugs.length <= 2 ? codesFor(s) : codesFor(s).slice(0, 1)))
+}
+
 export async function getEBirdSpeciesReports(
   stateCodes: string[],
   speciesSlugs: string[],
   daysBack = 14,
+  options: { fresh?: boolean } = {},
 ): Promise<EBirdSpeciesReport[]> {
   const apiKey = process.env.EBIRD_API_KEY
   if (!apiKey || stateCodes.length === 0 || speciesSlugs.length === 0) return []
-  // Every code (snow goose includes Snow/Ross's reports) for one or two species; only the
-  // main code for more, to keep the request count down.
-  const codes = speciesSlugs.flatMap(s => (speciesSlugs.length <= 2 ? codesFor(s) : codesFor(s).slice(0, 1)))
+  const codes = reportCodes(speciesSlugs)
   const jobs = stateCodes.flatMap(state => codes.map(code => ({ state, code })))
   const rows: Array<{ state: string; obs: EBirdObservation[] }> = []
   // 3 at a time: eBird answers bursts with 429
   for (let i = 0; i < jobs.length; i += 3) {
     const batch = await Promise.all(jobs.slice(i, i + 3).map(async j => ({
       state: j.state,
-      obs: await fetchSpeciesObs(apiKey, j.state, j.code, daysBack).catch(() => [] as EBirdObservation[]),
+      obs: await fetchSpeciesObs(apiKey, j.state, j.code, daysBack, options.fresh).catch(() => [] as EBirdObservation[]),
     })))
     rows.push(...batch)
   }

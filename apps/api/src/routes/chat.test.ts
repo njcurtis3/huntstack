@@ -376,7 +376,7 @@ describe('surveyAgeNote', () => {
 
 describe('formatEBirdSightings', () => {
   const row = (state: string, speciesName: string, places: number, topPlaces = [] as Array<{ name: string; count: number; date: string }>) => ({
-    state, species: speciesName.toLowerCase(), speciesName, places, topPlaces,
+    state, species: speciesName.toLowerCase(), speciesName, places, birds: 0, topPlaces,
   })
 
   it('lists states with the most places first, with the largest reports', () => {

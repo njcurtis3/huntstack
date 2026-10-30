@@ -33,6 +33,8 @@ import { weatherRoutes } from './routes/weather.js'
 import { huntRoutes } from './routes/hunt.js'
 import { migrationRoutes } from './routes/migration.js'
 import { geoRoutes } from './routes/geo.js'
+import { startStateActivityRefresh } from './lib/ebird-activity.js'
+import { STATE_FLYWAY } from './lib/ebird.js'
 
 const app = Fastify({
   logger: {
@@ -150,6 +152,8 @@ const start = async () => {
       if (docsEnabled) {
         app.log.info(`API docs available at http://${host}:${port}/docs`)
       }
+      // eBird statewide activity: warm the cache and save the day's snapshot in the background
+      startStateActivityRefresh(Object.keys(STATE_FLYWAY))
       return
     } catch (err: unknown) {
       const isAddrInUse = (err as NodeJS.ErrnoException).code === 'EADDRINUSE'

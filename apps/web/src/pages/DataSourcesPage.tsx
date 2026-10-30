@@ -81,7 +81,7 @@ const OTHER_GROUPS: SourceGroup[] = [
   {
     title: 'Community Bird Observations',
     description:
-      'Regional species activity and 14-day trend comparisons, sourced from eBird\'s public checklist data, cross-referenced against refuge survey counts for the Migration dashboard. eBird also covers places with no published refuge counts: the Texas Panhandle (Amarillo, Lubbock, Dalhart and Hereford-Dimmitt playas) and Cheyenne Bottoms, Kansas. These are the latest sightings reported by birders, not survey totals.',
+      'Where each species is being reported: places with a report in the last 14 days statewide, the latest report near each refuge, and the change since two weeks earlier, from eBird\'s public data, shown next to refuge survey counts on the Migration dashboard and used by the AI chat. eBird also covers places with no published refuge counts: the Texas Panhandle (Amarillo, Lubbock, Dalhart and Hereford-Dimmitt playas) and Cheyenne Bottoms, Kansas. These are the latest sightings reported by birders, not survey totals.',
     cadence: 'Live API',
     sources: [{ name: 'eBird (Cornell Lab of Ornithology)', url: 'https://ebird.org/' }],
   },

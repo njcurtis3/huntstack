@@ -85,18 +85,23 @@ type RefugeCount = {
   trend: 'increasing' | 'decreasing' | 'stable' | 'new'
 }
 
+// eBird statewide activity: birds in each place's latest report over the last 14 days, places
+// reporting, and the change since the server's snapshot from about 14 days earlier (null
+// until one exists)
 type RegionalActivityCard = {
   state: string
   flyway: string | null
   totalCurrentCount: number
-  totalPreviousCount: number
-  overallDelta: number
+  totalPlaces: number
+  totalPreviousCount: number | null
+  overallDelta: number | null
   overallDeltaPercent: number | null
   activityLevel: 'high' | 'moderate' | 'low'
   topSpecies: Array<{
     species: string
     speciesName: string
     count: number
+    places: number
     trend: 'increasing' | 'decreasing' | 'stable' | 'new'
     delta: number | null
     deltaPercent: number | null
@@ -110,8 +115,9 @@ type RegionalActivityData = {
   flywayRollup: Array<{
     flyway: string
     totalCurrentCount: number
-    totalPreviousCount: number
-    delta: number
+    totalPlaces: number
+    totalPreviousCount: number | null
+    delta: number | null
     deltaPercent: number | null
   }>
   fetchedAt: string
@@ -488,7 +494,8 @@ function RegionalActivitySection({ data }: { data: RegionalActivityData }) {
       {data.stateActivity.map(card => {
         const actCfg = ACTIVITY_LEVEL_CONFIG[card.activityLevel]
         const flywayCls = card.flyway ? (FLYWAY_COLORS[card.flyway] ?? '') : ''
-        const overallTrend = card.overallDelta > 0 ? 'increasing' : card.overallDelta < 0 ? 'decreasing' : 'stable'
+        const overallTrend = card.overallDelta === null ? null
+          : card.overallDelta > 0 ? 'increasing' : card.overallDelta < 0 ? 'decreasing' : 'stable'
 
         return (
           <div key={card.state} className="rounded-md border p-3" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-primary))` }}>
@@ -508,13 +515,15 @@ function RegionalActivitySection({ data }: { data: RegionalActivityData }) {
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-sm font-mono" style={{ color: `rgb(var(--color-text-secondary))` }}>
-                  {card.totalCurrentCount.toLocaleString()} birds
+                  {card.totalPlaces.toLocaleString()} places · {card.totalCurrentCount.toLocaleString()} birds
                 </span>
-                <DeltaBadge
-                  trend={overallTrend}
-                  delta={card.overallDelta}
-                  deltaPercent={card.overallDeltaPercent}
-                />
+                {overallTrend && (
+                  <DeltaBadge
+                    trend={overallTrend}
+                    delta={card.overallDelta}
+                    deltaPercent={card.overallDeltaPercent}
+                  />
+                )}
               </div>
             </div>
             {card.topSpecies.length > 0 && (
@@ -523,8 +532,8 @@ function RegionalActivitySection({ data }: { data: RegionalActivityData }) {
                   <div key={sp.species} className="flex items-center justify-between text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                     <span>{sp.speciesName}</span>
                     <div className="flex items-center gap-2">
-                      <span>{sp.count.toLocaleString()}</span>
-                      <DeltaBadge trend={sp.trend} delta={sp.delta} deltaPercent={sp.deltaPercent} />
+                      <span>{sp.places.toLocaleString()} places · {sp.count.toLocaleString()} birds</span>
+                      {sp.trend !== 'new' && <DeltaBadge trend={sp.trend} delta={sp.delta} deltaPercent={sp.deltaPercent} />}
                     </div>
                   </div>
                 ))}
@@ -534,7 +543,10 @@ function RegionalActivitySection({ data }: { data: RegionalActivityData }) {
         )
       })}
       <p className="text-xs pt-1" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-        {data.attribution} · Last 14 days vs prior 14 days
+        {data.attribution} · Places reporting in the last 14 days and the birds in each place's latest report.
+        {data.stateActivity.some(c => c.overallDelta !== null)
+          ? ' Change compared with two weeks earlier.'
+          : ' Changes appear once two weeks of daily snapshots are saved.'}
       </p>
     </div>
   )
@@ -1549,7 +1561,7 @@ export function MigrationPage() {
           refugeId: c.refugeId, refugeName: c.refugeName, state: c.state,
           distance: Math.round(dist), totalBirds: c.count,
           topSpecies: c.speciesName, _topCount: c.count,
-          dominantStatus: getMigrationStatus(c.trend, c.deltaPercent),
+          dominantStatus: c.source === 'ebird' ? null : getMigrationStatus(c.trend, c.deltaPercent),
         })
       } else {
         existing.totalBirds += c.count
@@ -1575,10 +1587,12 @@ export function MigrationPage() {
 
   // Enrich counts with migration status + anomaly
   const enrichedCounts = useMemo(() => {
+    // eBird rows are the latest report near the place, with nothing to compare against, so
+    // they get no migration status (it read "First survey" on every one)
     return filteredCounts.map(item => ({
       ...item,
-      migrationStatus: getMigrationStatus(item.trend, item.deltaPercent),
-      anomaly: getAnomaly(item.count, item.deltaPercent, item.previousCount),
+      migrationStatus: item.source === 'ebird' ? null : getMigrationStatus(item.trend, item.deltaPercent),
+      anomaly: item.source === 'ebird' ? null : getAnomaly(item.count, item.deltaPercent, item.previousCount),
     }))
   }, [filteredCounts])
 
@@ -2818,7 +2832,13 @@ export function MigrationPage() {
                                               </div>
                                               <p className="text-3xl font-bold text-forest-600 dark:text-forest-400">{item.count.toLocaleString()}</p>
                                               <div className="mt-1">
-                                                <DeltaBadge trend={item.trend} delta={item.delta} deltaPercent={item.deltaPercent} />
+                                                {item.source === 'ebird' ? (
+                                                  <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                                                    Latest eBird report nearby
+                                                  </span>
+                                                ) : (
+                                                  <DeltaBadge trend={item.trend} delta={item.delta} deltaPercent={item.deltaPercent} />
+                                                )}
                                               </div>
                                               {refugeWeather.has(item.refugeId) && (() => {
                                                 const ww = refugeWeather.get(item.refugeId)!

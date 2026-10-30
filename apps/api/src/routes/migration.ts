@@ -3,7 +3,8 @@ import { sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { getPushFactorsForStates, pushFactorLabel } from '../lib/weather.js'
 import { generateChatResponse, isConfigured } from '../lib/together.js'
-import { getEBirdRegionalCounts, STATE_FLYWAY } from '../lib/ebird.js'
+import { STATE_FLYWAY } from '../lib/ebird.js'
+import { getStateActivity, type StateSpeciesActivity } from '../lib/ebird-activity.js'
 import { BoundedCache } from '../lib/cache.js'
 import { decodePoint } from '../lib/jsonb.js'
 
@@ -268,33 +269,22 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
-    // eBird community context — statewide observation totals to supplement refuge data
+    // eBird community context: where birds are being reported statewide, to supplement refuge data
     let ebirdContext = ''
     if (statesInData.length > 0 && process.env.EBIRD_API_KEY) {
       try {
-        const regionalCounts = await getEBirdRegionalCounts(statesInData)
-
-        // Aggregate per state: sum current and previous across all species
-        const stateAgg = new Map<string, { current: number; previous: number }>()
-        for (const c of regionalCounts) {
-          if (!stateAgg.has(c.state)) stateAgg.set(c.state, { current: 0, previous: 0 })
-          const agg = stateAgg.get(c.state)!
-          agg.current += c.currentCount
-          agg.previous += c.previousCount ?? 0
-        }
-
-        const lines = [...stateAgg.entries()]
-          .filter(([, v]) => v.current > 0)
-          .sort(([, a], [, b]) => b.current - a.current)
-          .map(([state, v]) => {
-            const delta = v.current - v.previous
-            const pct = v.previous > 0 ? ((delta / v.previous) * 100).toFixed(0) : null
-            const trend = pct !== null ? (delta >= 0 ? `+${pct}%` : `${pct}%`) : 'first observation'
-            return `- ${state}: ${v.current.toLocaleString()} birds community-wide (last 14 days), ${trend} vs prior period`
+        const lines = summarizeStateActivity(await getStateActivity(statesInData))
+          .filter(sa => sa.totalCurrentCount > 0)
+          .sort((a, b) => b.totalPlaces - a.totalPlaces)
+          .map(sa => {
+            const trend = sa.overallDeltaPercent !== null
+              ? `, ${sa.overallDeltaPercent >= 0 ? '+' : ''}${sa.overallDeltaPercent.toFixed(0)}% vs two weeks earlier`
+              : ''
+            const top = sa.topSpecies.map(t => `${t.speciesName} at ${t.places} places`).join(', ')
+            return `- ${sa.state}: waterfowl reported at ${sa.totalPlaces} places in the last 14 days${trend}; most reported: ${top}`
           })
-
         if (lines.length > 0) {
-          ebirdContext = `\n\neBird community observations (last 14 days vs prior 14 days):\n${lines.join('\n')}\nNote: eBird counts are community-reported sightings and supplement official refuge surveys.`
+          ebirdContext = `\n\neBird birder reports (latest report at each place, last 14 days):\n${lines.join('\n')}\nNote: these are birder reports, not surveys; they show where birds are being seen and supplement official refuge counts.`
         }
       } catch {
         // eBird context is optional — proceed without it
@@ -469,7 +459,7 @@ Keep it under 150 words. Be direct and actionable.`
   app.get('/regional-activity', {
     schema: {
       tags: ['migration'],
-      summary: 'State-level eBird community activity levels with trend vs prior 14-day period',
+      summary: 'State-level eBird activity: places reporting each species in the last 14 days, birds in each place\'s latest report, and the change since the snapshot ~14 days earlier',
       querystring: {
         type: 'object',
         properties: {
@@ -512,82 +502,26 @@ Keep it under 150 words. Be direct and actionable.`
 
     if (targetStates.length === 0) return empty
 
-    const speciesSlugs = species ? [species] : undefined
-    const allCounts = await getEBirdRegionalCounts(targetStates, speciesSlugs)
+    const stateActivity = summarizeStateActivity(await getStateActivity(targetStates, species ? [species] : undefined))
 
-    // Group by state
-    const stateMap = new Map<string, typeof allCounts>()
-    for (const c of allCounts) {
-      if (!stateMap.has(c.state)) stateMap.set(c.state, [])
-      stateMap.get(c.state)!.push(c)
-    }
-
-    // Build per-state activity cards
-    const LEVEL_ORDER = { high: 0, moderate: 1, low: 2 } as const
-
-    const stateActivity = targetStates
-      .filter(s => stateMap.has(s))
-      .map(stateCode => {
-        const counts = stateMap.get(stateCode)!
-        const totalCurrent = counts.reduce((s, c) => s + c.currentCount, 0)
-        const totalPrevious = counts.reduce((s, c) => s + (c.previousCount ?? 0), 0)
-        const overallDelta = totalCurrent - totalPrevious
-        const overallDeltaPercent = totalPrevious > 0
-          ? Math.round((overallDelta / totalPrevious) * 1000) / 10
-          : null
-
-        const topSpecies = [...counts]
-          .sort((a, b) => b.currentCount - a.currentCount)
-          .slice(0, 3)
-          .map(c => ({
-            species: c.species,
-            speciesName: c.speciesName,
-            count: c.currentCount,
-            trend: c.trend,
-            delta: c.delta,
-            deltaPercent: c.deltaPercent,
-            activityLevel: c.activityLevel,
-          }))
-
-        const dominantActivity: 'high' | 'moderate' | 'low' =
-          counts.some(c => c.activityLevel === 'high') ? 'high' :
-          counts.some(c => c.activityLevel === 'moderate') ? 'moderate' : 'low'
-
-        return {
-          state: stateCode,
-          flyway: STATE_FLYWAY[stateCode] ?? null,
-          totalCurrentCount: totalCurrent,
-          totalPreviousCount: totalPrevious,
-          overallDelta,
-          overallDeltaPercent,
-          activityLevel: dominantActivity,
-          topSpecies,
-          fetchedAt: counts[0]?.fetchedAt ?? new Date().toISOString(),
-        }
-      })
-      .sort((a, b) => {
-        const levelDiff = LEVEL_ORDER[a.activityLevel] - LEVEL_ORDER[b.activityLevel]
-        return levelDiff !== 0 ? levelDiff : b.totalCurrentCount - a.totalCurrentCount
-      })
-
-    // Flyway rollup
-    const flywayTotals = new Map<string, { current: number; previous: number }>()
+    // Flyway rollup; a change only when every state in the flyway has an earlier snapshot
+    const flywayTotals = new Map<string, { current: number; previous: number | null; places: number }>()
     for (const sa of stateActivity) {
       if (!sa.flyway) continue
-      if (!flywayTotals.has(sa.flyway)) flywayTotals.set(sa.flyway, { current: 0, previous: 0 })
+      if (!flywayTotals.has(sa.flyway)) flywayTotals.set(sa.flyway, { current: 0, previous: 0, places: 0 })
       const ft = flywayTotals.get(sa.flyway)!
       ft.current += sa.totalCurrentCount
-      ft.previous += sa.totalPreviousCount
+      ft.places += sa.totalPlaces
+      ft.previous = ft.previous === null || sa.totalPreviousCount === null ? null : ft.previous + sa.totalPreviousCount
     }
 
     const flywayRollup = [...flywayTotals.entries()].map(([fw, totals]) => ({
       flyway: fw,
       totalCurrentCount: totals.current,
+      totalPlaces: totals.places,
       totalPreviousCount: totals.previous,
-      delta: totals.current - totals.previous,
-      deltaPercent: totals.previous > 0
-        ? Math.round(((totals.current - totals.previous) / totals.previous) * 1000) / 10
-        : null,
+      delta: totals.previous === null ? null : totals.current - totals.previous,
+      deltaPercent: totals.previous ? Math.round(((totals.current - totals.previous) / totals.previous) * 1000) / 10 : null,
     }))
 
     return {
@@ -598,4 +532,56 @@ Keep it under 150 words. Be direct and actionable.`
       attribution: 'Community observations via eBird (Cornell Lab of Ornithology)',
     }
   })
+}
+
+// Per-state cards for the Migration page's Regional Activity and the weekly summary
+export function summarizeStateActivity(rows: StateSpeciesActivity[]) {
+  const LEVEL_ORDER = { high: 0, moderate: 1, low: 2 } as const
+  const byState = new Map<string, StateSpeciesActivity[]>()
+  for (const r of rows) {
+    if (!byState.has(r.state)) byState.set(r.state, [])
+    byState.get(r.state)!.push(r)
+  }
+  return [...byState.entries()]
+    .map(([state, counts]) => {
+      const totalCurrent = counts.reduce((n, c) => n + c.currentCount, 0)
+      const totalPlaces = counts.reduce((n, c) => n + c.places, 0)
+      // A change only when every species has an earlier snapshot to compare with
+      const totalPrevious = counts.every(c => c.previousCount !== null)
+        ? counts.reduce((n, c) => n + (c.previousCount ?? 0), 0)
+        : null
+      const overallDelta = totalPrevious === null ? null : totalCurrent - totalPrevious
+      const overallDeltaPercent = totalPrevious ? Math.round(((totalCurrent - totalPrevious) / totalPrevious) * 1000) / 10 : null
+      const activityLevel: 'high' | 'moderate' | 'low' =
+        counts.some(c => c.activityLevel === 'high') ? 'high'
+          : counts.some(c => c.activityLevel === 'moderate') ? 'moderate' : 'low'
+      return {
+        state,
+        flyway: STATE_FLYWAY[state] ?? null,
+        totalCurrentCount: totalCurrent,
+        totalPlaces,
+        totalPreviousCount: totalPrevious,
+        overallDelta,
+        overallDeltaPercent,
+        activityLevel,
+        topSpecies: [...counts]
+          .sort((a, b) => b.places - a.places)
+          .slice(0, 3)
+          .map(c => ({
+            species: c.species,
+            speciesName: c.speciesName,
+            count: c.currentCount,
+            places: c.places,
+            trend: c.trend,
+            delta: c.delta,
+            deltaPercent: c.deltaPercent,
+            activityLevel: c.activityLevel,
+          })),
+        fetchedAt: counts[0]?.fetchedAt ?? new Date().toISOString(),
+      }
+    })
+    .sort((a, b) => {
+      const levelDiff = LEVEL_ORDER[a.activityLevel] - LEVEL_ORDER[b.activityLevel]
+      return levelDiff !== 0 ? levelDiff : b.totalPlaces - a.totalPlaces
+    })
 }

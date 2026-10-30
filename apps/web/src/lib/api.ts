@@ -643,14 +643,16 @@ class ApiClient {
         state: string
         flyway: string | null
         totalCurrentCount: number
-        totalPreviousCount: number
-        overallDelta: number
+        totalPlaces: number
+        totalPreviousCount: number | null
+        overallDelta: number | null
         overallDeltaPercent: number | null
         activityLevel: 'high' | 'moderate' | 'low'
         topSpecies: Array<{
           species: string
           speciesName: string
           count: number
+          places: number
           trend: 'increasing' | 'decreasing' | 'stable' | 'new'
           delta: number | null
           deltaPercent: number | null
@@ -661,8 +663,9 @@ class ApiClient {
       flywayRollup: Array<{
         flyway: string
         totalCurrentCount: number
-        totalPreviousCount: number
-        delta: number
+        totalPlaces: number
+        totalPreviousCount: number | null
+        delta: number | null
         deltaPercent: number | null
       }>
       fetchedAt: string

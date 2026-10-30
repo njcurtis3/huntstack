@@ -25,6 +25,7 @@ describe('summarizeSpeciesReports', () => {
     ])
     expect(r.species).toBe('snow-goose')
     expect(r.places).toBe(3)
+    expect(r.birds).toBe(100)  // 80 (largest at Dagmar) + 20 + 0 for the uncounted report
     expect(r.topPlaces).toEqual([
       { name: 'Dagmar WMA', count: 80, date: '2026-10-30' },
       { name: 'Hazen', count: 20, date: '2026-10-29' },

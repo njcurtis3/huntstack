@@ -66,7 +66,7 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
       { method: 'GET', path: '/push-factors', description: 'Cold-front and weather push-factor scoring' },
       { method: 'GET', path: '/weekly-summary', description: 'LLM-generated weekly migration narrative' },
       { method: 'GET', path: '/flyway-progression', description: 'North-to-south migration time series' },
-      { method: 'GET', path: '/regional-activity', description: 'eBird-derived regional activity with 14-day trend' },
+      { method: 'GET', path: '/regional-activity', description: 'eBird places reporting each species statewide (last 14 days), birds in the latest reports, change vs two weeks earlier' },
     ],
   },
   {
