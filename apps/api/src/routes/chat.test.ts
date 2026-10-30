@@ -9,6 +9,8 @@ import {
   formatMidwinterHistory,
   formatShootingHours,
   formatSurveyZones,
+  needsDocuments,
+  structuredPlan,
   truncateHistory,
 } from './chat.js'
 
@@ -112,6 +114,7 @@ describe('extractEntities', () => {
       isLocationQuery: false,
       isWeatherQuery: false,
       isRegulationQuery: false,
+      isBirdsNowQuery: false,
     })
   })
 })
@@ -252,5 +255,73 @@ describe('formatSurveyZones', () => {
     expect(lines[0]).toContain('not additional birds')
     expect(lines[1]).toBe('- Lower St. Francis (Delta): 132,745 ducks, 74,095 mallards (+48% vs avg)')
     expect(lines[2]).toBe('- Cache (Delta): 54,407 ducks (-46% vs avg), 30,234 mallards (-50% vs avg)')
+  })
+})
+
+describe('structuredPlan', () => {
+  const plan = (q: string) => structuredPlan(extractEntities(q))
+  const used = (q: string) => Object.entries(plan(q)).filter(([, on]) => on).map(([k]) => k).sort()
+
+  it('uses no HuntStack records for general questions', () => {
+    for (const q of [
+      'What decoy spread works best for mallards?',
+      'how do I cook a duck',
+      'best shotgun choke for geese',
+      'how do you call pintails',
+    ]) {
+      expect(used(q), q).toEqual([])
+    }
+  })
+
+  it('uses seasons, licenses and regulations, not counts or areas, for a rules question about a state', () => {
+    expect(used('Kansas duck bag limit')).toEqual(['licenses', 'regulations', 'seasons'])
+  })
+
+  it('uses every state’s seasons for a species rules question with no state', () => {
+    const p = plan('when does pintail season open?')
+    expect(p.seasons).toBe(true)
+    expect(p.refugeCounts).toBe(false)
+  })
+
+  it('uses counts and push factors when the question is about where birds are now', () => {
+    for (const q of ['where are the snow geese right now?', 'are mallards moving yet', 'how many ducks are on the refuges']) {
+      const p = plan(q)
+      expect(p.refugeCounts, q).toBe(true)
+      expect(p.pushFactors, q).toBe(true)
+      expect(p.seasons, q).toBe(false)
+    }
+  })
+
+  it('uses rules, areas and counts for a planning question about a state', () => {
+    const p = plan('Is duck season open in the Kansas Low Plains this weekend?')
+    expect(p.seasons).toBe(true)
+    expect(p.locations).toBe(true)
+    expect(p.refugeCounts).toBe(true)
+  })
+
+  it('keeps areas for a where-to-hunt question', () => {
+    expect(plan('where should I hunt ducks in Arkansas').locations).toBe(true)
+  })
+})
+
+describe('needsDocuments', () => {
+  const needs = (q: string) => needsDocuments(extractEntities(q))
+
+  it('skips document search for general questions', () => {
+    for (const q of ['What decoy spread works best for mallards?', 'how do I cook a duck', 'best shotgun choke for geese']) {
+      expect(needs(q), q).toBe(false)
+    }
+  })
+
+  it('searches documents for state, rules and bird-location questions', () => {
+    for (const q of [
+      'Kansas duck bag limit',
+      'what is HIP certification',
+      'where are the snow geese right now?',
+      'latest refuge counts',
+      'Arkansas duck hunting tips',
+    ]) {
+      expect(needs(q), q).toBe(true)
+    }
   })
 })

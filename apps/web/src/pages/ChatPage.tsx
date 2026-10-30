@@ -235,12 +235,17 @@ export function ChatPage() {
       if (cd.conversationId) setConversationId(cd.conversationId)
     }
 
+    // "Related records" only when the answer drew on HuntStack data. For a general question
+    // ("what decoy spread works for mallards?") the server uses none, and these searches
+    // would list loosely matching survey reports. An older API sends no `kind`: keep them.
+    const usedOurData = !sources || sources.some(s => s.kind !== 'web')
+
     const assistantMsg: Message = {
       id: (Date.now() + 1).toString(),
       role: 'assistant',
       content,
       sources,
-      searchResults: searchResults?.length ? searchResults : undefined,
+      searchResults: usedOurData && searchResults?.length ? searchResults : undefined,
       dataFreshnessNote,
       timestamp: Date.now(),
     }

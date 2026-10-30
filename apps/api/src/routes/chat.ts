@@ -70,6 +70,9 @@ const MIGRATION_KEYWORDS = ['migration', 'migrating', 'flying', 'counts', 'refug
 const REGULATION_PATTERN = /\b(bag|limits?\b|possession|seasons?\b|open(s|er|ers|ing)?\b|clos(e|es|ed|ing)\b|dates?\b|licen[cs]e|stamps?\b|permits?\b|hip\b|regulation|rules?\b|legal|shooting (hours|time)|steel shot|non-?toxic|youth|zones?\b|split|fees?\b|cost|price|how much|requir|allowed)/
 const LOCATION_KEYWORDS = ['where to hunt', 'where should i hunt', 'public land', 'public hunting', 'wma', 'wildlife management area', 'national forest', 'blm', 'wildlife refuge', 'hunting area', 'hunting location', 'place to hunt', 'spots to hunt']
 const WEATHER_KEYWORDS = ['weather', 'forecast', 'temperature', 'wind', 'cold front', 'rain', 'snow', 'freeze', 'conditions', 'hunting conditions', 'front']
+// Questions about birds being somewhere now ("where are the snow geese right now?"), which ask
+// for counts and push factors without using a migration keyword.
+const BIRDS_NOW_PATTERN = /\b(where are|right now|this (week|weekend)|today|tomorrow|moving|arriv|showed up|how many|how'?s the hunting|how is the hunting)/
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -81,6 +84,7 @@ interface ExtractedEntities {
   isLocationQuery: boolean
   isWeatherQuery: boolean
   isRegulationQuery: boolean
+  isBirdsNowQuery: boolean
 }
 
 interface StructuredContext {
@@ -183,7 +187,9 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
 
       // Step 2: Retrieve context from both sources in parallel
       const [vectorContext, structuredCtx] = await Promise.all([
-        retrieveContext(message, documentFilters(entities)),
+        needsDocuments(entities)
+          ? retrieveContext(message, documentFilters(entities))
+          : Promise.resolve({ documents: [], sources: [] }),
         retrieveStructuredContext(entities),
       ])
 
@@ -291,6 +297,7 @@ export function extractEntities(query: string): ExtractedEntities {
   const isLocationQuery = LOCATION_KEYWORDS.some(kw => lower.includes(kw))
   const isWeatherQuery = WEATHER_KEYWORDS.some(kw => lower.includes(kw))
   const isRegulationQuery = REGULATION_PATTERN.test(lower)
+  const isBirdsNowQuery = BIRDS_NOW_PATTERN.test(lower)
 
   return {
     stateCodes: [...stateCodes],
@@ -300,6 +307,58 @@ export function extractEntities(query: string): ExtractedEntities {
     isLocationQuery,
     isWeatherQuery,
     isRegulationQuery,
+    isBirdsNowQuery,
+  }
+}
+
+/**
+ * Whether document search can help. Our documents are state regulations and survey reports, so
+ * a question with no state that asks neither about rules nor about where birds are ("what decoy
+ * spread works for mallards?") only matched them loosely (similarity ~0.55, old weekly reports)
+ * and listed them as sources. A fixed similarity cut can't separate those: relevant Texas
+ * regulation pages score 0.57-0.62.
+ */
+export function needsDocuments(e: ExtractedEntities): boolean {
+  return e.stateCodes.length > 0 || e.isRegulationQuery
+    || e.isMigrationQuery || e.isLocationQuery || e.isWeatherQuery || e.isBirdsNowQuery
+}
+
+/** Which HuntStack records a question needs. Each one also becomes a "From HuntStack data" source. */
+export interface StructuredPlan {
+  seasons: boolean
+  licenses: boolean
+  regulations: boolean
+  refugeCounts: boolean
+  locations: boolean
+  weather: boolean
+  pushFactors: boolean
+}
+
+/**
+ * Pick the records a question needs. A general question ("what decoy spread works for
+ * mallards?") names a species but no state and asks neither about rules nor about where the
+ * birds are now: it gets nothing, so the answer comes from the web and the sources list no
+ * unrelated season pages. Before this, any species name pulled up to 40 season rows from every
+ * state, and the word "duck" alone pulled refuge counts and a 7-state weather check.
+ */
+export function structuredPlan(e: ExtractedEntities): StructuredPlan {
+  const hasState = e.stateCodes.length > 0
+  const hasSubject = e.isWaterfowl || e.speciesSlugs.length > 0
+  const birds = e.isMigrationQuery || e.isLocationQuery || e.isWeatherQuery || e.isBirdsNowQuery
+  const rules = hasState || (e.isRegulationQuery && e.speciesSlugs.length > 0)
+  // "Kansas duck bag limit": about the rules only, not about where birds are
+  const rulesOnly = e.isRegulationQuery && !birds
+  const birdsHere = hasSubject && (birds || (hasState && !rulesOnly))
+  return {
+    seasons: rules,
+    licenses: hasState,
+    regulations: rules,
+    refugeCounts: e.isMigrationQuery || e.isLocationQuery || birdsHere,
+    // Area lists help "where" questions; on a rules question about a state they were 15
+    // refuge web pages in the sources that the answer didn't use.
+    locations: e.isLocationQuery || (hasState && !rulesOnly),
+    weather: e.isWeatherQuery || e.isMigrationQuery,
+    pushFactors: e.isMigrationQuery || e.isWeatherQuery || birdsHere,
   }
 }
 
@@ -372,10 +431,11 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     lastScrapedByState: {},
   }
 
-  const { stateCodes, speciesSlugs, isWaterfowl, isMigrationQuery, isLocationQuery, isWeatherQuery } = entities
+  const { stateCodes, speciesSlugs } = entities
+  const plan = structuredPlan(entities)
 
-  // No entities detected — skip structured queries
-  if (stateCodes.length === 0 && speciesSlugs.length === 0 && !isWaterfowl && !isMigrationQuery && !isLocationQuery && !isWeatherQuery) {
+  // Nothing in our records fits the question; it's answered from the web
+  if (!Object.values(plan).some(Boolean)) {
     return result
   }
 
@@ -396,7 +456,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     }
 
     // ── Seasons ──────────────────────────────────────────────────────────
-    if (stateCodes.length > 0 || speciesSlugs.length > 0) {
+    if (plan.seasons) {
       queries.push((async () => {
         const stateFilter = stateCodes.length > 0
           ? sql`st.code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})`
@@ -454,7 +514,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     }
 
     // ── Licenses ─────────────────────────────────────────────────────────
-    if (stateCodes.length > 0) {
+    if (plan.licenses) {
       queries.push((async () => {
         const stateFilter = sql`st.code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})`
 
@@ -490,7 +550,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     }
 
     // ── Regulations ──────────────────────────────────────────────────────
-    if (stateCodes.length > 0 || speciesSlugs.length > 0) {
+    if (plan.regulations) {
       queries.push((async () => {
         const conditions: ReturnType<typeof sql>[] = [sql`r.is_active = true`]
 
@@ -530,7 +590,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     }
 
     // ── Refuge Counts (migration data) ───────────────────────────────────
-    if (isMigrationQuery || isWaterfowl || speciesSlugs.length > 0) {
+    if (plan.refugeCounts) {
       queries.push((async () => {
         const speciesFilter = speciesSlugs.length > 0
           ? sql`AND sp.slug IN (${sql.join(speciesSlugs.map(s => sql`${s}`), sql`, `)})`
@@ -628,7 +688,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     }
 
     // ── Locations (public hunting areas) ────────────────────────────────
-    if (isLocationQuery || stateCodes.length > 0) {
+    if (plan.locations) {
       queries.push((async () => {
         const conditions = [
           sql`l.name NOT LIKE '%% - Statewide MWI'`,
@@ -672,7 +732,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     }
 
     // ── Weather conditions ────────────────────────────────────────────────
-    if (isWeatherQuery || isMigrationQuery) {
+    if (plan.weather) {
       queries.push((async () => {
         try {
           const stateFilter = stateCodes.length > 0
@@ -727,7 +787,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
 
     // ── Push factors (migration pressure signals) ─────────────────────────
     // Weather questions too: "any cold front in the Panhandle?" is a push-factor question
-    if (isWaterfowl || isMigrationQuery || isWeatherQuery) {
+    if (plan.pushFactors) {
       queries.push((async () => {
         try {
           const targetStates = stateCodes.length > 0 ? stateCodes : ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
