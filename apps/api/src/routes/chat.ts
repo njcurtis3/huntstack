@@ -8,6 +8,11 @@ import { sql } from 'drizzle-orm'
 import { getPushFactorsForStates, pushFactorLabel } from '../lib/weather.js'
 import { chatRequestSchema } from '@huntstack/shared'
 import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
+import { DEFAULT_REPORT_SPECIES, getEBirdSpeciesReports, type EBirdSpeciesReport } from '../lib/ebird.js'
+
+// States HuntStack covers: full seasons for the first six, survey counts for MO and IL.
+// A question that names no place is answered for these.
+export const COVERED_STATES = ['TX', 'OK', 'KS', 'NM', 'AR', 'LA', 'MO', 'IL']
 
 // Fastify/AJV (schema.body below) is what actually enforces validation at
 // runtime; this type keeps the handler's view of the body in sync with that
@@ -98,6 +103,8 @@ interface StructuredContext {
   locations: Array<Record<string, unknown>>
   weather: Array<Record<string, unknown>>
   pushFactors: Array<{ stateCode: string; regionName?: string; pushScore: number; coldFrontPresent: boolean; coldFrontIncoming: boolean; windDirection: string | null; windIsFromNorth: boolean; temperature: number | null }>
+  /** eBird reports from the last 14 days, per state and species */
+  ebirdSightings: EBirdSpeciesReport[]
   sources: Array<{ title: string; url?: string; snippet: string }>
   lastScrapedByState: Record<string, string | null>
 }
@@ -199,7 +206,7 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
       const structuredText = formatStructuredContext(structuredCtx)
       const systemPrompt = buildSystemPrompt(vectorContext, structuredText, now)
       const { text: responseText, citations } = await generateChatWithWebSearch(
-        message, systemPrompt, truncateHistory(history), webSearchPrompt(now),
+        withAreaHint(message, entities), systemPrompt, truncateHistory(history), webSearchPrompt(now),
       )
 
       // Step 4: Sources — web pages first, then HuntStack's database
@@ -319,8 +326,25 @@ export function extractEntities(query: string): ExtractedEntities {
  * regulation pages score 0.57-0.62.
  */
 export function needsDocuments(e: ExtractedEntities): boolean {
-  return e.stateCodes.length > 0 || e.isRegulationQuery
-    || e.isMigrationQuery || e.isLocationQuery || e.isWeatherQuery || e.isBirdsNowQuery
+  // "Where are the ducks right now?": saved documents are past seasons' weekly reports (2019-2023
+  // AGFC surveys came back), which can't say where birds are now. Survey counts and eBird reports
+  // come from the structured data instead.
+  const birdsNowOnly = (e.isMigrationQuery || e.isWeatherQuery || e.isBirdsNowQuery)
+    && !e.isRegulationQuery && !e.isLocationQuery
+  if (birdsNowOnly) return false
+  return e.stateCodes.length > 0 || e.isRegulationQuery || e.isLocationQuery
+}
+
+/**
+ * The web search runs on the user's message (OpenRouter's web plugin has no query option), so a
+ * question about birds, places or rules that names no state searched the whole continent:
+ * "Where are the snow geese right now?" came back with Quebec and Washington pages. Naming
+ * our flyways in the message points the search at them. General questions are left alone.
+ */
+export function withAreaHint(message: string, e: ExtractedEntities): string {
+  if (e.stateCodes.length > 0) return message
+  const aboutHere = e.isMigrationQuery || e.isLocationQuery || e.isWeatherQuery || e.isBirdsNowQuery || e.isRegulationQuery
+  return aboutHere ? `${message}\n\n(Area: Central and Mississippi Flyways, United States)` : message
 }
 
 /** Which HuntStack records a question needs. Each one also becomes a "From HuntStack data" source. */
@@ -332,6 +356,7 @@ export interface StructuredPlan {
   locations: boolean
   weather: boolean
   pushFactors: boolean
+  ebirdSightings: boolean
 }
 
 /**
@@ -359,6 +384,9 @@ export function structuredPlan(e: ExtractedEntities): StructuredPlan {
     locations: e.isLocationQuery || (hasState && !rulesOnly),
     weather: e.isWeatherQuery || e.isMigrationQuery,
     pushFactors: e.isMigrationQuery || e.isWeatherQuery || birdsHere,
+    // "Where are the snow geese right now?" - eBird is the freshest bird data we have; survey
+    // counts early in the season are few and weeks apart.
+    ebirdSightings: hasSubject && (e.isMigrationQuery || e.isLocationQuery || e.isBirdsNowQuery),
   }
 }
 
@@ -427,6 +455,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     locations: [],
     weather: [],
     pushFactors: [],
+    ebirdSightings: [],
     sources: [],
     lastScrapedByState: {},
   }
@@ -832,6 +861,26 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
       })())
     }
 
+    // -- eBird sightings (last 14 days) --
+    if (plan.ebirdSightings) {
+      queries.push((async () => {
+        try {
+          const states = stateCodes.length > 0 ? stateCodes : COVERED_STATES
+          result.ebirdSightings = await getEBirdSpeciesReports(states, speciesSlugs.length > 0 ? speciesSlugs : DEFAULT_REPORT_SPECIES)
+          if (result.ebirdSightings.length > 0) {
+            // eBird's terms ask for credit wherever its data is shown
+            result.sources.push({
+              title: 'eBird reports, last 14 days (Cornell Lab of Ornithology)',
+              url: 'https://ebird.org/',
+              snippet: `Birder reports in ${[...new Set(result.ebirdSightings.map(r => r.state))].join(', ')}`,
+            })
+          }
+        } catch (error) {
+          console.error('eBird retrieval error:', error)
+        }
+      })())
+    }
+
     await Promise.all(queries)
   } catch (error) {
     console.error('retrieveStructuredContext error:', error)
@@ -895,9 +944,13 @@ function formatStructuredContext(ctx: StructuredContext): string {
       const speciesList = counts
         .map(c => `${c.species_name}: ${Number(c.count).toLocaleString()}`)
         .join(', ')
-      lines.push(`- ${refuge} (${stateCode}, ${surveyDate}): ${speciesList}`)
+      lines.push(`- ${refuge} (${stateCode}, ${surveyDate}${surveyAgeNote(counts[0].survey_date as string | null, new Date())}): ${speciesList}`)
     }
-    sections.push(`## Recent Bird Survey Counts\n${lines.join('\n')}`)
+    sections.push(`## Latest Bird Survey Counts\nThe newest survey at each place. Counts marked as old say nothing about where birds are now.\n${lines.join('\n')}`)
+  }
+
+  if (ctx.ebirdSightings.length > 0) {
+    sections.push(`## eBird Sightings, Last 14 Days\n${formatEBirdSightings(ctx.ebirdSightings)}`)
   }
 
   if (ctx.midwinterHistory.length > 0) {
@@ -985,6 +1038,40 @@ const PERIOD_NAMES: Record<string, string> = {
 }
 
 /** AGFC's newest survey by zone, busiest first, each against its average for that period. */
+/** " - 9 weeks old, not current" for a survey more than 3 weeks before `now`; '' otherwise. */
+export function surveyAgeNote(surveyDate: string | null, now: Date): string {
+  if (!surveyDate) return ''
+  const days = Math.floor((now.getTime() - new Date(surveyDate).getTime()) / 86_400_000)
+  if (days <= 21) return ''
+  if (days < 365) return ` - ${Math.round(days / 7)} weeks old, not current`
+  return ` - ${Math.floor(days / 365)}+ years old, not current`
+}
+
+/**
+ * eBird reports from the last 14 days per state and species: how many places reported the
+ * species and the largest latest report at up to 3 of them. States with the most places first.
+ */
+export function formatEBirdSightings(rows: EBirdSpeciesReport[], perState = 3): string {
+  const byState = new Map<string, EBirdSpeciesReport[]>()
+  for (const r of rows) {
+    if (!byState.has(r.state)) byState.set(r.state, [])
+    byState.get(r.state)!.push(r)
+  }
+  const states = [...byState.entries()]
+    .map(([state, list]) => ({ state, list: [...list].sort((a, b) => b.places - a.places).slice(0, perState) }))
+    .sort((a, b) => b.list.reduce((n, r) => n + r.places, 0) - a.list.reduce((n, r) => n + r.places, 0))
+  const lines: string[] = [
+    'Birder reports, not surveys: the latest report at each place. They show where birds are being seen, not how many there are.',
+  ]
+  for (const { state, list } of states) {
+    for (const r of list) {
+      const places = r.topPlaces.map(p => `${p.name} ${p.count.toLocaleString()} (${p.date})`).join('; ')
+      lines.push(`- ${state} ${r.speciesName}: reported at ${r.places} place${r.places === 1 ? '' : 's'}${places ? `. Largest: ${places}` : ''}`)
+    }
+  }
+  return lines.join('\n')
+}
+
 export function formatSurveyZones(rows: SurveyZoneRow[]): string {
   const vsAvg = (n: number | null, avg: number | null) =>
     n == null || !avg ? '' : ` (${n >= avg ? '+' : ''}${Math.round(((n - avg) / avg) * 100)}% vs avg)`
@@ -1084,7 +1171,7 @@ function buildSystemPrompt(
     })
     .join('\n\n---\n\n')
 
-  return `You are HuntStack AI, a hunting assistant for waterfowl and other game across the United States. Today is ${now.toISOString().slice(0, 10)}; the current waterfowl season is ${currentSeasonLabel(now)}.
+  return `You are HuntStack AI, a hunting assistant for waterfowl hunters in the Central and Mississippi Flyways. HuntStack has seasons and rules for Texas, Oklahoma, Kansas, New Mexico, Arkansas and Louisiana, and survey counts for those states plus Missouri and Illinois. Today is ${now.toISOString().slice(0, 10)}; the current waterfowl season is ${currentSeasonLabel(now)}.
 
 You get three kinds of information:
 1. WEB SEARCH RESULTS: pages found by searching the internet for this question, attached after these instructions when available. Use them as your main source for anything the database below does not cover.
@@ -1098,6 +1185,8 @@ Guidelines:
 - Cite web results inline as markdown links, e.g. [ksoutdoors.gov](https://ksoutdoors.gov/...).
 - If nothing here answers the question, say so plainly and point the user to the state wildlife agency. General hunting knowledge (gear, tactics, bird ID) is fine, but never invent dates, limits, prices or counts.
 - Always say which state's rules you mean, and remind users to confirm regulations with the official state agency.
+- When a question about birds, places or rules names no place, answer for the Central and Mississippi Flyways and say so. Mention other regions only briefly, if at all.
+- For where birds are now, use the eBird sightings and any survey counts not marked old. Call eBird numbers birder reports, not counts of birds.
 - When answering "where should I hunt?" or "are conditions good?", prioritize states with: (1) high push score, (2) arriving/building migration status, (3) high bird counts. A push score of 2–3 with arriving birds is the strongest buy signal.
 - NEVER repeat or reference labels like "STRUCTURED DATA", "DOCUMENT CONTEXT" or "WEB SEARCH RESULTS" in your answer; they are internal.
 - Be conversational and specific. Format with markdown: **bold** for emphasis, numbered lists for rankings, bullet lists for details.

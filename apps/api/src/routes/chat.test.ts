@@ -8,10 +8,13 @@ import {
   formatBagLimit,
   formatMidwinterHistory,
   formatShootingHours,
+  formatEBirdSightings,
   formatSurveyZones,
   needsDocuments,
   structuredPlan,
+  surveyAgeNote,
   truncateHistory,
+  withAreaHint,
 } from './chat.js'
 
 describe('documentFilters', () => {
@@ -313,15 +316,87 @@ describe('needsDocuments', () => {
     }
   })
 
-  it('searches documents for state, rules and bird-location questions', () => {
+  it('searches documents for state, rules and where-to-hunt questions', () => {
     for (const q of [
       'Kansas duck bag limit',
       'what is HIP certification',
-      'where are the snow geese right now?',
-      'latest refuge counts',
+      'where should I hunt ducks in Kansas',
       'Arkansas duck hunting tips',
     ]) {
       expect(needs(q), q).toBe(true)
     }
+  })
+
+  it('skips documents when the question is only about where birds are now', () => {
+    for (const q of ['where are the snow geese right now?', 'Where are the ducks right now?', 'how many ducks are in Arkansas right now', 'latest refuge counts']) {
+      expect(needs(q), q).toBe(false)
+    }
+  })
+})
+
+describe('snow geese right now', () => {
+  const q = 'Where are the snow geese right now?'
+
+  it('asks for eBird sightings and counts, not rules', () => {
+    const p = structuredPlan(extractEntities(q))
+    expect(p.ebirdSightings).toBe(true)
+    expect(p.refugeCounts).toBe(true)
+    expect(p.seasons).toBe(false)
+  })
+
+  it('leaves eBird out of rules and general questions', () => {
+    expect(structuredPlan(extractEntities('Kansas duck bag limit')).ebirdSightings).toBe(false)
+    expect(structuredPlan(extractEntities('What decoy spread works best for mallards?')).ebirdSightings).toBe(false)
+  })
+
+  it('names our flyways for the web search when no state is named', () => {
+    expect(withAreaHint(q, extractEntities(q))).toContain('Central and Mississippi Flyways')
+    expect(withAreaHint('when does pintail season open?', extractEntities('when does pintail season open?')))
+      .toContain('Central and Mississippi Flyways')
+  })
+
+  it('leaves the message alone when it names a state or is a general question', () => {
+    for (const m of ['Where are the snow geese in Arkansas right now?', 'What decoy spread works best for mallards?']) {
+      expect(withAreaHint(m, extractEntities(m))).toBe(m)
+    }
+  })
+})
+
+describe('surveyAgeNote', () => {
+  const now = new Date('2026-10-30T12:00:00Z')
+  it('says nothing for a survey within 3 weeks', () => {
+    expect(surveyAgeNote('2026-10-20', now)).toBe('')
+    expect(surveyAgeNote(null, now)).toBe('')
+  })
+  it('marks older surveys as not current', () => {
+    expect(surveyAgeNote('2026-01-23', now)).toBe(' - 40 weeks old, not current')
+    expect(surveyAgeNote('2024-01-15', now)).toBe(' - 2+ years old, not current')
+  })
+})
+
+describe('formatEBirdSightings', () => {
+  const row = (state: string, speciesName: string, places: number, topPlaces = [] as Array<{ name: string; count: number; date: string }>) => ({
+    state, species: speciesName.toLowerCase(), speciesName, places, topPlaces,
+  })
+
+  it('lists states with the most places first, with the largest reports', () => {
+    const text = formatEBirdSightings([
+      row('KS', 'Snow Goose', 2),
+      row('AR', 'Snow Goose', 5, [{ name: 'Sheffield Nelson Dagmar WMA', count: 50, date: '2026-10-30' }]),
+      row('TX', 'Snow Goose', 1),
+    ])
+    const lines = text.split('\n')
+    expect(lines[0]).toMatch(/not surveys/)
+    expect(lines[1]).toBe('- AR Snow Goose: reported at 5 places. Largest: Sheffield Nelson Dagmar WMA 50 (2026-10-30)')
+    expect(lines[2]).toBe('- KS Snow Goose: reported at 2 places')
+    expect(lines[3]).toBe('- TX Snow Goose: reported at 1 place')
+  })
+
+  it('keeps the most reported species per state', () => {
+    const text = formatEBirdSightings([
+      row('AR', 'Mallard', 1), row('AR', 'Gadwall', 9), row('AR', 'Teal', 4), row('AR', 'Wigeon', 6),
+    ])
+    expect(text).not.toContain('Mallard')
+    expect(text.indexOf('Gadwall')).toBeLessThan(text.indexOf('Wigeon'))
   })
 })

@@ -126,7 +126,7 @@ export interface EBirdRegionalCount {
   fetchedAt: string
 }
 
-interface EBirdObservation {
+export interface EBirdObservation {
   speciesCode: string
   comName: string
   howMany: number | null
@@ -134,6 +134,8 @@ interface EBirdObservation {
   locId: string
   locName: string
   obsValid: boolean
+  /** A personal location (often a home address or yard), not a public hotspot */
+  locationPrivate?: boolean
 }
 
 // ─── Per-location geo fetch (25km radius by default, up to eBird's 50km max) ──
@@ -398,4 +400,121 @@ export async function getEBirdRegionalCounts(
 function filterBySpecies(counts: EBirdRegionalCount[], slugs?: string[]): EBirdRegionalCount[] {
   if (!slugs || slugs.length === 0) return counts
   return counts.filter(c => slugs.includes(c.species))
+}
+
+// ─── Species reports by place (chat) ─────────────────────────────────────────
+// eBird's statewide /data/obs/{region}/recent returns only the latest report of each species
+// in the whole state (488 rows for Texas over 30 days, one of them a snow goose). Asked per
+// species, /data/obs/{region}/recent/{species} returns the latest report at every place, which
+// is what "where are the snow geese right now?" needs.
+
+export interface EBirdSpeciesReport {
+  state: string
+  species: string        // slug
+  speciesName: string
+  /** Places with a report in the window */
+  places: number
+  /** Up to 3 places with the largest latest report, largest first */
+  topPlaces: Array<{ name: string; count: number; date: string }>
+}
+
+const speciesCache = new BoundedCache<EBirdObservation[]>()
+
+/** eBird codes per slug, primary code first (EBIRD_SPECIES order) */
+function codesFor(slug: string): string[] {
+  return Object.entries(EBIRD_SPECIES).filter(([, v]) => v.slug === slug).map(([code]) => code)
+}
+
+async function fetchSpeciesObs(apiKey: string, state: string, code: string, daysBack: number): Promise<EBirdObservation[]> {
+  const key = `ebird:sp:US-${state}:${code}:${daysBack}d`
+  const cached = speciesCache.get(key)
+  if (cached) return cached
+  const url = `${EBIRD_BASE}/data/obs/US-${state}/recent/${code}?back=${daysBack}`
+  let resp: Response | null = null
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * 2 ** (attempt - 1)))
+    resp = await fetch(url, { headers: { 'X-eBirdApiToken': apiKey, 'User-Agent': '(HuntStack, huntstack.com)' } })
+    if (resp.status !== 429) break
+  }
+  if (!resp || !resp.ok) {
+    console.warn(`[eBird] species query US-${state}/${code} failed: HTTP ${resp?.status}`)
+    return []
+  }
+  const obs: EBirdObservation[] = await resp.json()
+  speciesCache.set(key, obs, REGIONAL_TTL)
+  return obs
+}
+
+const PUBLIC_LAND = /\b(NWR|national wildlife refuge|wildlife refuge|refuge|WMA|wildlife (management )?area|conservation area|CA|SFWA|state park|SP|state forest|national forest|NF|lake|reservoir|marsh|bottoms)\b/i
+const LOOKS_PRIVATE = /^\s*\d|private|yard|home|house|backyard|farm\b/i
+
+/**
+ * The name to show for a place, or null to leave it unnamed. Hotspots are public. A personal
+ * location is shown only when it names public land ("Swan Lake National Wildlife Refuge, Sumner
+ * US-MO" - a birder's own pin on the refuge); street addresses ("11100-11118 N Cattle Dr"),
+ * yards and anything marked private stay unnamed. Personal names keep only their first part,
+ * dropping the town and coordinates eBird appends.
+ */
+export function publicPlaceName(locName: string, isPrivate: boolean): string | null {
+  if (!isPrivate) return locName
+  const first = locName.split(',')[0].trim()
+  if (LOOKS_PRIVATE.test(locName) || !PUBLIC_LAND.test(first)) return null
+  return first
+}
+
+/** Group reports by state and slug; the largest latest report per place */
+export function summarizeSpeciesReports(
+  rows: Array<{ state: string; obs: EBirdObservation[] }>,
+): EBirdSpeciesReport[] {
+  const groups = new Map<string, { state: string; slug: string; name: string; places: Map<string, { count: number; date: string; private: boolean }> }>()
+  for (const { state, obs } of rows) {
+    for (const o of obs) {
+      const mapped = EBIRD_SPECIES[o.speciesCode]
+      if (!mapped || !o.locName) continue
+      const key = `${state}:${mapped.slug}`
+      if (!groups.has(key)) groups.set(key, { state, slug: mapped.slug, name: mapped.name, places: new Map() })
+      const places = groups.get(key)!.places
+      const count = o.howMany ?? 0  // "X" (present, not counted) still marks a place
+      const best = places.get(o.locName)
+      // Private places count toward `places`; publicPlaceName decides whether one is named
+      if (!best || count > best.count) places.set(o.locName, { count, date: o.obsDt.substring(0, 10), private: o.locationPrivate === true })
+    }
+  }
+  return [...groups.values()].map(g => ({
+    state: g.state,
+    species: g.slug,
+    speciesName: g.name,
+    places: g.places.size,
+    topPlaces: [...g.places.entries()]
+      .map(([name, v]) => ({ name: publicPlaceName(name, v.private), count: v.count, date: v.date }))
+      .filter((p): p is { name: string; count: number; date: string } => p.name !== null && p.count > 0)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3),
+  }))
+}
+
+/** Default species for "where are the ducks/geese right now?" with none named */
+export const DEFAULT_REPORT_SPECIES = ['mallard', 'snow-goose', 'canada-goose', 'green-winged-teal', 'pintail']
+
+export async function getEBirdSpeciesReports(
+  stateCodes: string[],
+  speciesSlugs: string[],
+  daysBack = 14,
+): Promise<EBirdSpeciesReport[]> {
+  const apiKey = process.env.EBIRD_API_KEY
+  if (!apiKey || stateCodes.length === 0 || speciesSlugs.length === 0) return []
+  // Every code (snow goose includes Snow/Ross's reports) for one or two species; only the
+  // main code for more, to keep the request count down.
+  const codes = speciesSlugs.flatMap(s => (speciesSlugs.length <= 2 ? codesFor(s) : codesFor(s).slice(0, 1)))
+  const jobs = stateCodes.flatMap(state => codes.map(code => ({ state, code })))
+  const rows: Array<{ state: string; obs: EBirdObservation[] }> = []
+  // 3 at a time: eBird answers bursts with 429
+  for (let i = 0; i < jobs.length; i += 3) {
+    const batch = await Promise.all(jobs.slice(i, i + 3).map(async j => ({
+      state: j.state,
+      obs: await fetchSpeciesObs(apiKey, j.state, j.code, daysBack).catch(() => [] as EBirdObservation[]),
+    })))
+    rows.push(...batch)
+  }
+  return summarizeSpeciesReports(rows)
 }

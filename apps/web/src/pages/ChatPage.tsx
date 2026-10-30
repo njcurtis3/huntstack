@@ -188,33 +188,18 @@ export function ChatPage() {
     // Limit to last 6 messages (3 turns) to stay well within token budget.
     const history = messages.slice(-6).map(m => ({ role: m.role, content: m.content }))
 
-    // Run AI + keyword search + semantic search in parallel
+    // Run AI + keyword search in parallel. Document excerpts come with the chat answer's own
+    // sources; a second document search here repeated them and, for questions the server
+    // answers without documents, listed old survey reports.
     const searchPromise = api.search(text.trim(), { type: 'all' }).catch(() => null)
-    const semanticPromise = api.semanticSearch(text.trim(), 5).catch(() => null)
     const chatPromise = api.chat(text.trim(), conversationId, history).catch((err: Error) => ({ error: err }))
 
-    const [searchData, semanticData, chatData] = await Promise.all([searchPromise, semanticPromise, chatPromise])
+    const [searchData, chatData] = await Promise.all([searchPromise, chatPromise])
 
-    // Merge keyword + semantic results, deduplicated by title
     const keywordResults: SearchResult[] = searchData
       ? (searchData as { results: SearchResult[] }).results ?? []
       : []
-    const semanticResults: SearchResult[] = semanticData
-      ? (semanticData as { results: Array<{ content: string; metadata: Record<string, unknown> }> }).results
-          .map((r, i) => ({
-            type: (r.metadata?.category as string) ?? 'regulation',
-            id: `sem-${i}`,
-            title: (r.metadata?.title as string) ?? 'Regulation excerpt',
-            snippet: r.content.slice(0, 200),
-            stateCode: r.metadata?.state_code as string | undefined,
-          }))
-      : []
-    // Merge: keyword first, then semantic extras not already represented by title
-    const seenTitles = new Set(keywordResults.map(r => r.title.toLowerCase()))
-    const merged = [
-      ...keywordResults,
-      ...semanticResults.filter(r => !seenTitles.has(r.title.toLowerCase())),
-    ].slice(0, 5)
+    const merged = keywordResults.slice(0, 5)
     const searchResults = merged.length ? merged : undefined
 
     let content: string
