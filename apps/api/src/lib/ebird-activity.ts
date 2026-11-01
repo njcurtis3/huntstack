@@ -76,12 +76,16 @@ export function buildStateActivity(
   })
 }
 
-let snapshotTableMissing = false
+// When the table was last found missing; checked again after an hour, so creating it takes
+// effect without restarting the API
+let snapshotTableMissingAt = 0
+const RECHECK_MISSING_TABLE = 60 * 60 * 1000
+const snapshotTableMissing = () => Date.now() - snapshotTableMissingAt < RECHECK_MISSING_TABLE
 
 /** Snapshots 12-16 days old, the one closest to 14 days per state and species */
 async function loadPreviousSnapshots(states: string[]): Promise<Map<string, Snapshot>> {
   const out = new Map<string, Snapshot>()
-  if (snapshotTableMissing || states.length === 0) return out
+  if (snapshotTableMissing() || states.length === 0) return out
   try {
     const rows = await getDb().execute(sql`
       SELECT DISTINCT ON (state_code, species_slug)
@@ -102,7 +106,7 @@ async function loadPreviousSnapshots(states: string[]): Promise<Map<string, Snap
 
 /** Today's figures, once per day (the first refresh of the day wins) */
 export async function saveSnapshot(reports: EBirdSpeciesReport[]): Promise<void> {
-  if (snapshotTableMissing || reports.length === 0) return
+  if (snapshotTableMissing() || reports.length === 0) return
   try {
     await getDb().execute(sql`
       INSERT INTO ebird_activity_snapshots (state_code, species_slug, snapshot_date, places, birds)
@@ -118,7 +122,7 @@ function noteSnapshotError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   if (/ebird_activity_snapshots.*does not exist|relation .* does not exist/i.test(message)) {
     // Run scripts/add-ebird-activity-snapshots-table.sql; until then there's no trend
-    snapshotTableMissing = true
+    snapshotTableMissingAt = Date.now()
     console.warn('[eBird] ebird_activity_snapshots table is missing: no statewide trend until it is created')
   } else {
     console.warn(`[eBird] activity snapshot query failed: ${message}`)
