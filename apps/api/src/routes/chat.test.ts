@@ -38,16 +38,24 @@ describe('documentFilters', () => {
     }
   })
 
-  it('keeps reports when the question is about birds or places, or not about rules', () => {
+  it('keeps reports when the question is about bird numbers or places', () => {
     for (const q of [
       'how many ducks are in Arkansas right now',
       'latest refuge counts for the season in Kansas',
       'duck numbers in Arkansas this season',
       'where should I hunt in Kansas this season',
-      'what do mallards eat',
-      'is my relationship with ducks healthy',
     ]) {
       expect(filters(q).skipReports, q).toBe(false)
+    }
+  })
+
+  it('leaves out reports on general questions about a state', () => {
+    for (const q of [
+      'Arkansas duck hunting tips',
+      'best decoy setup for Kansas mallards',
+      'what do mallards eat',
+    ]) {
+      expect(filters(q).skipReports, q).toBe(true)
     }
   })
 })

@@ -69,8 +69,8 @@ const SPECIES_ALIASES: Record<string, string> = {
 // Broad category keywords that indicate waterfowl interest
 const WATERFOWL_KEYWORDS = ['duck', 'ducks', 'goose', 'geese', 'waterfowl', 'teal']
 const MIGRATION_KEYWORDS = ['migration', 'migrating', 'flying', 'counts', 'refuge', 'survey', 'birds moving', 'what\'s flying', 'push', 'numbers', 'population']
-// Questions about the rules. On these, survey and area reports are left out of document
-// search (lib/retrieval.ts REPORT_PATTERN) unless the question also asks about birds or places.
+// Questions about the rules. Survey and area reports (lib/retrieval.ts REPORT_PATTERN) are left
+// out of document search unless a question asks about bird numbers or places (documentFilters).
 // Word starts, so "seasons", "closing" and "required" count but "relationship" isn't HIP.
 const REGULATION_PATTERN = /\b(bag|limits?\b|possession|seasons?\b|open(s|er|ers|ing)?\b|clos(e|es|ed|ing)\b|dates?\b|licen[cs]e|stamps?\b|permits?\b|hip\b|regulation|rules?\b|legal|shooting (hours|time)|steel shot|non-?toxic|youth|zones?\b|split|fees?\b|cost|price|how much|requir|allowed)/
 const LOCATION_KEYWORDS = ['where to hunt', 'where should i hunt', 'public land', 'public hunting', 'wma', 'wildlife management area', 'national forest', 'blm', 'wildlife refuge', 'hunting area', 'hunting location', 'place to hunt', 'spots to hunt']
@@ -391,13 +391,17 @@ export function structuredPlan(e: ExtractedEntities): StructuredPlan {
 }
 
 /**
- * Document-search filters for a question: only the states it names, and no survey or area
- * reports when it asks about rules but not about birds or places.
+ * Document-search filters for a question: only the states it names, and survey or area reports
+ * only when it asks about bird numbers or places. The reports are past seasons' counts; on
+ * anything else ("Arkansas duck hunting tips") they matched on species and state names and
+ * came back as sources the answer couldn't use.
  */
 export function documentFilters(entities: ExtractedEntities): ChunkFilters {
+  // "how many can be mallards?" on a bag-limit question is about the rules, not the birds
+  const birdsNow = entities.isBirdsNowQuery && !entities.isRegulationQuery
   return {
     stateCodes: entities.stateCodes,
-    skipReports: entities.isRegulationQuery && !entities.isMigrationQuery && !entities.isLocationQuery,
+    skipReports: !entities.isMigrationQuery && !entities.isLocationQuery && !birdsNow,
   }
 }
 
