@@ -16,7 +16,7 @@ import { SurveyZoneBreakdown } from '../components/SurveyZoneBreakdown'
 import { useThemeStore } from '../stores/themeStore'
 import { getMapColors, getChartColors } from '../lib/themeColors'
 import { DismissibleNotice } from '../components/DismissibleNotice'
-import { SiteMarkers, ZoomGroup, type MapSite } from '../components/SiteMarkers'
+import { EBIRD_COLOR, SiteMarkers, ZoomGroup, type MapSite } from '../components/SiteMarkers'
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json'
 
@@ -332,6 +332,19 @@ const FLYWAY_COLORS: Record<string, string> = {
 const STATE_LINE_COLORS = ['#1f883d', '#0969da', '#cf222e', '#bf8700', '#8250df', '#bf3989', '#0550ae']
 
 const PUSH_SCORE_LABELS = ['Low', 'Moderate', 'High', 'Extreme']
+
+// Approximate state centers [lng, lat]: flow arrows, and the map marker of a statewide survey
+// with no point of its own
+const STATE_CENTROIDS: Record<string, [number, number]> = {
+  MT: [-110.4, 47.0], ND: [-100.5, 47.5], SD: [-100.2, 44.5],
+  NE: [-99.9, 41.5], KS: [-98.4, 38.5], CO: [-105.5, 39.0],
+  OK: [-97.5, 35.5], TX: [-99.3, 31.0], NM: [-106.1, 34.4],
+  MN: [-94.6, 46.4], WI: [-89.6, 44.5], IA: [-93.1, 42.0],
+  IL: [-89.2, 40.0], MO: [-92.5, 38.3], TN: [-86.4, 35.9],
+  AR: [-92.4, 34.8], MS: [-89.7, 32.7], LA: [-91.8, 31.0],
+  WA: [-120.5, 47.4], OR: [-120.5, 44.0], ID: [-114.5, 44.5],
+  NV: [-116.7, 39.5], CA: [-119.4, 37.2],
+}
 
 // A state card lists this many sites (largest first) before "Show all"
 const SITE_LIST_LIMIT = 8
@@ -1773,14 +1786,19 @@ export function MigrationPage() {
 
   // Survey sites for the map: official counts with a point (eBird-only areas aren't survey sites)
   const mapSites = useMemo((): MapSite[] => refugeGroups.flatMap(g => {
+    const official = g.items.some(i => i.source !== 'ebird')
     const point = g.items.find(i => i.centerPoint)?.centerPoint
-    if (!point || !g.items.some(i => i.source !== 'ebird')) return []
+    // A statewide survey with no point (AGFC) goes at the state's center
+    const center = STATE_CENTROIDS[g.state]
+    const at = point ?? (official && center ? { lat: center[1], lng: center[0] } : null)
+    if (!at) return []
     return [{
+      kind: !official ? 'ebird' as const : point ? 'survey' as const : 'statewide' as const,
       id: g.refugeId,
       name: g.refugeName,
       state: g.state,
-      lat: point.lat,
-      lng: point.lng,
+      lat: at.lat,
+      lng: at.lng,
       totalBirds: g.totalBirds,
       color: STATUS_HEX[g.dominantStatus ?? 'none'] ?? '#57606a',
       isStale: g.isStale,
@@ -2419,17 +2437,6 @@ export function MigrationPage() {
 
             {/* Flow arrows between adjacent flyway states (whole-map view only) */}
             {k === 1 && (() => {
-              // Approximate AlbersUSA centroids [lng, lat] for arrow positioning
-              const STATE_CENTROIDS: Record<string, [number, number]> = {
-                MT: [-110.4, 47.0], ND: [-100.5, 47.5], SD: [-100.2, 44.5],
-                NE: [-99.9, 41.5], KS: [-98.4, 38.5], CO: [-105.5, 39.0],
-                OK: [-97.5, 35.5], TX: [-99.3, 31.0], NM: [-106.1, 34.4],
-                MN: [-94.6, 46.4], WI: [-89.6, 44.5], IA: [-93.1, 42.0],
-                IL: [-89.2, 40.0], MO: [-92.5, 38.3], TN: [-86.4, 35.9],
-                AR: [-92.4, 34.8], MS: [-89.7, 32.7], LA: [-91.8, 31.0],
-                WA: [-120.5, 47.4], OR: [-120.5, 44.0], ID: [-114.5, 44.5],
-                NV: [-116.7, 39.5], CA: [-119.4, 37.2],
-              }
 
               const orderedStates = FLYWAY_STATE_ORDER[selectedFlyway] ?? FLYWAY_STATE_ORDER['']
               const sgMap = new Map(stateGroups.map(s => [s.state, s]))
@@ -2497,8 +2504,22 @@ export function MigrationPage() {
             </>)}</ZoomGroup>
           </ComposableMap>
           <div className="flex items-center justify-between gap-3 flex-wrap mt-2 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-            <span>
-              Dots are survey sites ({mapSites.length}); numbered circles are groups of nearby sites. Click one to zoom in, or click a dot to see its counts.
+            <span className="flex items-center gap-x-3 gap-y-1 flex-wrap">
+              <span className="flex items-center gap-1">
+                <svg width="12" height="12" aria-hidden="true"><circle cx="6" cy="6" r="4" fill="#fff" stroke="#1f883d" strokeWidth="2.5" /></svg>
+                Survey site ({mapSites.filter(m => m.kind === 'survey').length})
+              </span>
+              {mapSites.some(m => m.kind === 'statewide') && (
+                <span className="flex items-center gap-1">
+                  <svg width="12" height="12" aria-hidden="true"><rect x="1.5" y="1.5" width="9" height="9" rx="1" fill="#fff" stroke="#1f883d" strokeWidth="2.5" /></svg>
+                  Statewide survey
+                </span>
+              )}
+              <span className="flex items-center gap-1">
+                <svg width="12" height="12" aria-hidden="true"><polygon points="6,1 11,6 6,11 1,6" fill={EBIRD_COLOR} /></svg>
+                eBird sightings ({mapSites.filter(m => m.kind === 'ebird').length})
+              </span>
+              <span>Numbered circles group nearby places: click to zoom in. Click a marker to see its counts.</span>
             </span>
             {mapZoomed && (
               <button onClick={resetMapZoom} className="text-accent-500 hover:text-accent-600 dark:hover:text-accent-400 underline">
@@ -2799,7 +2820,7 @@ export function MigrationPage() {
                         {/* Expanded: refuge cards */}
                         {isStateExpanded && (
                           <div className="border-t px-4 pb-4 pt-3 flex flex-col gap-3" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
-                            {sg.refuges.length > SITE_LIST_LIMIT && (
+                            {sg.refuges.length > 1 && (
                               <input
                                 type="search"
                                 className="input text-sm"

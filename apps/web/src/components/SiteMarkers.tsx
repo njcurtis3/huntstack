@@ -1,9 +1,14 @@
-import type { ReactNode } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 import { useMapContext } from 'react-simple-maps'
 
-// Survey sites drawn as dots on the Migration page's state map. Sites closer together than a
-// few pixels merge into one numbered circle, so a river with 25 sites reads as a few circles
-// until the map is zoomed in. No map library: positions come from the map's own projection.
+// Places with counts, drawn on the Migration page's state map:
+//   survey     a survey site with its own point: a dot ringed in its migration-status color
+//   statewide  a statewide or regional survey with no point of its own (AGFC): a square at
+//              the state's center
+//   ebird      an eBird place (birders' sightings, not a survey): a small purple diamond
+// Survey sites closer together than a few pixels merge into one numbered circle, eBird places
+// into a purple one, so a river with 25 sites reads as a few circles until the map is zoomed
+// in. No map library: positions come from the map's own projection.
 
 export type MapSite = {
   id: string
@@ -14,7 +19,10 @@ export type MapSite = {
   totalBirds: number
   color: string
   isStale: boolean
+  kind: 'survey' | 'statewide' | 'ebird'
 }
+
+export const EBIRD_COLOR = '#8250df'
 
 type Projected = MapSite & { x: number; y: number }
 
@@ -100,7 +108,12 @@ export function SiteMarkers({ sites, k, screenScale = 1, selectedId, onSiteClick
     if (p) projected.push({ ...s, x: p[0], y: p[1] })
   }
   const radius = atMaxZoom ? 0 : CLUSTER_PX / k
-  const clusters = clusterSites(projected, radius)
+  // Survey sites and eBird places cluster separately; statewide surveys never merge
+  const clusters = [
+    ...clusterSites(projected.filter(p => p.kind === 'ebird'), radius),
+    ...clusterSites(projected.filter(p => p.kind === 'survey'), radius),
+    ...projected.filter(p => p.kind === 'statewide').map(p => ({ x: p.x, y: p.y, sites: [p] })),
+  ]
 
   return (
     <g>
@@ -108,6 +121,46 @@ export function SiteMarkers({ sites, k, screenScale = 1, selectedId, onSiteClick
         if (c.sites.length === 1) {
           const s = c.sites[0]
           const selected = s.id === selectedId
+          const title = s.kind === 'ebird'
+            ? `${s.name}: latest eBird sightings (not a survey count)`
+            : `${s.name}${s.kind === 'statewide' ? ' (statewide survey)' : ''}: ${s.totalBirds.toLocaleString()} birds${s.isStale ? ' (old survey)' : ''}`
+          const onClick = (e: MouseEvent) => { e.stopPropagation(); onSiteClick(s) }
+          if (s.kind === 'ebird') {
+            const h = (selected ? 6 : 4.5) / k
+            return (
+              <polygon
+                key={s.id}
+                points={`${c.x},${c.y - h} ${c.x + h},${c.y} ${c.x},${c.y + h} ${c.x - h},${c.y}`}
+                fill={EBIRD_COLOR}
+                stroke="#fff"
+                strokeWidth={1.2 / k}
+                style={{ cursor: 'pointer' }}
+                onClick={onClick}
+              >
+                <title>{title}</title>
+              </polygon>
+            )
+          }
+          if (s.kind === 'statewide') {
+            const h = (selected ? 8 : 6.5) / k
+            return (
+              <rect
+                key={s.id}
+                x={c.x - h}
+                y={c.y - h}
+                width={2 * h}
+                height={2 * h}
+                rx={1.5 / k}
+                fill="#fff"
+                stroke={s.isStale ? '#9ca3af' : s.color}
+                strokeWidth={3 / k}
+                style={{ cursor: 'pointer' }}
+                onClick={onClick}
+              >
+                <title>{title}</title>
+              </rect>
+            )
+          }
           return (
             <circle
               key={s.id}
@@ -119,23 +172,26 @@ export function SiteMarkers({ sites, k, screenScale = 1, selectedId, onSiteClick
               stroke={s.isStale ? '#9ca3af' : s.color}
               strokeWidth={(selected ? 4 : 3) / k}
               style={{ cursor: 'pointer' }}
-              onClick={(e) => { e.stopPropagation(); onSiteClick(s) }}
+              onClick={onClick}
             >
-              <title>{`${s.name}: ${s.totalBirds.toLocaleString()} birds${s.isStale ? ' (old survey)' : ''}`}</title>
+              <title>{title}</title>
             </circle>
           )
         }
         const n = c.sites.length
         const r = (9 + Math.min(8, Math.log2(n) * 2)) / k
         const birds = c.sites.reduce((t, s) => t + (s.isStale ? 0 : s.totalBirds), 0)
+        const ebird = c.sites[0].kind === 'ebird'
         return (
           <g
             key={c.sites[0].id}
             style={{ cursor: 'pointer' }}
             onClick={(e) => { e.stopPropagation(); onClusterClick(c.sites) }}
           >
-            <title>{`${n} survey sites: ${birds.toLocaleString()} birds. Click to zoom in.`}</title>
-            <circle cx={c.x} cy={c.y} r={r} fill="#24292f" fillOpacity={0.88} stroke="#fff" strokeWidth={1.5 / k} />
+            <title>{ebird
+              ? `${n} eBird places (sightings, not survey counts). Click to zoom in.`
+              : `${n} survey sites: ${birds.toLocaleString()} birds. Click to zoom in.`}</title>
+            <circle cx={c.x} cy={c.y} r={r} fill={ebird ? EBIRD_COLOR : '#24292f'} fillOpacity={0.88} stroke="#fff" strokeWidth={1.5 / k} />
             <text
               x={c.x}
               y={c.y}
