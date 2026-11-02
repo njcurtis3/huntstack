@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react'
 import { ExternalLink } from 'lucide-react'
+import { api } from '../lib/api'
 
 type Source = {
   name: string
@@ -17,7 +19,7 @@ const REFUGE_COUNT_SOURCES: SourceGroup = {
   title: 'Migration & Refuge Counts',
   description:
     'Weekly and periodic waterfowl survey counts, scraped directly from state and federal wildlife agencies and used to power the Migration Intelligence dashboard and push-factor scoring.',
-  cadence: 'Weekly (Task Scheduler, Mondays 6am)',
+  cadence: 'Checked weekly, Mondays',
   sources: [
     {
       name: 'Washita National Wildlife Refuge (OK)',
@@ -37,18 +39,14 @@ const REFUGE_COUNT_SOURCES: SourceGroup = {
       url: 'https://www.fws.gov/library/collections/loess-bluffs-2025-waterfowl-and-bald-eagle-surveys',
     },
     {
-      name: 'Clarence Cannon National Wildlife Refuge (MO)',
-      url: 'https://www.fws.gov/refuge/clarence-cannon/clarence-cannon-nwr-waterfowl-surveys',
-    },
-    {
       name: 'Louisiana Dept. of Wildlife & Fisheries — Aerial Survey (LA)',
       url: 'https://www.wlf.louisiana.gov/page/aerial-waterfowl-surveys',
       note: 'Monthly aerial survey PDFs',
     },
     {
-      name: 'Illinois Natural History Survey, Forbes Biological Station — Aerial Inventory (IL)',
+      name: 'Illinois Natural History Survey, Forbes Biological Station — Aerial Inventory (IL, MO, IA)',
       url: 'https://forbes-bio-station.inhs.illinois.edu/research/waterfowl-aerial-inventories/',
-      note: 'Weekly flights over the Illinois and central Mississippi rivers, Sept–Jan; river-wide totals',
+      note: 'Weekly flights, Sept–Jan; 43 sites on the Illinois and central Mississippi rivers, including Clarence Cannon NWR',
     },
     {
       name: 'Texas Parks & Wildlife — Mid-Winter Waterfowl Survey (TX)',
@@ -110,7 +108,7 @@ const OTHER_GROUPS: SourceGroup[] = [
   },
 ]
 
-function SourceCard({ group }: { group: SourceGroup }) {
+function SourceCard({ group, summary }: { group: SourceGroup; summary?: string | null }) {
   return (
     <div
       className="rounded-lg border p-5"
@@ -136,6 +134,11 @@ function SourceCard({ group }: { group: SourceGroup }) {
       <p className="text-sm mb-4" style={{ color: `rgb(var(--color-text-secondary))` }}>
         {group.description}
       </p>
+      {summary && (
+        <p className="text-sm font-medium mb-4" style={{ color: `rgb(var(--color-text-primary))` }}>
+          {summary}
+        </p>
+      )}
       <ul className="space-y-2">
         {group.sources.map((source) => (
           <li key={source.url} className="flex items-start justify-between gap-2 text-sm">
@@ -161,6 +164,18 @@ function SourceCard({ group }: { group: SourceGroup }) {
 }
 
 export function DataSourcesPage() {
+  const [coverage, setCoverage] = useState<string | null>(null)
+
+  useEffect(() => {
+    api.getSurveyCoverage()
+      .then(({ sites, states }) => {
+        if (sites > 0) {
+          setCoverage(`${sites} survey sites across ${states.length} states: ${states.map(s => s.state).join(', ')}.`)
+        }
+      })
+      .catch(() => setCoverage(null))
+  }, [])
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
       <h1 className="text-3xl font-bold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>
@@ -173,7 +188,7 @@ export function DataSourcesPage() {
         before you hunt.
       </p>
       <div className="space-y-6">
-        <SourceCard group={REFUGE_COUNT_SOURCES} />
+        <SourceCard group={REFUGE_COUNT_SOURCES} summary={coverage} />
         {OTHER_GROUPS.map((group) => (
           <SourceCard key={group.title} group={group} />
         ))}

@@ -387,6 +387,13 @@ class ApiClient {
     }>('/api/refuges', { params: options })
   }
 
+  async getSurveyCoverage() {
+    return this.request<{
+      sites: number
+      states: Array<{ state: string; sites: number }>
+    }>('/api/refuges/coverage')
+  }
+
   async getRefugeCounts(refugeId: string, options?: {
     species?: string
     startDate?: string

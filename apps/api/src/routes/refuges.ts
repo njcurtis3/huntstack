@@ -4,6 +4,9 @@ import { getDb } from '../lib/db.js'
 import { locations, refugeCounts, species, states } from '@huntstack/db/schema'
 import { getEBirdCountsForRefuge } from '../lib/ebird.js'
 import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
+import { BoundedCache } from '../lib/cache.js'
+
+const coverageCache = new BoundedCache<{ sites: number; states: Array<{ state: string; sites: number }> }>(1)
 
 export const refugeRoutes: FastifyPluginAsync = async (app) => {
   // List wildlife refuges
@@ -77,6 +80,40 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
       })),
       count: result.length,
     }
+  })
+
+  // How many survey sites have counts, for the Data Sources page. A site is a location with
+  // weekly, biweekly or monthly counts that isn't the total of other sites (the INHS river
+  // totals, the AGFC statewide survey). Annual mid-winter totals don't count.
+  app.get('/coverage', {
+    schema: {
+      tags: ['refuges'],
+      summary: 'Number of survey sites with counts, and their states',
+    },
+  }, async () => {
+    const cached = coverageCache.get('coverage')
+    if (cached) return cached
+    const db = getDb()
+    const rows = await db.execute(sql`
+      SELECT s.code, count(DISTINCT l.id)::int AS sites
+      FROM locations l
+      JOIN states s ON s.id = l.state_id
+      JOIN refuge_counts rc ON rc.location_id = l.id
+      WHERE rc.survey_type NOT LIKE '%annual%'
+        AND NOT EXISTS (
+          SELECT 1 FROM locations c WHERE c.metadata->>'parentLocation' = l.name
+        )
+      GROUP BY s.code
+      ORDER BY s.code
+    `)
+    const byState = (rows as unknown as Array<{ code: string; sites: number }>)
+      .map(r => ({ state: r.code, sites: Number(r.sites) }))
+    const result = {
+      sites: byState.reduce((n, r) => n + r.sites, 0),
+      states: byState,
+    }
+    coverageCache.set('coverage', result, 60 * 60 * 1000)
+    return result
   })
 
   // Get bird counts for a specific refuge

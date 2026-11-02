@@ -16,6 +16,7 @@ import { SurveyZoneBreakdown } from '../components/SurveyZoneBreakdown'
 import { useThemeStore } from '../stores/themeStore'
 import { getMapColors, getChartColors } from '../lib/themeColors'
 import { DismissibleNotice } from '../components/DismissibleNotice'
+import { SiteMarkers, ZoomGroup, type MapSite } from '../components/SiteMarkers'
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json'
 
@@ -331,6 +332,20 @@ const FLYWAY_COLORS: Record<string, string> = {
 const STATE_LINE_COLORS = ['#1f883d', '#0969da', '#cf222e', '#bf8700', '#8250df', '#bf3989', '#0550ae']
 
 const PUSH_SCORE_LABELS = ['Low', 'Moderate', 'High', 'Extreme']
+
+// A state card lists this many sites (largest first) before "Show all"
+const SITE_LIST_LIMIT = 8
+
+// Map colors per migration status (same as the state colors and the legend)
+const STATUS_HEX: Record<string, string> = {
+  arriving: '#1f883d',
+  building: '#0969da',
+  peak: '#bf8700',
+  declining: '#f97316',
+  departing: '#ef4444',
+  first_survey: '#01210a',
+  none: '#57606a',
+}
 
 // Headline pressure = the strongest state or region, as a whole step 0–3 for the
 // label/dot lookups (scores move in 0.5 steps; an incoming front counts half).
@@ -1334,6 +1349,25 @@ export function MigrationPage() {
 
   const [expandedStates, setExpandedStates] = useState<Set<string>>(new Set())
   const [expandedRefuges, setExpandedRefuges] = useState<Set<string>>(new Set())
+  // Map zoom: a cluster the user clicked (else the selected state's sites, else the whole map)
+  const [mapTarget, setMapTarget] = useState<MapSite[] | null>(null)
+  const [mapSiteId, setMapSiteId] = useState<string | null>(null)
+  // States whose card lists every site (long lists show the top few), and per-state site search
+  const [showAllSites, setShowAllSites] = useState<Set<string>>(new Set())
+  const [siteQuery, setSiteQuery] = useState<Record<string, string>>({})
+  // The map is drawn 980 units wide; on a narrow screen markers are scaled up to stay tappable
+  const mapBoxRef = useRef<HTMLDivElement>(null)
+  const [mapScreenScale, setMapScreenScale] = useState(1)
+  useEffect(() => {
+    const el = mapBoxRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width
+      if (w > 0) setMapScreenScale(Math.min(2.5, Math.max(1, 980 / w)))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   const [shareCopied, setShareCopied] = useState(false)
 
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme)
@@ -1520,6 +1554,9 @@ export function MigrationPage() {
   const handleMapStateClick = useCallback((stateCode: string) => {
     setSelectedState(prev => prev === stateCode ? '' : stateCode)
   }, [])
+
+  // A new state (or none) resets any cluster zoom
+  useEffect(() => { setMapTarget(null) }, [selectedState])
 
   // Share report
   const handleShare = useCallback(() => {
@@ -1733,6 +1770,47 @@ export function MigrationPage() {
       }
     }).sort((a, b) => b.freshTotalBirds - a.freshTotalBirds)
   }, [refugeGroups])
+
+  // Survey sites for the map: official counts with a point (eBird-only areas aren't survey sites)
+  const mapSites = useMemo((): MapSite[] => refugeGroups.flatMap(g => {
+    const point = g.items.find(i => i.centerPoint)?.centerPoint
+    if (!point || !g.items.some(i => i.source !== 'ebird')) return []
+    return [{
+      id: g.refugeId,
+      name: g.refugeName,
+      state: g.state,
+      lat: point.lat,
+      lng: point.lng,
+      totalBirds: g.totalBirds,
+      color: STATUS_HEX[g.dominantStatus ?? 'none'] ?? '#57606a',
+      isStale: g.isStale,
+    }]
+  }), [refugeGroups])
+
+  const mapZoomTarget = mapTarget ?? (selectedState ? mapSites : null)
+  const mapZoomed = !!mapTarget || (!!selectedState && mapSites.length > 0)
+
+  const handleMapSiteClick = useCallback((site: MapSite) => {
+    setSelectedState(site.state)
+    setMapSiteId(site.id)
+    setExpandedStates(prev => new Set(prev).add(site.state))
+    setExpandedRefuges(prev => new Set(prev).add(site.id))
+    setShowAllSites(prev => new Set(prev).add(site.state))
+    setSiteQuery(prev => ({ ...prev, [site.state]: '' }))
+    setTimeout(() => {
+      document.getElementById(`site-card-${site.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 400)
+  }, [])
+
+  const handleMapClusterClick = useCallback((sites: MapSite[]) => {
+    setMapTarget(sites)
+  }, [])
+
+  const resetMapZoom = useCallback(() => {
+    setMapTarget(null)
+    setSelectedState('')
+    setMapSiteId(null)
+  }, [])
 
   // Fetch weather for visible refuges (staggered)
   useEffect(() => {
@@ -2235,7 +2313,7 @@ export function MigrationPage() {
         </div>
 
         {/* US State Map */}
-        <div className="card p-4 mb-8">
+        <div className="card p-4 mb-8" ref={mapBoxRef}>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>
               Select a state {selectedState && (
@@ -2273,6 +2351,7 @@ export function MigrationPage() {
             height={500}
             style={{ width: '100%', height: 'auto' }}
           >
+            <ZoomGroup target={mapZoomTarget}>{(k) => (<>
             <Geographies geography={GEO_URL}>
               {({ geographies }) =>
                 geographies.map(geo => {
@@ -2312,6 +2391,7 @@ export function MigrationPage() {
                           fill: isSelected ? mapColors.selected : statusFill,
                           stroke: isSelected ? mapColors.selected : mapColors.stroke,
                           strokeWidth: isSelected ? 1.5 : 0.75,
+                          vectorEffect: 'non-scaling-stroke',
                           outline: 'none',
                           cursor: hasData ? 'pointer' : 'default',
                         },
@@ -2319,6 +2399,7 @@ export function MigrationPage() {
                           fill: isSelected ? mapColors.selectedHover : hasData ? statusFillHover : mapColors.empty,
                           stroke: hasData ? '#fff' : mapColors.stroke,
                           strokeWidth: hasData ? 1.5 : 0.75,
+                          vectorEffect: 'non-scaling-stroke',
                           outline: 'none',
                           cursor: hasData ? 'pointer' : 'default',
                         },
@@ -2326,6 +2407,7 @@ export function MigrationPage() {
                           fill: mapColors.selectedHover,
                           stroke: mapColors.selected,
                           strokeWidth: 1.5,
+                          vectorEffect: 'non-scaling-stroke',
                           outline: 'none',
                         },
                       }}
@@ -2335,8 +2417,8 @@ export function MigrationPage() {
               }
             </Geographies>
 
-            {/* Flow arrows between adjacent flyway states */}
-            {(() => {
+            {/* Flow arrows between adjacent flyway states (whole-map view only) */}
+            {k === 1 && (() => {
               // Approximate AlbersUSA centroids [lng, lat] for arrow positioning
               const STATE_CENTROIDS: Record<string, [number, number]> = {
                 MT: [-110.4, 47.0], ND: [-100.5, 47.5], SD: [-100.2, 44.5],
@@ -2403,7 +2485,27 @@ export function MigrationPage() {
                 )
               })
             })()}
+
+            <SiteMarkers
+              sites={mapSites}
+              k={k}
+              screenScale={mapScreenScale}
+              selectedId={mapSiteId}
+              onSiteClick={handleMapSiteClick}
+              onClusterClick={handleMapClusterClick}
+            />
+            </>)}</ZoomGroup>
           </ComposableMap>
+          <div className="flex items-center justify-between gap-3 flex-wrap mt-2 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+            <span>
+              Dots are survey sites ({mapSites.length}); numbered circles are groups of nearby sites. Click one to zoom in, or click a dot to see its counts.
+            </span>
+            {mapZoomed && (
+              <button onClick={resetMapZoom} className="text-accent-500 hover:text-accent-600 dark:hover:text-accent-400 underline">
+                Show the whole map
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Loading */}
@@ -2445,7 +2547,7 @@ export function MigrationPage() {
                 </p>
               </div>
               <div className="card p-4">
-                <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>Refuges Reporting</p>
+                <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>Sites Reporting</p>
                 <p className="text-2xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>{refugeCount}</p>
               </div>
               <div className="card p-4">
@@ -2679,7 +2781,7 @@ export function MigrationPage() {
                                   {sg.totalBirds.toLocaleString()}
                                 </span>
                                 <span className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                                  total birds · {sg.refugeCount} {sg.refugeCount === 1 ? 'refuge' : 'refuges'} · {sg.speciesCount} species
+                                  total birds · {sg.refugeCount} {sg.refugeCount === 1 ? 'site' : 'sites'} · {sg.speciesCount} species
                                 </span>
                               </div>
                               <div className="mt-1">
@@ -2697,7 +2799,26 @@ export function MigrationPage() {
                         {/* Expanded: refuge cards */}
                         {isStateExpanded && (
                           <div className="border-t px-4 pb-4 pt-3 flex flex-col gap-3" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
-                            {sg.refuges.map((group) => {
+                            {sg.refuges.length > SITE_LIST_LIMIT && (
+                              <input
+                                type="search"
+                                className="input text-sm"
+                                placeholder={`Find one of ${sg.refuges.length} sites in ${sg.stateName}`}
+                                aria-label={`Find a survey site in ${sg.stateName}`}
+                                value={siteQuery[sg.state] ?? ''}
+                                onChange={(e) => setSiteQuery(prev => ({ ...prev, [sg.state]: e.target.value }))}
+                              />
+                            )}
+                            {(() => {
+                              const q = (siteQuery[sg.state] ?? '').trim().toLowerCase()
+                              const matching = q ? sg.refuges.filter(r => r.refugeName.toLowerCase().includes(q)) : sg.refuges
+                              const showAll = !!q || showAllSites.has(sg.state)
+                              const shown = showAll ? matching : matching.slice(0, SITE_LIST_LIMIT)
+                              return (<>
+                              {q && matching.length === 0 && (
+                                <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>No site matches “{siteQuery[sg.state]}”.</p>
+                              )}
+                            {shown.map((group) => {
                               const isExpanded = expandedRefuges.has(group.refugeId)
                               const groupStatusCfg = group.dominantStatus ? STATUS_CONFIG[group.dominantStatus] : null
                               const isGroupSpike = group.topAnomaly === 'spike'
@@ -2707,7 +2828,10 @@ export function MigrationPage() {
                               return (
                                 <div
                                   key={group.refugeId}
-                                  className={`card overflow-hidden ${
+                                  id={`site-card-${group.refugeId}`}
+                                  className={`card overflow-hidden scroll-mt-24 ${
+                                    mapSiteId === group.refugeId ? 'ring-2 ring-accent-500' : ''
+                                  } ${
                                     isGroupSpike ? 'ring-2 ring-amber-400 dark:ring-amber-500' : ''
                                   } ${isGroupDrop ? 'ring-2 ring-red-400 dark:ring-red-500' : ''} ${
                                     selectedRefuge?.id === group.refugeId ? 'ring-2 ring-accent-500' : ''
@@ -2884,6 +3008,16 @@ export function MigrationPage() {
                                 </div>
                               )
                             })}
+                              {!showAll && matching.length > SITE_LIST_LIMIT && (
+                                <button
+                                  className="text-sm text-accent-500 hover:text-accent-600 dark:hover:text-accent-400 underline self-start"
+                                  onClick={() => setShowAllSites(prev => new Set(prev).add(sg.state))}
+                                >
+                                  Show all {matching.length} sites
+                                </button>
+                              )}
+                              </>)
+                            })()}
                           </div>
                         )}
                       </div>
