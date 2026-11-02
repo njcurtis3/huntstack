@@ -282,13 +282,18 @@ class RefugeCountsScraper:
         return items
 
     def _handle_results_fn(self, source: dict) -> list[dict]:
-        """The parser module fetched and parsed everything — wrap its results as items."""
+        """The parser module fetched and parsed everything — wrap its results as items.
+
+        A result is (ParseResult, url), stored under the source's location, or
+        (ParseResult, url, location name) for sources that also report sub-sites (INHS).
+        """
         results = source["results_fn"]()
-        log.info(f"Extracted {len(results)} survey dates from {source['name']}")
-        return [
-            self._make_item(source["name"], source["state_code"], result, url, source.get("survey_type", "weekly"))
-            for result, url in results
-        ]
+        log.info(f"Extracted {len(results)} survey results from {source['name']}")
+        items = []
+        for result, url, *location in results:
+            name = location[0] if location else source["name"]
+            items.append(self._make_item(name, source["state_code"], result, url, source.get("survey_type", "weekly")))
+        return items
 
     # ─── Main run ─────────────────────────────────────────────────────────────
 

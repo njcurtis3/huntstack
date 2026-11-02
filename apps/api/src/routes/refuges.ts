@@ -262,6 +262,8 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
       WHERE l.location_type = 'wildlife_refuge'
         AND l.center_point IS NOT NULL
         AND (l.metadata->>'survey_only') IS DISTINCT FROM 'true'
+        -- INHS survey sites: a few miles apart, with weekly flight counts of their own
+        AND (l.metadata->>'skipEbird') IS DISTINCT FROM 'true'
         AND l.name NOT LIKE '% - Statewide MWI'
         ${flyway ? sql`AND l.metadata->>'flyway' = ${flyway}` : sql``}
     `)

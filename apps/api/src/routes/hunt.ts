@@ -231,6 +231,8 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         JOIN species sp ON rc.species_id = sp.id
         WHERE l.location_type = 'wildlife_refuge'
           AND l.name NOT LIKE '% - Statewide MWI'
+          -- Summaries of other locations (INHS river-wide totals): their sites are listed instead
+          AND (l.metadata->>'survey_only') IS DISTINCT FROM 'true'
           AND rc.survey_type != 'mwi_annual'
           AND rc.survey_date >= ${targetDateStr}::date
             - (CASE WHEN rc.survey_type = 'aerial_monthly' THEN ${FRESH_DAYS_MONTHLY}::int ELSE ${FRESH_DAYS}::int END) * INTERVAL '1 day'

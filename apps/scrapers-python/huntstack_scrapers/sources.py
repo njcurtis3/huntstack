@@ -22,7 +22,6 @@ from huntstack_scrapers.parsers.agfc_zones import store_zone_rows, zones_for_rep
 from huntstack_scrapers.parsers.fws_html import parse_fws_refuge_page, parse_fws_story_page
 from huntstack_scrapers.parsers.loess_bluffs_pdf import parse_loess_bluffs_pdf, generate_loess_bluffs_urls
 from huntstack_scrapers.parsers.ldwf_pdf import parse_ldwf_pdf, fetch_ldwf_pdf_urls
-from huntstack_scrapers.parsers.clarence_cannon_html import parse_clarence_cannon_html
 from huntstack_scrapers.parsers.tpwd_excel import fetch_tpwd_excel_urls, parse_tpwd_excel
 from huntstack_scrapers.parsers.inhs_forbes_pdf import RIVER_SOURCES, fetch_forbes_results
 
@@ -79,16 +78,9 @@ WATERFOWL_SOURCES = [
         "pdf_parser": parse_loess_bluffs_pdf,
     },
 
-    # === Clarence Cannon NWR — Mississippi Flyway (Annada, MO) ===
-    # Wide-format HTML table: species rows × weekly date columns (full season)
-    {
-        "name": "Clarence Cannon National Wildlife Refuge",
-        "state_code": "MO",
-        "url": "https://www.fws.gov/refuge/clarence-cannon/clarence-cannon-nwr-waterfowl-surveys",
-        "parser": parse_clarence_cannon_html,
-        "source_type": "html_multi",
-        "survey_type": "weekly",
-    },
+    # Clarence Cannon NWR's own survey page (parsers/clarence_cannon_html.py) stopped at
+    # March 2023. Its counts now come from the INHS Mississippi River flights below
+    # ("Cannon Refuge" row), stored under the same location.
 
     # === Louisiana LDWF Aerial Surveys (monthly PDFs) ===
     {
@@ -105,7 +97,8 @@ WATERFOWL_SOURCES = [
 
     # === INHS Forbes Biological Station — weekly aerial inventory, Sept-Jan (Mississippi Flyway) ===
     # One index page lists both rivers' PDFs; fetch_forbes_results downloads each once per
-    # run and sorts them by the river named in the PDF. Stored as river-wide totals.
+    # run and sorts them by the river named in the PDF. Stored as river-wide totals (survey_only
+    # summaries) plus one location per survey site (inhs_forbes_pdf.INHS_SITES).
     {
         "name": RIVER_SOURCES["ILLINOIS"],
         "state_code": "IL",
