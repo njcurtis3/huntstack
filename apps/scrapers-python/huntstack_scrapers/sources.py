@@ -24,6 +24,7 @@ from huntstack_scrapers.parsers.loess_bluffs_pdf import parse_loess_bluffs_pdf, 
 from huntstack_scrapers.parsers.ldwf_pdf import parse_ldwf_pdf, fetch_ldwf_pdf_urls
 from huntstack_scrapers.parsers.tpwd_excel import fetch_tpwd_excel_urls, parse_tpwd_excel
 from huntstack_scrapers.parsers.inhs_forbes_pdf import RIVER_SOURCES, fetch_forbes_results
+from huntstack_scrapers.parsers.hagerman_census import CENSUS_PAGE_URL, fetch_census_results
 
 
 # Registry of all waterfowl count data sources.
@@ -115,6 +116,18 @@ WATERFOWL_SOURCES = [
         "source_type": "results_fn",
         "survey_type": "aerial_weekly",
         "results_fn": lambda: fetch_forbes_results("MISSISSIPPI"),
+    },
+
+    # === Hagerman NWR, TX — Friends of Hagerman weekly bird census (volunteers, every Tuesday) ===
+    # The census page links each week's eBird checklist; counts are read from the checklists
+    # through the eBird API (needs EBIRD_API_KEY). A volunteer census, not an agency survey.
+    {
+        "name": "Hagerman National Wildlife Refuge",
+        "state_code": "TX",
+        "url": CENSUS_PAGE_URL,
+        "source_type": "results_fn",
+        "survey_type": "weekly",
+        "results_fn": lambda: fetch_census_results(),
     },
 
     # === Texas TPWD Mid-Winter Waterfowl Survey (annual Excel files) ===

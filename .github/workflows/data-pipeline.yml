@@ -60,6 +60,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          EBIRD_API_KEY: ${{ secrets.EBIRD_API_KEY }}
         run: |
           missing=""
           [ -n "$DATABASE_URL" ] || missing="$missing DATABASE_URL"
@@ -68,6 +69,8 @@ jobs:
             echo "::error::Missing repository secret(s):$missing (Settings > Secrets and variables > Actions)"
             exit 1
           fi
+          # Only the Hagerman census job needs it (it reads eBird checklists); that job fails without it
+          [ -n "$EBIRD_API_KEY" ] || echo "::warning::EBIRD_API_KEY secret not set: the Hagerman NWR census job will fail"
 
       - name: Run pipeline
         env:
@@ -76,6 +79,7 @@ jobs:
           LLM_BASE_URL: https://openrouter.ai/api/v1
           LLM_MODEL: meta-llama/llama-3.3-70b-instruct
           SCRAPER_ALERT_WEBHOOK: ${{ secrets.SCRAPER_ALERT_WEBHOOK }}
+          EBIRD_API_KEY: ${{ secrets.EBIRD_API_KEY }}
           TARGETS: ${{ github.event.inputs.targets || 'all' }}
           FORCE: ${{ github.event.inputs.force == 'true' && '--force' || '' }}
           DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}

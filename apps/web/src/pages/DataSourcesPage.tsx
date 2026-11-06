@@ -49,6 +49,11 @@ const REFUGE_COUNT_SOURCES: SourceGroup = {
       note: 'Weekly flights, Sept–Jan; 43 sites on the Illinois and central Mississippi rivers, including Clarence Cannon NWR',
     },
     {
+      name: 'Friends of Hagerman NWR — Weekly Bird Census (TX)',
+      url: 'https://friendsofhagerman.com/Birding-Jack',
+      note: 'Volunteer count every Tuesday on Hagerman NWR, read from its eBird checklists',
+    },
+    {
       name: 'Texas Parks & Wildlife — Mid-Winter Waterfowl Survey (TX)',
       url: 'https://tpwd.texas.gov/huntwild/wild/game_management/waterfowl/',
       note: 'Annual survey, published as Excel workbooks',
