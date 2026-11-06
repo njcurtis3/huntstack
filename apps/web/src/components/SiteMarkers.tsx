@@ -6,6 +6,7 @@ import { useMapContext } from 'react-simple-maps'
 //   statewide  a statewide or regional survey with no point of its own (AGFC): a square at
 //              the state's center
 //   ebird      an eBird place (birders' sightings, not a survey): a small purple diamond
+//   quiet      an eBird place with no duck or goose reports in 14 days: a hollow grey diamond
 // Survey sites closer together than a few pixels merge into one numbered circle, eBird places
 // into a purple one, so a river with 25 sites reads as a few circles until the map is zoomed
 // in. No map library: positions come from the map's own projection.
@@ -19,7 +20,7 @@ export type MapSite = {
   totalBirds: number
   color: string
   isStale: boolean
-  kind: 'survey' | 'statewide' | 'ebird'
+  kind: 'survey' | 'statewide' | 'ebird' | 'quiet'
 }
 
 export const EBIRD_COLOR = '#8250df'
@@ -108,8 +109,10 @@ export function SiteMarkers({ sites, k, screenScale = 1, selectedId, onSiteClick
     if (p) projected.push({ ...s, x: p[0], y: p[1] })
   }
   const radius = atMaxZoom ? 0 : CLUSTER_PX / k
-  // Survey sites and eBird places cluster separately; statewide surveys never merge
+  // Survey sites and eBird places cluster separately; statewide surveys never merge, and
+  // quiet places (drawn first, underneath) never merge into a count of places with sightings
   const clusters = [
+    ...projected.filter(p => p.kind === 'quiet').map(p => ({ x: p.x, y: p.y, sites: [p] })),
     ...clusterSites(projected.filter(p => p.kind === 'ebird'), radius),
     ...clusterSites(projected.filter(p => p.kind === 'survey'), radius),
     ...projected.filter(p => p.kind === 'statewide').map(p => ({ x: p.x, y: p.y, sites: [p] })),
@@ -121,10 +124,28 @@ export function SiteMarkers({ sites, k, screenScale = 1, selectedId, onSiteClick
         if (c.sites.length === 1) {
           const s = c.sites[0]
           const selected = s.id === selectedId
-          const title = s.kind === 'ebird'
+          const title = s.kind === 'quiet'
+            ? `${s.name}: no ducks or geese reported to eBird in the last 14 days (groups of 5 or more)`
+            : s.kind === 'ebird'
             ? `${s.name}: latest eBird sightings (not a survey count)`
             : `${s.name}${s.kind === 'statewide' ? ' (statewide survey)' : ''}: ${s.totalBirds.toLocaleString()} birds${s.isStale ? ' (old survey)' : ''}`
           const onClick = (e: MouseEvent) => { e.stopPropagation(); onSiteClick(s) }
+          if (s.kind === 'quiet') {
+            const h = (selected ? 6 : 4.5) / k
+            return (
+              <polygon
+                key={s.id}
+                points={`${c.x},${c.y - h} ${c.x + h},${c.y} ${c.x},${c.y + h} ${c.x - h},${c.y}`}
+                fill="#fff"
+                stroke={s.color}
+                strokeWidth={1.5 / k}
+                style={{ cursor: 'pointer' }}
+                onClick={onClick}
+              >
+                <title>{title}</title>
+              </polygon>
+            )
+          }
           if (s.kind === 'ebird') {
             const h = (selected ? 6 : 4.5) / k
             return (

@@ -1304,6 +1304,8 @@ export function MigrationPage() {
 
   const [currentCounts, setCurrentCounts] = useState<CurrentCount[]>([])
   const [ebirdCounts, setEbirdCounts] = useState<CurrentCount[]>([])
+  type QuietPlace = { refugeId: string; refugeName: string; state: string; centerPoint: { lat: number; lng: number } }
+  const [quietPlaces, setQuietPlaces] = useState<QuietPlace[]>([])
   const [historicalTrends, setHistoricalTrends] = useState<HistoricalTrend[]>([])
   const [surveyZones, setSurveyZones] = useState<SurveyZone[]>([])
   const [speciesOptions, setSpeciesOptions] = useState<SpeciesOption[]>([])
@@ -1404,6 +1406,7 @@ export function MigrationPage() {
         if (cancelled) return
         setCurrentCounts(dashboardData.currentCounts.map(c => ({ ...c, source: 'official' as const })))
         setEbirdCounts((dashboardData.ebirdCounts ?? []) as CurrentCount[])
+        setQuietPlaces(dashboardData.quietEbirdPlaces ?? [])
         setHistoricalTrends(dashboardData.historicalTrends)
         setSurveyZones(dashboardData.surveyZones ?? [])
         setSpeciesOptions(speciesData.species.map(s => ({ slug: s.slug, name: s.name })))
@@ -1785,7 +1788,7 @@ export function MigrationPage() {
   }, [refugeGroups])
 
   // Survey sites for the map: official counts with a point (eBird-only areas aren't survey sites)
-  const mapSites = useMemo((): MapSite[] => refugeGroups.flatMap(g => {
+  const mapSites = useMemo((): MapSite[] => [...refugeGroups.flatMap(g => {
     const official = g.items.some(i => i.source !== 'ebird')
     const point = g.items.find(i => i.centerPoint)?.centerPoint
     // A statewide survey with no point (AGFC) goes at the state's center
@@ -1803,7 +1806,23 @@ export function MigrationPage() {
       color: STATUS_HEX[g.dominantStatus ?? 'none'] ?? '#57606a',
       isStale: g.isStale,
     }]
-  }), [refugeGroups])
+  }),
+  // eBird places checked with nothing reported lately (Lake Meredith most weeks): shown
+  // hollow, so "nobody saw ducks there" reads differently from "we don't watch there"
+  ...quietPlaces
+    .filter(p => (!selectedState || p.state === selectedState) && !refugeGroups.some(g => g.refugeId === p.refugeId))
+    .map(p => ({
+      kind: 'quiet' as const,
+      id: p.refugeId,
+      name: p.refugeName,
+      state: p.state,
+      lat: p.centerPoint.lat,
+      lng: p.centerPoint.lng,
+      totalBirds: 0,
+      color: '#8c959f',
+      isStale: false,
+    })),
+  ], [refugeGroups, quietPlaces, selectedState])
 
   const mapZoomTarget = mapTarget ?? (selectedState ? mapSites : null)
   const mapZoomed = !!mapTarget || (!!selectedState && mapSites.length > 0)
@@ -2519,6 +2538,12 @@ export function MigrationPage() {
                 <svg width="12" height="12" aria-hidden="true"><polygon points="6,1 11,6 6,11 1,6" fill={EBIRD_COLOR} /></svg>
                 eBird sightings ({mapSites.filter(m => m.kind === 'ebird').length})
               </span>
+              {mapSites.some(m => m.kind === 'quiet') && (
+                <span className="flex items-center gap-1">
+                  <svg width="12" height="12" aria-hidden="true"><polygon points="6,1.5 10.5,6 6,10.5 1.5,6" fill="#fff" stroke="#8c959f" strokeWidth="1.5" /></svg>
+                  Nothing reported in 14 days ({mapSites.filter(m => m.kind === 'quiet').length})
+                </span>
+              )}
               <span>Numbered circles group nearby places: click to zoom in. Click a marker to see its counts.</span>
             </span>
             {mapZoomed && (

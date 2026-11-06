@@ -107,6 +107,9 @@ export interface EBirdCount {
   delta: number | null
   deltaPercent: number | null
   trend: 'increasing' | 'decreasing' | 'stable' | 'new'
+  /** The eBird report behind this row, so one report caught by two places' circles can be
+   *  given to the nearer place only (assignSharedReports). Removed before rows go out. */
+  report?: { locId: string; obsDt: string; lat: number | null; lng: number | null; radiusKm: number }
 }
 
 
@@ -118,6 +121,8 @@ export interface EBirdObservation {
   locId: string
   locName: string
   obsValid: boolean
+  lat?: number
+  lng?: number
   /** A personal location (often a home address or yard), not a public hotspot */
   locationPrivate?: boolean
 }
@@ -166,13 +171,12 @@ export async function getEBirdCountsForRefuge(
       })
       if (resp.status !== 429) break
     }
-    if (!resp) return []
+    if (!resp) throw new Error('no response')
 
     if (!resp.ok) {
-      // Logged, not thrown: one failed location must not blank the dashboard — but it must not
-      // be invisible either (callers can't tell an error from a location with no sightings).
-      console.warn(`[eBird] geo query for ${refugeName} failed: HTTP ${resp.status} ${(await resp.text()).slice(0, 200)}`)
-      return []
+      // Thrown, so the caller can tell a failed lookup from a place with no sightings (the
+      // dashboard shows the second as "nothing reported" and leaves the first off the map)
+      throw new Error(`HTTP ${resp.status} ${(await resp.text()).slice(0, 200)}`)
     }
 
     const obs: EBirdObservation[] = await resp.json()
@@ -186,7 +190,7 @@ export async function getEBirdCountsForRefuge(
     // There is no earlier report to compare with, so these rows carry no trend: the old
     // days 15-28 "previous" window could only hold species with no report since, which left
     // every row reading "First survey".
-    const latest = new Map<string, { slug: string; name: string; count: number; date: string }>()
+    const latest = new Map<string, { slug: string; name: string; count: number; date: string; report: NonNullable<EBirdCount['report']> }>()
     for (const o of obs) {
       const mapped = EBIRD_SPECIES[o.speciesCode]
       if (!mapped) continue
@@ -194,7 +198,10 @@ export async function getEBirdCountsForRefuge(
       if (!o.obsValid) continue  // skip flagged records
       const existing = latest.get(mapped.slug)
       if (!existing || o.howMany > existing.count) {
-        latest.set(mapped.slug, { slug: mapped.slug, name: mapped.name, count: o.howMany, date: o.obsDt.substring(0, 10) })
+        latest.set(mapped.slug, {
+          slug: mapped.slug, name: mapped.name, count: o.howMany, date: o.obsDt.substring(0, 10),
+          report: { locId: o.locId, obsDt: o.obsDt, lat: o.lat ?? null, lng: o.lng ?? null, radiusKm: dist },
+        })
       }
     }
 
@@ -218,6 +225,7 @@ export async function getEBirdCountsForRefuge(
         delta: null,
         deltaPercent: null,
         trend: 'new',
+        report: r.report,
       })
     }
 
@@ -225,9 +233,47 @@ export async function getEBirdCountsForRefuge(
     return result
 
   } catch (err) {
-    console.warn(`[eBird] geo query for ${refugeName} threw: ${err instanceof Error ? err.message : String(err)}`)
-    return []
+    // Logged and rethrown: one failed location must not blank the dashboard (the caller uses
+    // allSettled), and it must not look like a place with no sightings either
+    console.warn(`[eBird] geo query for ${refugeName} failed: ${err instanceof Error ? err.message : String(err)}`)
+    throw err
   }
+}
+
+// ─── One report, one place ───────────────────────────────────────────────────
+// Places' search circles overlap (Amarillo's 50km circle reaches Canyon, and so did Buffalo
+// Lake's), so one birder's report can come back for two places: 85 Canada geese in a Canyon
+// city park showed at both Amarillo and Buffalo Lake NWR. Each report goes to the place it is
+// deepest inside: distance from the center as a share of that place's radius. Plain distance
+// gave the Canyon park to Buffalo Lake (17 km from the refuge's point, 21 km from Amarillo's),
+// though it sits well inside Amarillo's 50 km area and at the edge of the refuge's 25 km.
+// The other place drops that species, since the geo query returns only the latest report per
+// species and has no earlier one to fall back on.
+
+function kmBetween(aLat: number, aLng: number, bLat: number, bLng: number): number {
+  const rad = Math.PI / 180
+  const h = Math.sin((bLat - aLat) * rad / 2) ** 2
+    + Math.cos(aLat * rad) * Math.cos(bLat * rad) * Math.sin((bLng - aLng) * rad / 2) ** 2
+  return 12742 * Math.asin(Math.sqrt(h))
+}
+
+export function assignSharedReports(counts: EBirdCount[]): EBirdCount[] {
+  const winner = new Map<string, { row: EBirdCount; reach: number }>()
+  const keyOf = (c: EBirdCount) => c.report ? `${c.species}|${c.report.locId}|${c.report.obsDt}` : null
+  for (const c of counts) {
+    const key = keyOf(c)
+    if (!key || !c.report || c.report.lat === null || c.report.lng === null) continue
+    const reach = kmBetween(c.centerPoint.lat, c.centerPoint.lng, c.report.lat, c.report.lng) / c.report.radiusKm
+    const best = winner.get(key)
+    if (!best || reach < best.reach) winner.set(key, { row: c, reach })
+  }
+  return counts
+    .filter(c => {
+      const key = keyOf(c)
+      const best = key ? winner.get(key) : undefined
+      return !best || best.row === c
+    })
+    .map(({ report: _report, ...row }) => row)
 }
 
 // ─── Species reports by place (chat) ─────────────────────────────────────────

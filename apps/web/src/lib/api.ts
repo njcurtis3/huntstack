@@ -334,6 +334,13 @@ class ApiClient {
         deltaPercent: null
         trend: 'new'
       }>
+      /** eBird places checked with no duck or goose reports (5+) in the last 14 days */
+      quietEbirdPlaces?: Array<{
+        refugeId: string
+        refugeName: string
+        state: string
+        centerPoint: { lat: number; lng: number }
+      }>
       historicalTrends: Array<{
         year: number
         state_code: string

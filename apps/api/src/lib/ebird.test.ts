@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { EBIRD_SPECIES_CODES, publicPlaceName, summarizeSpeciesReports } from './ebird.js'
+import { assignSharedReports, EBIRD_SPECIES_CODES, publicPlaceName, summarizeSpeciesReports } from './ebird.js'
+import type { EBirdCount } from './ebird.js'
 
 // Taken from eBird's /ref/taxonomy/ebird on 2026-10-27. Codes that aren't real eBird
 // species codes never match an observation, so a typo silently drops a species.
@@ -66,5 +67,39 @@ describe('publicPlaceName', () => {
     ]) {
       expect(publicPlaceName(name, true), name).toBeNull()
     }
+  })
+})
+
+describe('assignSharedReports', () => {
+  const row = (refugeId: string, lat: number, lng: number, species: string, locId: string, obsLat: number, obsLng: number, radiusKm = 25): EBirdCount => ({
+    refugeId, refugeName: refugeId, state: 'TX', flyway: 'central', centerPoint: { lat, lng },
+    species, speciesName: species, count: 85, surveyDate: '2026-11-06', surveyType: 'ebird_recent',
+    source: 'ebird', previousCount: null, previousDate: null, delta: null, deltaPercent: null, trend: 'new',
+    report: { locId, obsDt: '2026-11-06 08:36', lat: obsLat, lng: obsLng, radiusKm },
+  })
+
+  it('gives a report caught by two places to the one it is deeper inside', () => {
+    // Southeast Park, Canyon: 21 km from Amarillo's center (50 km area), 17 km from Buffalo
+    // Lake's point (25 km): nearer the refuge, but well inside Amarillo's area
+    const amarillo = row('amarillo', 35.15, -101.85, 'canada-goose', 'L1', 34.97, -101.93, 50)
+    const buffalo = row('buffalo', 34.92, -102.11, 'canada-goose', 'L1', 34.97, -101.93, 25)
+    const out = assignSharedReports([buffalo, amarillo])
+    expect(out.map(r => r.refugeId)).toEqual(['amarillo'])
+    expect(out[0]).not.toHaveProperty('report')
+  })
+
+  it('keeps a report on the refuge itself at the refuge', () => {
+    const amarillo = row('amarillo', 35.15, -101.85, 'mallard', 'L2', 34.91, -102.12, 50)
+    const buffalo = row('buffalo', 34.92, -102.11, 'mallard', 'L2', 34.91, -102.12, 12)
+    expect(assignSharedReports([amarillo, buffalo]).map(r => r.refugeId)).toEqual(['buffalo'])
+  })
+
+  it('keeps different reports, and the same place for different species', () => {
+    const out = assignSharedReports([
+      row('a', 35, -101, 'canada-goose', 'L1', 35, -101),
+      row('b', 35.3, -101, 'canada-goose', 'L2', 35.3, -101),
+      row('b', 35.3, -101, 'mallard', 'L1', 35, -101),
+    ])
+    expect(out.map(r => `${r.refugeId}:${r.species}`)).toEqual(['a:canada-goose', 'b:canada-goose', 'b:mallard'])
   })
 })

@@ -2,7 +2,7 @@ import { FastifyPluginAsync } from 'fastify'
 import { eq, and, gte, lte, desc, sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { locations, refugeCounts, species, states } from '@huntstack/db/schema'
-import { getEBirdCountsForRefuge } from '../lib/ebird.js'
+import { assignSharedReports, getEBirdCountsForRefuge } from '../lib/ebird.js'
 import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 import { BoundedCache } from '../lib/cache.js'
 
@@ -307,7 +307,7 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
 
     const fetchEBird = (r: Record<string, unknown>) => {
       const coord = decodePoint(r.center_point)
-      if (!coord) return Promise.resolve([])
+      if (!coord) return Promise.reject(new Error('no point'))
       const meta = decodeJsonbField<{ flyway?: string; ebirdRadiusKm?: number }>(r.metadata)
       return getEBirdCountsForRefuge(
         r.id as string,
@@ -325,11 +325,33 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
     // nothing. getEBirdCountsForRefuge also retries a 429 with backoff.
     const EBIRD_CONCURRENCY = 3
     const refugeRows = refugeCoords as unknown as Array<Record<string, unknown>>
-    const ebirdCounts: Awaited<ReturnType<typeof getEBirdCountsForRefuge>> = []
+    const fetchedCounts: Awaited<ReturnType<typeof getEBirdCountsForRefuge>> = []
+    const checkedRows: Array<Record<string, unknown>> = []
     for (let i = 0; i < refugeRows.length; i += EBIRD_CONCURRENCY) {
-      const batch = await Promise.allSettled(refugeRows.slice(i, i + EBIRD_CONCURRENCY).map(fetchEBird))
-      for (const r of batch) if (r.status === 'fulfilled') ebirdCounts.push(...r.value)
+      const rows = refugeRows.slice(i, i + EBIRD_CONCURRENCY)
+      const batch = await Promise.allSettled(rows.map(fetchEBird))
+      batch.forEach((r, j) => {
+        if (r.status !== 'fulfilled') return
+        fetchedCounts.push(...r.value)
+        checkedRows.push(rows[j])
+      })
     }
+    // A report inside two places' circles counts once, at the nearer place
+    const ebirdCounts = assignSharedReports(fetchedCounts)
+
+    // Places eBird answered for with no duck or goose reports of 5+ in 14 days (Lake Meredith
+    // most weeks), so the map can show them as checked and quiet instead of leaving them off.
+    // A failed lookup isn't listed here.
+    // Judged before assignSharedReports: a place whose reports all went to a neighbor (Hereford
+    // shares Buffalo Lake's) had birds nearby, so it isn't quiet; it's just not shown
+    const withCounts = new Set(fetchedCounts.map(c => c.refugeId))
+    // Without a key every lookup "succeeds" empty: that's no data, not quiet places
+    const quietEbirdPlaces = !process.env.EBIRD_API_KEY ? [] : checkedRows
+      .filter(r => !withCounts.has(r.id as string))
+      .flatMap(r => {
+        const coord = decodePoint(r.center_point)
+        return coord ? [{ refugeId: r.id as string, refugeName: r.name as string, state: r.state_code as string, centerPoint: coord }] : []
+      })
 
     // Historical MWI (Midwinter Index) trends — annual population totals: 2006–2024 for the
     // Central Flyway states (ingest_cf_mws.py extends the 2006–2016 CSV), 2006–2016 for AR/LA.
@@ -463,6 +485,7 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
         }
       }),
       ebirdCounts,
+      quietEbirdPlaces,
       historicalTrends: historicalTrends as unknown as Array<Record<string, unknown>>,
     }
   })
