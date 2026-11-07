@@ -14,18 +14,29 @@ interface Stored extends NewReport { id: string; createdAt: Date }
 
 // The in-memory store keeps the exact point (like the real table) and hands back cell columns only.
 // It also returns user_id and lat/lng on purpose from listSince to prove the response schema strips them.
-function memoryStore() {
+// delayMs puts a real await between the count and the push, the window a check-then-insert race needs.
+// Default mode serialises calls per user (what the real store's advisory lock does); racy mode does not,
+// and exists as a negative control: it is attempt 1's count-then-insert shape.
+function memoryStore({ delayMs = 0, racy = false }: { delayMs?: number; racy?: boolean } = {}) {
   const rows: Stored[] = []
+  const queues = new Map<string, Promise<unknown>>()
+  const pause = () => (delayMs ? new Promise<void>(r => setTimeout(r, delayMs)) : Promise.resolve())
+  const attempt: FieldReportStore['insertIfUnderLimits'] = async (r, { now, perHour, perDay }) => {
+    const mine = rows.filter(x => x.userId === r.userId)
+    const hour = mine.filter(x => x.createdAt.getTime() >= now.getTime() - 3600_000).length
+    const day = mine.filter(x => x.createdAt.getTime() >= now.getTime() - 86400_000).length
+    if (hour >= perHour || day >= perDay) return { limited: true }
+    await pause()
+    const row: Stored = { ...r, id: `id-${rows.length + 1}`, createdAt: NOW }
+    rows.push(row)
+    return { limited: false, row: cellOnly(row) }
+  }
   const store: FieldReportStore = {
-    // No await between the count and the push, so this is atomic per call like the real store's lock.
-    async insertIfUnderLimits(r, { now, perHour, perDay }) {
-      const mine = rows.filter(x => x.userId === r.userId)
-      const hour = mine.filter(x => x.createdAt.getTime() >= now.getTime() - 3600_000).length
-      const day = mine.filter(x => x.createdAt.getTime() >= now.getTime() - 86400_000).length
-      if (hour >= perHour || day >= perDay) return { limited: true }
-      const row: Stored = { ...r, id: `id-${rows.length + 1}`, createdAt: NOW }
-      rows.push(row)
-      return { limited: false, row: cellOnly(row) }
+    insertIfUnderLimits(r, limits) {
+      if (racy) return attempt(r, limits)
+      const run = (queues.get(r.userId) ?? Promise.resolve()).then(() => attempt(r, limits))
+      queues.set(r.userId, run.catch(() => undefined))
+      return run
     },
     async listSince(since) {
       return rows.filter(r => r.observedAt >= since).map(r => ({ ...cellOnly(r), lat: r.lat, lng: r.lng, userId: r.userId }) as StoredPublicRow)
@@ -41,8 +52,8 @@ function cellOnly(r: Stored): StoredPublicRow {
   }
 }
 
-async function build(verifyToken: (t: string) => Promise<string | null>) {
-  const { rows, store } = memoryStore()
+async function build(verifyToken: (t: string) => Promise<string | null>, storeOptions?: Parameters<typeof memoryStore>[0]) {
+  const { rows, store } = memoryStore(storeOptions)
   const app = Fastify()
   await app.register(rateLimit, { max: 1000, timeWindow: '1 minute' })
   await app.register(buildFieldReportsRoutes({ store, verifyToken, now: () => NOW }), { prefix: '/api/field-reports' })
@@ -131,11 +142,20 @@ describe('field-reports routes', () => {
     expect((await other.app.inject({ method: 'POST', url: '/api/field-reports', headers: auth, payload: good })).statusCode).toBe(201)
   })
 
-  it('concurrent POSTs from one user store exactly 10 and 429 the rest', async () => {
-    const results = await Promise.all(Array.from({ length: 25 }, () => post(good)))
+  it('concurrent POSTs from one user store exactly 10 and 429 the rest, even with latency in the store', async () => {
+    const slow = await build(fakeVerify, { delayMs: 15 })
+    const results = await Promise.all(Array.from({ length: 25 }, () =>
+      slow.app.inject({ method: 'POST', url: '/api/field-reports', headers: auth, payload: good as object })))
     expect(results.filter(r => r.statusCode === 201)).toHaveLength(10)
     expect(results.filter(r => r.statusCode === 429)).toHaveLength(15)
-    expect(ctx.rows).toHaveLength(10)
+    expect(slow.rows).toHaveLength(10)
+  })
+
+  it('negative control: a count-then-insert store with latency overshoots the cap', async () => {
+    const racy = await build(fakeVerify, { delayMs: 15, racy: true })
+    await Promise.all(Array.from({ length: 25 }, () =>
+      racy.app.inject({ method: 'POST', url: '/api/field-reports', headers: auth, payload: good as object })))
+    expect(racy.rows.length).toBeGreaterThan(10)
   })
 
   it('GET days: default 7, 0 and 8 rejected', async () => {

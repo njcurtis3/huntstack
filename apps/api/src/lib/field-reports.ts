@@ -217,32 +217,39 @@ const PUBLIC_COLUMNS = {
 const HOUR_MS = 60 * 60 * 1000
 const DAY_MS = 24 * HOUR_MS
 
-export const drizzleFieldReportStore: FieldReportStore = {
-  async insertIfUnderLimits(report, { now, perHour, perDay }) {
-    return getDb().transaction(async (tx) => {
-      // Per-user advisory lock held to the end of the transaction: the count and the insert below
-      // cannot interleave with another request from the same user.
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${report.userId}))`)
-      const dayStart = new Date(now.getTime() - DAY_MS)
-      const hourStart = new Date(now.getTime() - HOUR_MS)
-      const [counts] = await tx
-        .select({
-          day: sql<number>`count(*)::int`,
-          hour: sql<number>`count(*) filter (where ${fieldReports.createdAt} >= ${hourStart})::int`,
-        })
+// The database is injected so a test can run this real SQL path against a stand-in driver.
+export function createDrizzleFieldReportStore(database: () => ReturnType<typeof getDb>): FieldReportStore {
+  return {
+    async insertIfUnderLimits(report, { now, perHour, perDay }) {
+      return database().transaction(async (tx) => {
+        // Per-user advisory lock held to the end of the transaction: the count and the insert below
+        // cannot interleave with another request from the same user.
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${report.userId}))`)
+        // Dates go in as ISO strings: drizzle does not serialize a Date interpolated into raw sql``,
+        // and postgres-js would reject it. Column-bound values (gte on a column) are mapped by drizzle.
+        const dayStart = new Date(now.getTime() - DAY_MS)
+        const hourStart = new Date(now.getTime() - HOUR_MS).toISOString()
+        const [counts] = await tx
+          .select({
+            day: sql<number>`count(*)::int`,
+            hour: sql<number>`count(*) filter (where ${fieldReports.createdAt} >= ${hourStart}::timestamptz)::int`,
+          })
+          .from(fieldReports)
+          .where(and(eq(fieldReports.userId, report.userId), gte(fieldReports.createdAt, dayStart)))
+        if (counts.hour >= perHour || counts.day >= perDay) return { limited: true as const }
+        const [row] = await tx.insert(fieldReports).values(report).returning(PUBLIC_COLUMNS)
+        return { limited: false as const, row }
+      })
+    },
+    async listSince(since, limit) {
+      return database()
+        .select(PUBLIC_COLUMNS)
         .from(fieldReports)
-        .where(and(eq(fieldReports.userId, report.userId), gte(fieldReports.createdAt, dayStart)))
-      if (counts.hour >= perHour || counts.day >= perDay) return { limited: true as const }
-      const [row] = await tx.insert(fieldReports).values(report).returning(PUBLIC_COLUMNS)
-      return { limited: false as const, row }
-    })
-  },
-  async listSince(since, limit) {
-    return getDb()
-      .select(PUBLIC_COLUMNS)
-      .from(fieldReports)
-      .where(gte(fieldReports.observedAt, since))
-      .orderBy(desc(fieldReports.observedAt))
-      .limit(limit)
-  },
+        .where(gte(fieldReports.observedAt, since))
+        .orderBy(desc(fieldReports.observedAt))
+        .limit(limit)
+    },
+  }
 }
+
+export const drizzleFieldReportStore = createDrizzleFieldReportStore(getDb)
