@@ -17,6 +17,7 @@ import { useEffect, useState } from 'react'
 import { useThemeStore } from '../stores/themeStore'
 import { useAuthStore } from '../stores/authStore'
 import { AuthModal } from './AuthModal'
+import { FieldReportSheet } from './FieldReportSheet'
 import { DismissibleNotice } from './DismissibleNotice'
 import { feedbackMailto } from '../lib/contact'
 
@@ -40,17 +41,45 @@ const mobileNav = [
   ...secondaryNav,
 ]
 
+// Where hunters are looking at birds, so where "Report birds" is offered.
+const reportRoutes = ['/migration', '/where-to-hunt', '/map']
+
 export function Layout() {
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [authModal, setAuthModal] = useState<'signin' | 'signup' | null>(null)
   const { resolvedTheme, setTheme } = useThemeStore()
   const { user, isAuthenticated, initialize, logout } = useAuthStore()
+  const [reportOpen, setReportOpen] = useState(false)
+  // Set when a signed-out user taps Report birds: the sheet opens once sign-in lands.
+  const [reportPending, setReportPending] = useState(false)
+  const showReport = reportRoutes.includes(location.pathname.replace(/\/+$/, ''))
+  const onMigration = location.pathname.startsWith('/migration')
 
   useEffect(() => {
     initialize()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (!reportPending) return
+    if (isAuthenticated) {
+      setReportPending(false)
+      setReportOpen(true)
+    } else if (!authModal) {
+      // Sign-in was dismissed without signing in.
+      setReportPending(false)
+    }
+  }, [reportPending, isAuthenticated, authModal])
+
+  const openReport = () => {
+    if (isAuthenticated) {
+      setReportOpen(true)
+    } else {
+      setReportPending(true)
+      setAuthModal('signin')
+    }
+  }
 
   const toggleTheme = () => {
     setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')
@@ -135,6 +164,15 @@ export function Layout() {
                   <Moon className="w-5 h-5" />
                 )}
               </button>
+              {showReport && (
+                <button
+                  onClick={openReport}
+                  className="btn-primary text-sm min-h-11 inline-flex items-center gap-1.5"
+                >
+                  <Bird className="w-4 h-4" />
+                  Report birds
+                </button>
+              )}
               {isAuthenticated && user ? (
                 <>
                   <span className="text-sm truncate max-w-[10rem]" style={{ color: 'rgb(var(--color-text-secondary))' }}>
@@ -352,6 +390,23 @@ export function Layout() {
           </div>
         </div>
       </footer>
+
+      {/* Mobile: Report FAB. On /migration it stacks above that page's Ask HuntStack AI button. */}
+      {showReport && !reportOpen && (
+        <button
+          onClick={openReport}
+          className="md:hidden fixed right-4 z-40 flex items-center gap-2 px-4 min-h-12 rounded-full shadow-lg text-white text-base font-medium"
+          style={{
+            backgroundColor: 'rgb(var(--color-accent-600, 5 150 105))',
+            bottom: `calc(${onMigration ? '5.5rem' : '1rem'} + env(safe-area-inset-bottom))`,
+          }}
+        >
+          <Bird className="w-5 h-5" />
+          Report birds
+        </button>
+      )}
+
+      {reportOpen && <FieldReportSheet onClose={() => setReportOpen(false)} />}
 
       {authModal && <AuthModal mode={authModal} onClose={() => setAuthModal(null)} />}
     </div>
