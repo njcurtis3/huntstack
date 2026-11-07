@@ -33,6 +33,7 @@ import { weatherRoutes } from './routes/weather.js'
 import { huntRoutes } from './routes/hunt.js'
 import { migrationRoutes } from './routes/migration.js'
 import { geoRoutes } from './routes/geo.js'
+import { fieldReportsRoutes } from './routes/field-reports.js'
 import { startStateActivityRefresh } from './lib/ebird-activity.js'
 import { STATE_FLYWAY } from './lib/ebird.js'
 
@@ -79,6 +80,7 @@ await app.register(swagger, {
       { name: 'weather', description: 'NOAA weather forecasts and hunting conditions' },
       { name: 'hunt', description: 'Hunt recommendations and opportunity scoring' },
       { name: 'migration', description: 'Migration push factors and intelligence' },
+      { name: 'field-reports', description: 'Hunter-submitted bird reports (unverified, location rounded)' },
     ],
   },
 })
@@ -102,6 +104,7 @@ await app.register(weatherRoutes, { prefix: '/api/weather' })
 await app.register(huntRoutes, { prefix: '/api/hunt' })
 await app.register(migrationRoutes, { prefix: '/api/migration' })
 await app.register(geoRoutes, { prefix: '/api/geo' })
+await app.register(fieldReportsRoutes, { prefix: '/api/field-reports' })
 
 // Global error handler
 app.setErrorHandler((error, request, reply) => {
