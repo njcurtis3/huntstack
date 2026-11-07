@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   Loader2, AlertCircle, Bird, X, TrendingUp, TrendingDown, Minus, Sparkles,
   Wind, Thermometer, Zap, AlertTriangle, ChevronDown, ChevronUp, RefreshCw,
@@ -10,13 +11,13 @@ import {
 } from 'recharts'
 import { ComposableMap, Geographies, Geography, Annotation } from 'react-simple-maps'
 import { useNavigate } from 'react-router-dom'
-import { api, type SurveyZone } from '../lib/api'
+import { api, type FieldReportPublic, type SurveyZone } from '../lib/api'
 import { isEarlierSeason, oldSurveyLabel, parseCalendarDate } from '../lib/dates'
 import { SurveyZoneBreakdown } from '../components/SurveyZoneBreakdown'
 import { useThemeStore } from '../stores/themeStore'
 import { getMapColors, getChartColors } from '../lib/themeColors'
 import { DismissibleNotice } from '../components/DismissibleNotice'
-import { EBIRD_COLOR, SiteMarkers, ZoomGroup, type MapSite } from '../components/SiteMarkers'
+import { EBIRD_COLOR, REPORT_COLOR, SiteMarkers, ZoomGroup, type MapSite } from '../components/SiteMarkers'
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json'
 
@@ -1060,6 +1061,19 @@ function haversineMiles(lat1: number, lng1: number, lat2: number, lng2: number):
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+const REPORT_NEARBY_MILES = 25
+
+const ACTIVITY_LABEL: Record<NonNullable<FieldReportPublic['activity']>, string> = {
+  flying: 'flying', on_water: 'on water', in_field: 'in a field',
+}
+
+function reportAgo(iso: string): string {
+  const mins = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000))
+  if (mins < 60) return `${mins} min ago`
+  const hrs = Math.round(mins / 60)
+  return hrs < 48 ? `${hrs} h ago` : `${Math.round(hrs / 24)} days ago`
+}
+
 // ─── Migration Chat ───────────────────────────────────────────────────────────
 
 interface ChatMessage {
@@ -1824,6 +1838,50 @@ export function MigrationPage() {
     })),
   ], [refugeGroups, quietPlaces, selectedState])
 
+  // Hunter reports (unverified) live in their own array: never in mapSites, refugeGroups,
+  // status, zoom or any bird total. A failed fetch just means no reports.
+  const { data: fieldReportsData } = useQuery({
+    queryKey: ['field-reports', 7],
+    queryFn: () => api.getFieldReports(7),
+    staleTime: 60_000,
+    retry: false,
+  })
+  const fieldReports = useMemo(() => fieldReportsData?.reports ?? [], [fieldReportsData])
+  const [reportCellId, setReportCellId] = useState<string | null>(null)
+
+  const reportSites = useMemo((): MapSite[] => {
+    const cells = new Map<string, FieldReportPublic[]>()
+    for (const r of fieldReports) {
+      const id = `report:${r.lat},${r.lng}`
+      const arr = cells.get(id) ?? []
+      arr.push(r)
+      cells.set(id, arr)
+    }
+    return [...cells.entries()].map(([id, rs]) => ({
+      kind: 'report' as const,
+      id,
+      name: 'Hunter reports (unverified)',
+      state: '',
+      lat: rs[0].lat,
+      lng: rs[0].lng,
+      totalBirds: rs.length, // the number of reports, not birds
+      color: REPORT_COLOR,
+      isStale: false,
+    }))
+  }, [fieldReports])
+
+  const reportCellReports = useMemo(
+    () => reportCellId ? fieldReports.filter(r => `report:${r.lat},${r.lng}` === reportCellId) : [],
+    [fieldReports, reportCellId],
+  )
+
+  /** Hunter reports from the last week within 25 miles of a site (for the site card line). */
+  const reportsNear = useCallback((items: Array<{ centerPoint: { lat: number; lng: number } | null }>): number => {
+    const at = items.find(i => i.centerPoint)?.centerPoint
+    if (!at) return 0
+    return fieldReports.filter(r => haversineMiles(at.lat, at.lng, r.lat, r.lng) <= REPORT_NEARBY_MILES).length
+  }, [fieldReports])
+
   const mapZoomTarget = mapTarget ?? (selectedState ? mapSites : null)
   const mapZoomed = !!mapTarget || (!!selectedState && mapSites.length > 0)
 
@@ -1838,6 +1896,12 @@ export function MigrationPage() {
       document.getElementById(`site-card-${site.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 400)
   }, [])
+
+  const handleReportOrSiteClick = useCallback((site: MapSite) => {
+    if (site.kind === 'report') { setReportCellId(site.id); return }
+    setReportCellId(null)
+    handleMapSiteClick(site)
+  }, [handleMapSiteClick])
 
   const handleMapClusterClick = useCallback((sites: MapSite[]) => {
     setMapTarget(sites)
@@ -2513,11 +2577,11 @@ export function MigrationPage() {
             })()}
 
             <SiteMarkers
-              sites={mapSites}
+              sites={[...mapSites, ...reportSites]}
               k={k}
               screenScale={mapScreenScale}
               selectedId={mapSiteId}
-              onSiteClick={handleMapSiteClick}
+              onSiteClick={handleReportOrSiteClick}
               onClusterClick={handleMapClusterClick}
             />
             </>)}</ZoomGroup>
@@ -2544,6 +2608,12 @@ export function MigrationPage() {
                   Nothing reported in 14 days ({mapSites.filter(m => m.kind === 'quiet').length})
                 </span>
               )}
+              {fieldReports.length > 0 && (
+                <span className="flex items-center gap-1">
+                  <svg width="12" height="12" aria-hidden="true"><polygon points="6,1 11,10 1,10" fill={REPORT_COLOR} /></svg>
+                  Hunter reports, unverified ({fieldReports.length})
+                </span>
+              )}
               <span>Numbered circles group nearby places: click to zoom in. Click a marker to see its counts.</span>
             </span>
             {mapZoomed && (
@@ -2553,6 +2623,38 @@ export function MigrationPage() {
             )}
           </div>
         </div>
+
+        {reportCellId && reportCellReports.length > 0 && (
+          <div className="card p-4 mb-4" role="region" aria-label="Hunter reports, unverified">
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <div>
+                <h3 className="font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
+                  Hunter reports near here
+                </h3>
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  Unverified: from hunters, not a survey. Not included in any bird count.
+                </p>
+              </div>
+              <button
+                onClick={() => setReportCellId(null)}
+                aria-label="Close hunter reports"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center -mt-2 -mr-2"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <ul className="space-y-2 text-sm" style={{ color: `rgb(var(--color-text-secondary))` }}>
+              {reportCellReports.map(r => (
+                <li key={r.id}>
+                  <span className="font-medium">{r.speciesLabel}</span>
+                  {' · '}{r.countExact ? r.countExact.toLocaleString() : r.countBucket}
+                  {r.activity ? ` · ${ACTIVITY_LABEL[r.activity]}` : ''}
+                  {' · '}{reportAgo(r.observedAt)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {/* Loading */}
         {loading && (
@@ -2952,6 +3054,11 @@ export function MigrationPage() {
                                             </span>
                                           )}
                                         </div>
+                                        {reportsNear(group.items) > 0 && (
+                                          <p className="text-xs mt-1 text-amber-700 dark:text-amber-300">
+                                            {reportsNear(group.items)} hunter reports nearby this week (unverified)
+                                          </p>
+                                        )}
                                       </div>
                                       <div className="flex-shrink-0 mt-1" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                                         {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}

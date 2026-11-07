@@ -7,6 +7,7 @@ import { useMapContext } from 'react-simple-maps'
 //              the state's center
 //   ebird      an eBird place (birders' sightings, not a survey): a small purple diamond
 //   quiet      an eBird place with no duck or goose reports in 14 days: a hollow grey diamond
+//   report     hunter reports in one map cell (unverified, not a count): an amber triangle
 // Survey sites closer together than a few pixels merge into one numbered circle, eBird places
 // into a purple one, so a river with 25 sites reads as a few circles until the map is zoomed
 // in. No map library: positions come from the map's own projection.
@@ -20,10 +21,11 @@ export type MapSite = {
   totalBirds: number
   color: string
   isStale: boolean
-  kind: 'survey' | 'statewide' | 'ebird' | 'quiet'
+  kind: 'survey' | 'statewide' | 'ebird' | 'quiet' | 'report'
 }
 
 export const EBIRD_COLOR = '#8250df'
+export const REPORT_COLOR = '#d97706'
 
 type Projected = MapSite & { x: number; y: number }
 
@@ -116,6 +118,8 @@ export function SiteMarkers({ sites, k, screenScale = 1, selectedId, onSiteClick
     ...clusterSites(projected.filter(p => p.kind === 'ebird'), radius),
     ...clusterSites(projected.filter(p => p.kind === 'survey'), radius),
     ...projected.filter(p => p.kind === 'statewide').map(p => ({ x: p.x, y: p.y, sites: [p] })),
+    // Hunter reports cluster only with each other and are drawn last, on top
+    ...clusterSites(projected.filter(p => p.kind === 'report'), radius),
   ]
 
   return (
@@ -124,12 +128,30 @@ export function SiteMarkers({ sites, k, screenScale = 1, selectedId, onSiteClick
         if (c.sites.length === 1) {
           const s = c.sites[0]
           const selected = s.id === selectedId
-          const title = s.kind === 'quiet'
+          const title = s.kind === 'report'
+            ? `${s.totalBirds} hunter ${s.totalBirds === 1 ? 'report' : 'reports'} (unverified)`
+            : s.kind === 'quiet'
             ? `${s.name}: no ducks or geese reported to eBird in the last 14 days (groups of 5 or more)`
             : s.kind === 'ebird'
             ? `${s.name}: latest eBird sightings (not a survey count)`
             : `${s.name}${s.kind === 'statewide' ? ' (statewide survey)' : ''}: ${s.totalBirds.toLocaleString()} birds${s.isStale ? ' (old survey)' : ''}`
           const onClick = (e: MouseEvent) => { e.stopPropagation(); onSiteClick(s) }
+          if (s.kind === 'report') {
+            const h = (selected ? 8 : 6.5) / k
+            return (
+              <polygon
+                key={s.id}
+                points={`${c.x},${c.y - h} ${c.x + h},${c.y + h * 0.8} ${c.x - h},${c.y + h * 0.8}`}
+                fill={REPORT_COLOR}
+                stroke="#fff"
+                strokeWidth={1.5 / k}
+                style={{ cursor: 'pointer' }}
+                onClick={onClick}
+              >
+                <title>{title}</title>
+              </polygon>
+            )
+          }
           if (s.kind === 'quiet') {
             const h = (selected ? 6 : 4.5) / k
             return (
@@ -203,16 +225,19 @@ export function SiteMarkers({ sites, k, screenScale = 1, selectedId, onSiteClick
         const r = (9 + Math.min(8, Math.log2(n) * 2)) / k
         const birds = c.sites.reduce((t, s) => t + (s.isStale ? 0 : s.totalBirds), 0)
         const ebird = c.sites[0].kind === 'ebird'
+        const report = c.sites[0].kind === 'report'
         return (
           <g
             key={c.sites[0].id}
             style={{ cursor: 'pointer' }}
             onClick={(e) => { e.stopPropagation(); onClusterClick(c.sites) }}
           >
-            <title>{ebird
+            <title>{report
+              ? `${n} places with hunter reports (unverified). Click to zoom in.`
+              : ebird
               ? `${n} eBird places (sightings, not survey counts). Click to zoom in.`
               : `${n} survey sites: ${birds.toLocaleString()} birds. Click to zoom in.`}</title>
-            <circle cx={c.x} cy={c.y} r={r} fill={ebird ? EBIRD_COLOR : '#24292f'} fillOpacity={0.88} stroke="#fff" strokeWidth={1.5 / k} />
+            <circle cx={c.x} cy={c.y} r={r} fill={report ? REPORT_COLOR : ebird ? EBIRD_COLOR : '#24292f'} fillOpacity={0.88} stroke="#fff" strokeWidth={1.5 / k} />
             <text
               x={c.x}
               y={c.y}

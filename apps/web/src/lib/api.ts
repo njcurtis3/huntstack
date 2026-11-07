@@ -22,6 +22,26 @@ export type SurveyZone = {
   yearsInAverage: number
 }
 
+/** One hunter report as the public API serves it: the map cell's center, never the exact point. */
+export type FieldReportPublic = {
+  id: string
+  lat: number
+  lng: number
+  birdGroup: 'duck' | 'goose'
+  speciesSlug: string | null
+  speciesLabel: string
+  countBucket: '1-10' | '10-50' | '50-200' | '200+'
+  countExact: number | null
+  activity: 'flying' | 'on_water' | 'in_field' | null
+  observedAt: string
+}
+
+export type FieldReportsResponse = {
+  label: string
+  days: number
+  reports: FieldReportPublic[]
+}
+
 class ApiClient {
   private baseUrl: string
 
@@ -214,6 +234,11 @@ class ApiClient {
         purchaseUrl: string | null
       }>
     }>(`/api/regulations/${stateCode}/licenses`, { params: options })
+  }
+
+  // Hunter field reports (public GET, no Authorization header; unverified)
+  async getFieldReports(days = 7) {
+    return this.request<FieldReportsResponse>('/api/field-reports', { params: { days } })
   }
 
   // Species
