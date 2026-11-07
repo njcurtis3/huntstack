@@ -18,8 +18,7 @@ export interface FieldReportsDeps {
   now: () => Date
 }
 
-const HOUR_MS = 60 * 60 * 1000
-const DAY_MS = 24 * HOUR_MS
+const DAY_MS = 24 * 60 * 60 * 1000
 
 // The response schema is the second guard on privacy: fast-json-stringify drops any property not
 // listed here, so an exact point or user id could not leak even if a store returned one.
@@ -80,11 +79,11 @@ export function buildFieldReportsRoutes(deps: FieldReportsDeps): FastifyPluginAs
       const result = validateReport(request.body, now)
       if (!result.ok) return reply.status(400).send({ error: true, statusCode: 400, message: result.message })
 
-      const [lastHour, lastDay] = await Promise.all([
-        deps.store.countSince(userId, new Date(now.getTime() - HOUR_MS)),
-        deps.store.countSince(userId, new Date(now.getTime() - DAY_MS)),
-      ])
-      if (lastHour >= USER_LIMIT_PER_HOUR || lastDay >= USER_LIMIT_PER_DAY) {
+      const stored = await deps.store.insertIfUnderLimits(
+        { userId, ...result.value },
+        { now, perHour: USER_LIMIT_PER_HOUR, perDay: USER_LIMIT_PER_DAY },
+      )
+      if (stored.limited) {
         return reply.status(429).send({
           error: true,
           statusCode: 429,
@@ -92,8 +91,7 @@ export function buildFieldReportsRoutes(deps: FieldReportsDeps): FastifyPluginAs
         })
       }
 
-      const row = await deps.store.insert({ userId, ...result.value })
-      return reply.status(201).send(toPublic(row))
+      return reply.status(201).send(toPublic(stored.row))
     })
 
     app.get<{ Querystring: { days: number } }>('/', {

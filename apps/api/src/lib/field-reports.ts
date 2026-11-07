@@ -1,4 +1,4 @@
-import { and, desc, eq, gte } from 'drizzle-orm'
+import { and, desc, eq, gte, sql } from 'drizzle-orm'
 import { fieldReports } from '@huntstack/db/schema'
 import { getDb } from './db.js'
 
@@ -113,9 +113,21 @@ export function toPublic(row: StoredPublicRow): PublicReport {
   }
 }
 
+/** Windows for the per-user cap, counted from created_at (the server clock) */
+export interface UserLimits {
+  now: Date
+  perHour: number
+  perDay: number
+}
+
+export type InsertResult = { limited: false; row: StoredPublicRow } | { limited: true }
+
 export interface FieldReportStore {
-  insert(report: NewReport): Promise<StoredPublicRow>
-  countSince(userId: string, since: Date): Promise<number>
+  /**
+   * Count the user's reports in the last hour and day and insert only if under both caps.
+   * Must be atomic per user: concurrent calls for one user may never store more than the caps.
+   */
+  insertIfUnderLimits(report: NewReport, limits: UserLimits): Promise<InsertResult>
   listSince(since: Date, limit: number): Promise<StoredPublicRow[]>
 }
 
@@ -202,17 +214,28 @@ const PUBLIC_COLUMNS = {
   observedAt: fieldReports.observedAt,
 }
 
+const HOUR_MS = 60 * 60 * 1000
+const DAY_MS = 24 * HOUR_MS
+
 export const drizzleFieldReportStore: FieldReportStore = {
-  async insert(report) {
-    const [row] = await getDb().insert(fieldReports).values(report).returning(PUBLIC_COLUMNS)
-    return row
-  },
-  async countSince(userId, since) {
-    const rows = await getDb()
-      .select({ id: fieldReports.id })
-      .from(fieldReports)
-      .where(and(eq(fieldReports.userId, userId), gte(fieldReports.createdAt, since)))
-    return rows.length
+  async insertIfUnderLimits(report, { now, perHour, perDay }) {
+    return getDb().transaction(async (tx) => {
+      // Per-user advisory lock held to the end of the transaction: the count and the insert below
+      // cannot interleave with another request from the same user.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${report.userId}))`)
+      const dayStart = new Date(now.getTime() - DAY_MS)
+      const hourStart = new Date(now.getTime() - HOUR_MS)
+      const [counts] = await tx
+        .select({
+          day: sql<number>`count(*)::int`,
+          hour: sql<number>`count(*) filter (where ${fieldReports.createdAt} >= ${hourStart})::int`,
+        })
+        .from(fieldReports)
+        .where(and(eq(fieldReports.userId, report.userId), gte(fieldReports.createdAt, dayStart)))
+      if (counts.hour >= perHour || counts.day >= perDay) return { limited: true as const }
+      const [row] = await tx.insert(fieldReports).values(report).returning(PUBLIC_COLUMNS)
+      return { limited: false as const, row }
+    })
   },
   async listSince(since, limit) {
     return getDb()
