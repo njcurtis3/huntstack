@@ -14,7 +14,13 @@ export const supabase = supabaseUrl && supabaseAnonKey
 // Auth helpers
 export async function signUp(email: string, password: string) {
   if (!supabase) throw new Error('Supabase not configured')
-  return supabase.auth.signUp({ email, password })
+  // Send the confirmation link back to the page the person signed up on, not to
+  // Supabase's Site URL. Supabase only honors this if the origin is in its Redirect URLs list.
+  return supabase.auth.signUp({
+    email,
+    password,
+    options: { emailRedirectTo: window.location.origin + window.location.pathname },
+  })
 }
 
 export async function signIn(email: string, password: string) {
