@@ -167,6 +167,7 @@ export function Layout() {
               {showReport && (
                 <button
                   onClick={openReport}
+                  data-report-trigger
                   className="btn-primary text-sm min-h-11 inline-flex items-center gap-1.5"
                 >
                   <Bird className="w-4 h-4" />
@@ -395,6 +396,7 @@ export function Layout() {
       {showReport && !reportOpen && (
         <button
           onClick={openReport}
+          data-report-trigger
           className="md:hidden fixed right-4 z-40 flex items-center gap-2 px-4 min-h-12 rounded-full shadow-lg text-white text-base font-medium"
           style={{
             backgroundColor: 'rgb(var(--color-accent-600, 5 150 105))',

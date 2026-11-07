@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, type FormEvent } from 'react'
+import { Component, lazy, Suspense, useState, type FormEvent, type ReactNode } from 'react'
 import { Check, Loader2, LocateFixed, MapPin } from 'lucide-react'
 import {
   ACTIVITIES,
@@ -17,6 +17,29 @@ const hasMapKey = Boolean(import.meta.env.VITE_MAPTILER_KEY)
 
 const HOUR_MS = 60 * 60 * 1000
 const MAX_AGE_MS = 72 * HOUR_MS
+
+/**
+ * Keeps a failed map (chunk import error, no WebGL) from taking down the app
+ * and the half-filled report with it.
+ */
+class MapErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <p role="alert" className="text-base text-red-600 dark:text-red-400">
+          Map could not load. Use my location instead.
+        </p>
+      )
+    }
+    return this.props.children
+  }
+}
 
 interface FieldReportFormProps {
   onClose: () => void
@@ -189,6 +212,7 @@ export function FieldReportForm({ onClose }: FieldReportFormProps) {
             </p>
             {showPicker && hasMapKey && (
               <div className="mt-3">
+                <MapErrorBoundary>
                 <Suspense
                   fallback={
                     <div className="w-full h-64 md:h-72 flex items-center justify-center text-base" style={{ color: 'rgb(var(--color-text-secondary))' }}>
@@ -198,6 +222,7 @@ export function FieldReportForm({ onClose }: FieldReportFormProps) {
                 >
                   <LocationPickerMap value={point} onChange={setPoint} />
                 </Suspense>
+                </MapErrorBoundary>
                 <p className="mt-2 text-sm" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
                   Tap the map to drop the pin.
                 </p>

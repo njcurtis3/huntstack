@@ -31,7 +31,10 @@ export default function LocationPickerMap({ value, onChange }: LocationPickerMap
     })
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
     map.getCanvas().style.cursor = 'crosshair'
-    map.on('click', (e) => onChangeRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng }))
+    map.on('click', (e) => {
+      const { lat, lng } = e.lngLat.wrap()
+      onChangeRef.current({ lat, lng })
+    })
     mapRef.current = map
     return () => {
       map.remove()

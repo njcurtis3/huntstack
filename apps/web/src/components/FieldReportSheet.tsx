@@ -27,7 +27,16 @@ export function FieldReportSheet({ onClose }: FieldReportSheetProps) {
     return () => {
       document.removeEventListener('keydown', onKeyDown)
       document.body.style.overflow = overflow
-      previous?.focus?.()
+      if (previous?.isConnected) {
+        previous.focus()
+      } else {
+        // The mobile FAB is unmounted while the sheet is open; hand focus to whichever trigger is visible.
+        requestAnimationFrame(() => {
+          const triggers = Array.from(document.querySelectorAll<HTMLElement>('[data-report-trigger]'))
+          const target = triggers.find((el) => el.offsetParent !== null)
+          ;(target ?? document.body).focus()
+        })
+      }
     }
   }, [])
 
