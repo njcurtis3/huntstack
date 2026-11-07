@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, jsonb, boolean, integer, real, varchar, index, uniqueIndex, check } from 'drizzle-orm/pg-core'
+import { pgTable, text, timestamp, uuid, jsonb, boolean, integer, real, doublePrecision, varchar, index, uniqueIndex, check } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 
 // ============================================
@@ -399,4 +399,34 @@ export const documentChunksRelations = relations(documentChunks, ({ one }) => ({
     fields: [documentChunks.documentId],
     references: [documents.id],
   }),
+}))
+
+// ============================================
+// FIELD REPORTS (hunter-submitted bird sightings)
+// ============================================
+
+// user_id is a Supabase auth user id with no FK (profiles rows are not created for sign-ups).
+// lat/lng are the exact point and are never read for output; lat_cell/lng_cell are the
+// 0.05-degree cell centre computed on insert and are the only point ever served.
+export const fieldReports = pgTable('field_reports', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull(),
+  birdGroup: text('bird_group').notNull(), // 'duck' | 'goose'
+  speciesSlug: varchar('species_slug', { length: 100 }), // null = 'not sure'
+  countBucket: text('count_bucket').notNull(), // '1-10' | '10-50' | '50-200' | '200+'
+  countExact: integer('count_exact'),
+  activity: text('activity'), // 'flying' | 'on_water' | 'in_field'
+  lat: doublePrecision('lat').notNull(),
+  lng: doublePrecision('lng').notNull(),
+  latCell: doublePrecision('lat_cell').notNull(),
+  lngCell: doublePrecision('lng_cell').notNull(),
+  observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  observedIdx: index('field_reports_observed_idx').on(sql`${table.observedAt} DESC`),
+  userCreatedIdx: index('field_reports_user_created_idx').on(table.userId, sql`${table.createdAt} DESC`),
+  groupCheck: check('field_reports_bird_group_check', sql`${table.birdGroup} IN ('duck', 'goose')`),
+  bucketCheck: check('field_reports_count_bucket_check', sql`${table.countBucket} IN ('1-10', '10-50', '50-200', '200+')`),
+  countCheck: check('field_reports_count_exact_check', sql`${table.countExact} IS NULL OR (${table.countExact} >= 1 AND ${table.countExact} <= 250000)`),
+  activityCheck: check('field_reports_activity_check', sql`${table.activity} IS NULL OR ${table.activity} IN ('flying', 'on_water', 'in_field')`),
 }))
