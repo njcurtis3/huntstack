@@ -3056,7 +3056,9 @@ export function MigrationPage() {
                                         </div>
                                         {reportsNear(group.items) > 0 && (
                                           <p className="text-xs mt-1 text-amber-700 dark:text-amber-300">
-                                            {reportsNear(group.items)} hunter reports nearby this week (unverified)
+                                            {reportsNear(group.items) === 1
+                                              ? '1 hunter report nearby this week (unverified)'
+                                              : `${reportsNear(group.items)} hunter reports nearby this week (unverified)`}
                                           </p>
                                         )}
                                       </div>
