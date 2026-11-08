@@ -113,7 +113,11 @@ export function DashboardListing({ data }: { data: MyOutfitter }) {
       {pending && (
         <div role="status" className="rounded-lg border border-amber-500 p-4" style={panelStyle}>
           <p className="text-base font-medium" style={primaryText}>
-            Waiting for review - your live listing has not changed
+            {listing
+              ? 'Waiting for review - your live listing has not changed'
+              : pending.kind === 'claim'
+                ? 'Waiting for review - you will manage this listing once your claim is approved'
+                : 'Waiting for review - your listing is not live yet'}
           </p>
           <p className="text-base mt-1" style={secondaryText}>
             Your {submissionKindText(pending)} was sent on {new Date(pending.createdAt).toLocaleDateString()}.
