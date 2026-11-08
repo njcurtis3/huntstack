@@ -27,3 +27,10 @@ export async function verifyAccessToken(token: string): Promise<string | null> {
   if (error || !data.user) return null
   return data.user.id
 }
+
+/** The verified user for a token (id and account email), or null when the token is invalid or expired. */
+export async function verifyAccessTokenUser(token: string): Promise<{ id: string; email: string | null } | null> {
+  const { data, error } = await getClient().auth.getUser(token)
+  if (error || !data.user) return null
+  return { id: data.user.id, email: data.user.email ?? null }
+}
