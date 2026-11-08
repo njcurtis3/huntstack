@@ -34,6 +34,8 @@ import { huntRoutes } from './routes/hunt.js'
 import { migrationRoutes } from './routes/migration.js'
 import { geoRoutes } from './routes/geo.js'
 import { fieldReportsRoutes } from './routes/field-reports.js'
+import { meRoutes } from './routes/me.js'
+import { adminRoutes } from './routes/admin.js'
 import { startStateActivityRefresh } from './lib/ebird-activity.js'
 import { STATE_FLYWAY } from './lib/ebird.js'
 
@@ -81,6 +83,8 @@ await app.register(swagger, {
       { name: 'hunt', description: 'Hunt recommendations and opportunity scoring' },
       { name: 'migration', description: 'Migration push factors and intelligence' },
       { name: 'field-reports', description: 'Hunter-submitted bird reports (unverified, location rounded)' },
+      { name: 'me', description: 'The signed-in user: their outfitter listing, submissions, stats, reviews and inquiries' },
+      { name: 'admin', description: 'Moderation of outfitter submissions and listings (admin allow-list only)' },
     ],
   },
 })
@@ -105,6 +109,8 @@ await app.register(huntRoutes, { prefix: '/api/hunt' })
 await app.register(migrationRoutes, { prefix: '/api/migration' })
 await app.register(geoRoutes, { prefix: '/api/geo' })
 await app.register(fieldReportsRoutes, { prefix: '/api/field-reports' })
+await app.register(meRoutes, { prefix: '/api/me' })
+await app.register(adminRoutes, { prefix: '/api/admin' })
 
 // Global error handler
 app.setErrorHandler((error, request, reply) => {

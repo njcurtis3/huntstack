@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, uuid, jsonb, boolean, integer, real, doublePrecision, varchar, index, uniqueIndex, check } from 'drizzle-orm/pg-core'
+import { pgTable, text, timestamp, uuid, jsonb, boolean, integer, real, doublePrecision, varchar, index, uniqueIndex, check, date, primaryKey } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 
 // ============================================
@@ -148,7 +148,7 @@ export const licenses = pgTable('licenses', {
 
 export const outfitters = pgTable('outfitters', {
   id: uuid('id').primaryKey().defaultRandom(),
-  ownerId: uuid('owner_id').references(() => profiles.id),
+  ownerId: uuid('owner_id'), // Supabase auth user id; no FK (see add-outfitter-self-service.sql)
   name: text('name').notNull(),
   slug: varchar('slug', { length: 200 }).notNull().unique(),
   description: text('description'),
@@ -429,4 +429,67 @@ export const fieldReports = pgTable('field_reports', {
   bucketCheck: check('field_reports_count_bucket_check', sql`${table.countBucket} IN ('1-10', '10-50', '50-200', '200+')`),
   countCheck: check('field_reports_count_exact_check', sql`${table.countExact} IS NULL OR (${table.countExact} >= 1 AND ${table.countExact} <= 250000)`),
   activityCheck: check('field_reports_activity_check', sql`${table.activity} IS NULL OR ${table.activity} IN ('flying', 'on_water', 'in_field')`),
+}))
+
+// ============================================
+// OUTFITTER SELF-SERVICE (owner claims, pending edits, inquiries, views)
+// ============================================
+
+// user_id / reviewed_by are Supabase auth user ids with no FK. Row level security is on with no
+// policies (scripts/add-outfitter-self-service.sql): only the API's server connection touches these.
+export const outfitterSubmissions = pgTable('outfitter_submissions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  kind: text('kind').notNull(), // 'new_listing' | 'edit' | 'claim' | 'review_reply'
+  status: text('status').notNull().default('pending'), // 'pending' | 'approved' | 'rejected' | 'withdrawn'
+  userId: uuid('user_id').notNull(),
+  submitterEmail: text('submitter_email'),
+  outfitterId: uuid('outfitter_id').references(() => outfitters.id, { onDelete: 'cascade' }),
+  reviewId: uuid('review_id').references(() => reviews.id, { onDelete: 'cascade' }),
+  payload: jsonb('payload').notNull(),
+  rejectReason: text('reject_reason'),
+  reviewedBy: uuid('reviewed_by'),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  statusCreatedIdx: index('submissions_status_created_idx').on(table.status, table.createdAt),
+  userCreatedIdx: index('submissions_user_created_idx').on(table.userId, sql`${table.createdAt} DESC`),
+  onePendingEdit: uniqueIndex('submissions_one_pending_edit').on(table.outfitterId).where(sql`${table.status} = 'pending' AND ${table.kind} = 'edit'`),
+  onePendingUser: uniqueIndex('submissions_one_pending_user').on(table.userId).where(sql`${table.status} = 'pending' AND ${table.kind} IN ('new_listing', 'claim')`),
+  onePendingReply: uniqueIndex('submissions_one_pending_reply').on(table.reviewId).where(sql`${table.status} = 'pending' AND ${table.kind} = 'review_reply'`),
+}))
+
+export const reviewReplies = pgTable('review_replies', {
+  reviewId: uuid('review_id').primaryKey().references(() => reviews.id, { onDelete: 'cascade' }),
+  outfitterId: uuid('outfitter_id').notNull().references(() => outfitters.id, { onDelete: 'cascade' }),
+  body: text('body').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+})
+
+export const outfitterInquiries = pgTable('outfitter_inquiries', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  outfitterId: uuid('outfitter_id').notNull().references(() => outfitters.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull(),
+  hunterEmail: text('hunter_email').notNull(), // the verified account email, never a body field
+  hunterName: text('hunter_name'),
+  hunterPhone: text('hunter_phone'),
+  preferredDates: text('preferred_dates'),
+  partySize: integer('party_size'),
+  message: text('message').notNull(),
+  status: text('status').notNull().default('new'), // 'new' | 'read' | 'archived'
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  outfitterCreatedIdx: index('inquiries_outfitter_created_idx').on(table.outfitterId, sql`${table.createdAt} DESC`),
+  userCreatedIdx: index('inquiries_user_created_idx').on(table.userId, sql`${table.createdAt} DESC`),
+}))
+
+// One row per outfitter, UTC day and kind; no IP, user agent or user id is ever stored.
+export const outfitterViewCounts = pgTable('outfitter_view_counts', {
+  outfitterId: uuid('outfitter_id').notNull().references(() => outfitters.id, { onDelete: 'cascade' }),
+  day: date('day').notNull(),
+  kind: text('kind').notNull(), // 'impression' | 'detail' | 'contact'
+  count: integer('count').notNull().default(0),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.outfitterId, table.day, table.kind] }),
 }))
