@@ -5,6 +5,7 @@ import { AdminListings } from '../components/admin/AdminListings'
 import { useAuthStore } from '../stores/authStore'
 import {
   AdminApiError,
+  useAdminForbidden,
   useAdminMe,
   useAdminSubmissions,
   useClearAdminCacheOnUserChange,
@@ -52,6 +53,7 @@ export function AdminPage() {
   const userId = useAuthStore(state => state.user?.id ?? null)
   const isLoadingAuth = useAuthStore(state => state.isLoading)
   const me = useAdminMe(userId)
+  const forbidden = useAdminForbidden()
   const [tab, setTab] = useState<Tab>('queue')
   useClearAdminCacheOnUserChange(userId)
 
@@ -59,7 +61,8 @@ export function AdminPage() {
   if (me.isLoading) {
     return <div className="max-w-7xl mx-auto px-4 py-8"><p className="text-base" style={muted}>Loading...</p></div>
   }
-  if (me.error || !me.data?.isAdmin) return <NotFoundPage />
+  // A 403 from any /api/admin call means this account is not an admin (any more): same page as for anyone else.
+  if (me.error || !me.data?.isAdmin || forbidden) return <NotFoundPage />
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 md:px-6 md:py-8">

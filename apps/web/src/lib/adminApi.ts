@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSession } from './supabase'
 
@@ -126,6 +126,7 @@ export function useAdminOutfitters(userId: string | null, enabled: boolean) {
 export function useApproveSubmission() {
   const queryClient = useQueryClient()
   return useMutation({
+    mutationKey: ['admin', 'approve'],
     mutationFn: ({ id, markVerified, expectedUpdatedAt }: { id: string; markVerified?: boolean; expectedUpdatedAt: string }) =>
       adminFetch<unknown>(`/api/admin/submissions/${encodeURIComponent(id)}/approve`, {
         method: 'POST',
@@ -140,6 +141,7 @@ export function useApproveSubmission() {
 export function useRejectSubmission() {
   const queryClient = useQueryClient()
   return useMutation({
+    mutationKey: ['admin', 'reject'],
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       adminFetch<unknown>(`/api/admin/submissions/${encodeURIComponent(id)}/reject`, {
         method: 'POST',
@@ -152,6 +154,7 @@ export function useRejectSubmission() {
 export function useSetOutfitterActive() {
   const queryClient = useQueryClient()
   return useMutation({
+    mutationKey: ['admin', 'active'],
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
       adminFetch<unknown>(`/api/admin/outfitters/${encodeURIComponent(id)}/active`, {
         method: 'POST',
@@ -164,10 +167,37 @@ export function useSetOutfitterActive() {
 export function useReleaseOutfitter() {
   const queryClient = useQueryClient()
   return useMutation({
+    mutationKey: ['admin', 'release'],
     mutationFn: ({ id }: { id: string }) =>
       adminFetch<unknown>(`/api/admin/outfitters/${encodeURIComponent(id)}/release`, { method: 'POST', body: {} }),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
   })
+}
+
+const isForbidden = (error: unknown) => error instanceof AdminApiError && error.status === 403
+
+/**
+ * True once any /api/admin query or mutation has answered 403 (for example, the signed-in id was
+ * removed from ADMIN_USER_IDS while the cached /api/me still said isAdmin). The page then renders
+ * Not Found, the same as for any other non-admin.
+ */
+export function useAdminForbidden(): boolean {
+  const queryClient = useQueryClient()
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const offQueries = queryClient.getQueryCache().subscribe(onChange)
+      const offMutations = queryClient.getMutationCache().subscribe(onChange)
+      return () => {
+        offQueries()
+        offMutations()
+      }
+    },
+    [queryClient],
+  )
+  const snapshot = () =>
+    queryClient.getQueryCache().findAll({ queryKey: ['admin'] }).some(q => isForbidden(q.state.error)) ||
+    queryClient.getMutationCache().findAll({ mutationKey: ['admin'] }).some(m => isForbidden(m.state.error))
+  return useSyncExternalStore(subscribe, snapshot)
 }
 
 /**
@@ -180,6 +210,8 @@ export function useClearAdminCacheOnUserChange(userId: string | null) {
     return () => {
       queryClient.removeQueries({ queryKey: ['admin'] })
       queryClient.removeQueries({ queryKey: ['me'] })
+      const mutations = queryClient.getMutationCache()
+      for (const m of mutations.findAll({ mutationKey: ['admin'] })) mutations.remove(m)
     }
   }, [userId, queryClient])
 }
