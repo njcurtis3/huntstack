@@ -14,6 +14,7 @@ import {
   primaryText,
   secondaryText,
   useClearPrivateDataOnUserChange,
+  useRefetchMyOutfitterAfterSignIn,
   useMyOutfitter,
 } from '../lib/outfitterAccount'
 
@@ -27,6 +28,7 @@ export function ListBusinessPage() {
   const [mode, setMode] = useState<Mode>(claimSlug ? 'claim' : 'choose')
   useClearPrivateDataOnUserChange()
   const me = useMyOutfitter(isAuthenticated)
+  const refetchAfterSignIn = useRefetchMyOutfitterAfterSignIn()
 
   const header = (
     <div className="mb-6">
@@ -146,7 +148,15 @@ export function ListBusinessPage() {
     <div className="max-w-3xl mx-auto px-4 md:px-6 lg:px-8 py-8 md:py-12">
       {header}
       {body}
-      {authMode && <AuthModal mode={authMode} onClose={() => setAuthMode(null)} />}
+      {authMode && (
+        <AuthModal
+          mode={authMode}
+          onClose={() => {
+            setAuthMode(null)
+            refetchAfterSignIn()
+          }}
+        />
+      )}
     </div>
   )
 }

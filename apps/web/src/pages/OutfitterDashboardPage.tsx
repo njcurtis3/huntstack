@@ -15,6 +15,7 @@ import {
   primaryText,
   secondaryText,
   useClearPrivateDataOnUserChange,
+  useRefetchMyOutfitterAfterSignIn,
   useMyInquiries,
   useMyOutfitter,
 } from '../lib/outfitterAccount'
@@ -27,6 +28,7 @@ export function OutfitterDashboardPage() {
   const [tab, setTab] = useState<Tab>('listing')
   useClearPrivateDataOnUserChange()
   const me = useMyOutfitter(isAuthenticated)
+  const refetchAfterSignIn = useRefetchMyOutfitterAfterSignIn()
   const hasListing = Boolean(me.data?.listing)
   // Same query key as the inbox's default filter, so the badge and the list share one request.
   const newInquiries = useMyInquiries('new', hasListing)
@@ -117,7 +119,15 @@ export function OutfitterDashboardPage() {
     <div className="max-w-5xl mx-auto px-4 md:px-6 lg:px-8 py-8 md:py-12">
       {heading}
       {body}
-      {authMode && <AuthModal mode={authMode} onClose={() => setAuthMode(null)} />}
+      {authMode && (
+        <AuthModal
+          mode={authMode}
+          onClose={() => {
+            setAuthMode(null)
+            refetchAfterSignIn()
+          }}
+        />
+      )}
     </div>
   )
 }

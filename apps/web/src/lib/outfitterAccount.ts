@@ -237,6 +237,19 @@ export function useClearPrivateDataOnUserChange() {
   }, [userId, queryClient])
 }
 
+/**
+ * For the AuthModal's onClose. Signing back in as the same user after a 401 (a session revoked on the
+ * server) leaves the key and the enabled flag unchanged, so react-query would keep showing the error.
+ * If someone is signed in when the modal closes, refetch this user's outfitter queries.
+ */
+export function useRefetchMyOutfitterAfterSignIn() {
+  const queryClient = useQueryClient()
+  return () => {
+    const userId = useAuthStore.getState().user?.id
+    if (userId) void queryClient.invalidateQueries({ queryKey: ['me', userId, 'outfitter'] })
+  }
+}
+
 export function useMyOutfitter(enabled: boolean) {
   const userId = useUserId()
   return useQuery({
