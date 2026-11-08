@@ -70,8 +70,9 @@ async function adminFetch<T>(path: string, init?: { method?: 'POST'; body?: unkn
   try {
     response = await fetch(`${API_URL}${path}`, {
       method: init?.method ?? 'GET',
+      // Content-Type only with a body: Fastify answers 400 to a JSON content-type with an empty body.
       headers: {
-        'Content-Type': 'application/json',
+        ...(init?.body === undefined ? {} : { 'Content-Type': 'application/json' }),
         Authorization: `Bearer ${session.access_token}`,
       },
       body: init?.body === undefined ? undefined : JSON.stringify(init.body),
