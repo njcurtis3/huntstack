@@ -67,6 +67,8 @@ type Season = {
   bagLimit: unknown
   shootingHours: unknown
   restrictions: string | null
+  /** Zone names the season applies to, e.g. ["High Plains Mallard Management Unit"] */
+  units?: string[] | null
 }
 
 type License = {
@@ -144,15 +146,28 @@ function toCalendarDate(value: string | Date): Date {
   return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
 }
 
+function isOpenOn(season: Season, day: Date): boolean {
+  return toCalendarDate(season.startDate) <= day && day <= toCalendarDate(season.endDate)
+}
+
+function todayLocal(): Date {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+}
+
 function SeasonTable({ seasons }: { seasons: Season[] }) {
   const bagFmt = (bl: unknown) => {
-    const b = bl as { daily?: number; season?: number } | null
+    const b = bl as { daily?: number; possession?: number; season?: number } | null
     if (!b) return '-'
     const parts = []
     if (b.daily != null) parts.push(`${b.daily}/day`)
+    if (b.possession != null) parts.push(`${b.possession} possession`)
     if (b.season != null) parts.push(`${b.season}/season`)
     return parts.length ? parts.join(', ') : '-'
   }
+  const today = todayLocal()
+  // In date order, so a split's first part comes before its second
+  const sorted = [...seasons].sort((a, b) => toCalendarDate(a.startDate).getTime() - toCalendarDate(b.startDate).getTime())
   return (
     <table className="w-full text-sm">
       <thead style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}>
@@ -164,31 +179,67 @@ function SeasonTable({ seasons }: { seasons: Season[] }) {
         </tr>
       </thead>
       <tbody className="divide-y" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
-        {seasons.map(season => (
-          <tr key={season.id}>
-            <td className="p-3 font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>{season.name}</td>
-            <td className="p-3 whitespace-nowrap" style={{ color: `rgb(var(--color-text-secondary))` }}>
-              {toCalendarDate(season.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              {' – '}
-              {toCalendarDate(season.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-            </td>
-            <td className="p-3 whitespace-nowrap" style={{ color: `rgb(var(--color-text-secondary))` }}>{bagFmt(season.bagLimit)}</td>
-            <td className="p-3 hidden md:table-cell" style={{ color: `rgb(var(--color-text-secondary))` }}>{season.restrictions || '-'}</td>
-          </tr>
-        ))}
+        {sorted.map(season => {
+          const open = isOpenOn(season, today)
+          return (
+            <tr key={season.id} className={open ? 'bg-forest-50 dark:bg-forest-900/20' : undefined}>
+              <td className="p-3 font-medium align-top" style={{ color: `rgb(var(--color-text-primary))` }}>
+                {season.name}
+                {open && (
+                  <span className="ml-2 inline-block text-xs font-semibold rounded px-1.5 py-0.5 bg-forest-100 dark:bg-forest-900/50 text-forest-700 dark:text-forest-300">
+                    Open today
+                  </span>
+                )}
+                {/* On a phone the Restrictions column is hidden; species limits still matter */}
+                {season.restrictions && (
+                  <p className="md:hidden mt-1 text-xs font-normal" style={{ color: `rgb(var(--color-text-secondary))` }}>
+                    {season.restrictions}
+                  </p>
+                )}
+              </td>
+              <td className="p-3 align-top sm:whitespace-nowrap" style={{ color: `rgb(var(--color-text-secondary))` }}>
+                {toCalendarDate(season.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                {' – '}
+                {toCalendarDate(season.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </td>
+              <td className="p-3 align-top" style={{ color: `rgb(var(--color-text-secondary))` }}>{bagFmt(season.bagLimit)}</td>
+              <td className="p-3 align-top hidden md:table-cell" style={{ color: `rgb(var(--color-text-secondary))` }}>{season.restrictions || '-'}</td>
+            </tr>
+          )
+        })}
       </tbody>
     </table>
   )
 }
 
+const isStatewideZone = (z: string) => /statewide/i.test(z)
+
 function SeasonGroups({ seasons }: { seasons: Season[] }) {
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set())
+  // "Is it open in my zone this weekend?" Pick a zone and see only its seasons
+  const [zone, setZone] = useState('')
+
+  const zones = useMemo(() => {
+    const all = new Set<string>()
+    for (const s of seasons) for (const z of s.units ?? []) if (!isStatewideZone(z)) all.add(z)
+    return [...all].sort()
+  }, [seasons])
+
+  const inZone = useMemo(() => {
+    if (!zone) return seasons
+    return seasons.filter(s => !s.units || s.units.length === 0 || s.units.some(z => z === zone || isStatewideZone(z)))
+  }, [seasons, zone])
 
   const grouped = useMemo(() => {
     const map: Record<string, Season[]> = { duck: [], goose: [], dove: [], other: [], special: [] }
-    for (const s of seasons) map[classifySeason(s)].push(s)
+    for (const s of inZone) map[classifySeason(s)].push(s)
     return map
-  }, [seasons])
+  }, [inZone])
+
+  const openToday = useMemo(() => {
+    const today = todayLocal()
+    return inZone.filter(s => isOpenOn(s, today) && classifySeason(s) !== 'special')
+  }, [inZone])
 
   const toggle = (key: string) => setOpenGroups(prev => {
     const next = new Set(prev)
@@ -199,6 +250,22 @@ function SeasonGroups({ seasons }: { seasons: Season[] }) {
 
   return (
     <div className="space-y-3">
+      {zones.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <label htmlFor="season-zone" className="text-sm font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>
+            Your zone
+          </label>
+          <select id="season-zone" className="input w-auto max-w-full" value={zone} onChange={e => setZone(e.target.value)}>
+            <option value="">All zones</option>
+            {zones.map(z => <option key={z} value={z}>{z}</option>)}
+          </select>
+        </div>
+      )}
+      <p className="text-sm" style={{ color: `rgb(var(--color-text-secondary))` }}>
+        {openToday.length > 0
+          ? <><span className="font-semibold text-forest-700 dark:text-forest-400">Open today{zone ? ` in ${zone}` : ''}:</span> {[...new Set(openToday.map(s => s.name))].join(', ')}</>
+          : `Nothing is open today${zone ? ` in ${zone}` : ''}.`}
+      </p>
       {GROUP_CONFIG.map(({ key, label }) => {
         const group = grouped[key]
         if (!group || group.length === 0) return null
@@ -208,6 +275,7 @@ function SeasonGroups({ seasons }: { seasons: Season[] }) {
           <div key={key} className="card overflow-hidden">
             <button
               onClick={() => toggle(key)}
+              aria-expanded={isOpen}
               className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-earth-50 dark:hover:bg-earth-800/50 transition-colors"
             >
               <div className="flex items-center gap-3">
@@ -372,8 +440,8 @@ function CompareTable({ stateCodes, statesList }: { stateCodes: string[], states
                     <div className="flex items-center gap-1">
                       <span style={{ color: `rgb(var(--color-text-primary))` }}>{info?.name || code}</span>
                       {info?.agencyUrl && (
-                        <a href={info.agencyUrl} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:text-accent-600">
-                          <ExternalLink className="w-3 h-3" />
+                        <a href={info.agencyUrl} target="_blank" rel="noopener noreferrer" className="p-2 -m-1 text-accent-500 hover:text-accent-600" aria-label={`${info.name} wildlife agency (opens in a new tab)`}>
+                          <ExternalLink className="w-3.5 h-3.5" />
                         </a>
                       )}
                     </div>
@@ -506,6 +574,9 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-md p-6 text-center">
           <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-2" />
+          <h1 className="text-lg font-semibold text-red-800 dark:text-red-200 mb-1">
+            No regulations for {stateCode.toUpperCase()}
+          </h1>
           <p className="text-red-800 dark:text-red-200">{error}</p>
           <Link to="/regulations" className="text-accent-500 hover:underline mt-2 inline-block">Back to states</Link>
         </div>
@@ -754,6 +825,20 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
 
 type StateRegCounts = Record<string, { regulations: number; seasons: number; licenses: number }>
 
+// What a hunter can expect to find for a state, instead of raw row counts
+function StateCoverageLine({ hasSeasons, hasLicenses, seasonLabel }: { hasSeasons: boolean; hasLicenses: boolean; seasonLabel: string }) {
+  return (
+    <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs pt-2" style={{ color: `rgb(var(--color-text-tertiary))`, borderTop: `1px solid rgb(var(--color-border-primary))` }}>
+      {hasSeasons ? (
+        <span className="text-forest-700 dark:text-forest-400 font-medium">{seasonLabel} seasons and bag limits ✓</span>
+      ) : (
+        <span className="font-medium">Seasons coming soon</span>
+      )}
+      {hasLicenses && <span>Licenses ✓</span>}
+    </div>
+  )
+}
+
 export function RegulationsPage() {
   const { state } = useParams()
   const [statesList, setStatesList] = useState<StateInfo[]>([])
@@ -773,7 +858,7 @@ export function RegulationsPage() {
 
   useEffect(() => {
     if (!state) {
-      Promise.all([api.getStates(), api.getRegulationCounts(2024)])
+      Promise.all([api.getStates(), api.getRegulationCounts(SEASON_YEAR)])
         .then(([statesData, countsData]) => {
           setStatesList(statesData.states as StateInfo[])
           setRegCounts(countsData.counts)
@@ -783,7 +868,14 @@ export function RegulationsPage() {
     }
   }, [state])
 
-  const statesWithData = useMemo(() => new Set(statesList.map(s => s.code)), [statesList])
+  // "Has data" = this season's seasons are entered. A state in the list with none (CO, MT, WY,
+  // MO, IL, IA today) is shown as coming soon, after the states a hunter can use.
+  const statesWithData = useMemo(
+    () => new Set(statesList.filter(s => (regCounts[s.code]?.seasons ?? 0) > 0).map(s => s.code)),
+    [statesList, regCounts],
+  )
+  const listedStates = useMemo(() => new Set(statesList.map(s => s.code)), [statesList])
+  const seasonLabel = `${SEASON_YEAR}–${String(SEASON_YEAR + 1).slice(2)}`
 
   const handleMapStateClick = useCallback((stateCode: string) => {
     if (compareMode) {
@@ -824,8 +916,9 @@ export function RegulationsPage() {
         s.code.toLowerCase().includes(search.toLowerCase())
       )
     }
-    return list
-  }, [statesList, selectedState, compareMode, search])
+    return [...list].sort((a, b) =>
+      Number(statesWithData.has(b.code)) - Number(statesWithData.has(a.code)) || a.name.localeCompare(b.name))
+  }, [statesList, selectedState, compareMode, search, statesWithData])
 
   if (state) {
     return <StateDetailView stateCode={state} />
@@ -907,7 +1000,7 @@ export function RegulationsPage() {
             </h2>
             <div className="flex items-center gap-4 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
               <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-sm bg-forest-200 dark:bg-forest-800 inline-block" /> Has data
+                <span className="w-3 h-3 rounded-sm bg-forest-200 dark:bg-forest-800 inline-block" /> {seasonLabel} seasons
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-3 h-3 rounded-sm bg-accent-500 inline-block" /> {compareMode ? 'Selected' : 'Selected'}
@@ -963,7 +1056,7 @@ export function RegulationsPage() {
                       if (!stateCode) return null
                       const hasData = statesWithData.has(stateCode)
                       const isSelected = compareMode ? compareStates.has(stateCode) : selectedState === stateCode
-                      const isClickable = hasData
+                      const isClickable = listedStates.has(stateCode)
                       return (
                         <Geography
                           key={geo.rsmKey}
@@ -1060,7 +1153,9 @@ export function RegulationsPage() {
 
         {/* Search */}
         <div className="mb-8">
+          <label htmlFor="reg-state-search" className="sr-only">Search states</label>
           <input
+            id="reg-state-search"
             type="text"
             placeholder={compareMode ? 'Filter states...' : 'Search states...'}
             className="input max-w-md"
@@ -1109,13 +1204,7 @@ export function RegulationsPage() {
                           </div>
                         </div>
                       </div>
-                      {regCounts[s.code] && (
-                        <div className="flex gap-3 text-xs pt-2" style={{ color: `rgb(var(--color-text-tertiary))`, borderTop: `1px solid rgb(var(--color-border-primary))` }}>
-                          <span>Regs: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].regulations}</strong></span>
-                          <span>Seasons: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].seasons}</strong></span>
-                          <span>Licenses: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].licenses}</strong></span>
-                        </div>
-                      )}
+                      <StateCoverageLine hasSeasons={statesWithData.has(s.code)} hasLicenses={(regCounts[s.code]?.licenses ?? 0) > 0} seasonLabel={seasonLabel} />
                     </div>
                   )
                 }
@@ -1124,7 +1213,7 @@ export function RegulationsPage() {
                   <Link
                     key={s.code}
                     to={`/regulations/${s.code.toLowerCase()}`}
-                    className="card p-4 hover:border-accent-400 dark:hover:border-accent-500 transition-colors"
+                    className={`card p-4 hover:border-accent-400 dark:hover:border-accent-500 transition-colors ${statesWithData.has(s.code) ? '' : 'opacity-70'}`}
                   >
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
@@ -1138,13 +1227,7 @@ export function RegulationsPage() {
                       </div>
                       <ChevronRight className="w-5 h-5" style={{ color: `rgb(var(--color-text-tertiary))` }} />
                     </div>
-                    {regCounts[s.code] && (
-                      <div className="flex gap-3 text-xs pt-2" style={{ color: `rgb(var(--color-text-tertiary))`, borderTop: `1px solid rgb(var(--color-border-primary))` }}>
-                        <span>Regulations: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].regulations}</strong></span>
-                        <span>Seasons: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].seasons}</strong></span>
-                        <span>Licenses: <strong style={{ color: `rgb(var(--color-text-secondary))` }}>{regCounts[s.code].licenses}</strong></span>
-                      </div>
-                    )}
+                    <StateCoverageLine hasSeasons={statesWithData.has(s.code)} hasLicenses={(regCounts[s.code]?.licenses ?? 0) > 0} seasonLabel={seasonLabel} />
                   </Link>
                 )
               })}

@@ -4,6 +4,7 @@ import { getDb } from '../lib/db.js'
 import { getHuntingConditions, getPushFactorsForStates, pushFactorAt } from '../lib/weather.js'
 import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 import { FRESH_DAYS, FRESH_DAYS_MONTHLY } from '../lib/freshness.js'
+import { accessOf, isHuntable } from '../lib/access.js'
 
 const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
 
@@ -29,6 +30,36 @@ const WEATHER_SCORES: Record<string, number> = {
 // mutually exclusive, so 3.5 — both a present front and an incoming one —
 // can never actually occur; max is coldFrontPresent + northWind + subFreezing = 3)
 const PUSH_SCORES: Record<number, number> = { 0: 0, 0.5: 2, 1: 4, 1.5: 5, 2: 7, 2.5: 8, 3: 10 }
+
+/**
+ * Count volume, 0-20, on a fixed log scale: 100 birds = 8, 1,000 = 12, 10,000 = 16, 100,000+ = 20.
+ * It used to be relative to the biggest count in the results, so a snow goose search whose only
+ * result had 65 birds scored a full 20/20.
+ */
+export function volumeScore(count: number | null): number {
+  if (count === null || count <= 0) return 0
+  return Math.min(20, Math.round(4 * Math.log10(count)))
+}
+
+/** The year a waterfowl season is stored under: the year it opens. Aug-Dec = this year. */
+export function seasonYearOf(date: Date): number {
+  return date.getUTCMonth() >= 7 ? date.getUTCFullYear() : date.getUTCFullYear() - 1
+}
+
+/**
+ * open: a season is open on the date. closed: HuntStack has this state's seasons for the year
+ * and none is open. unknown: HuntStack has no seasons for this state that year, so it can't say.
+ */
+export type SeasonStatus = 'open' | 'closed' | 'unknown'
+
+export function seasonStatusOf(seasonOpen: boolean, stateHasSeasonData: boolean): SeasonStatus {
+  if (seasonOpen) return 'open'
+  return stateHasSeasonData ? 'closed' : 'unknown'
+}
+
+// Results are grouped before they're scored: open seasons first, then unknown, then closed.
+// A high bird count can't lift a place with no legal season above one where you can hunt.
+const SEASON_TIER: Record<SeasonStatus, number> = { open: 0, unknown: 1, closed: 2 }
 
 // migrationStatus → score 0–10
 const MIGRATION_STATUS_SCORES: Record<string, number> = {
@@ -172,6 +203,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
           states: { type: 'string', description: 'Comma-separated state codes. Defaults to all V1 states.' },
           date: { type: 'string', description: 'Target date YYYY-MM-DD. Defaults to today.' },
           limit: { type: 'integer', default: 10, description: 'Max results' },
+          includeNoAccess: { type: 'boolean', default: false, description: 'Include places closed to waterfowl hunting or private' },
         },
       },
     },
@@ -181,13 +213,15 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
       states?: string
       date?: string
       limit?: number
+      includeNoAccess?: boolean | string
     }
     const db = getDb()
+    const includeNoAccess = query.includeNoAccess === true || query.includeNoAccess === 'true'
 
     // ── Parse params ────────────────────────────────────────────────────────
     const targetDate = query.date ? new Date(query.date) : new Date()
     const targetDateStr = targetDate.toISOString().split('T')[0]
-    const targetYear = targetDate.getFullYear()
+    const seasonYear = seasonYearOf(targetDate)
 
     const stateCodes = query.states
       ? query.states.split(',').map(s => s.trim().toUpperCase()).filter(s => s.length === 2)
@@ -264,10 +298,16 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         locationMap.set(row.location_id, row)
       }
     }
-    const uniqueRows = [...locationMap.values()]
+    // Private clubs and refuges closed to waterfowl hunting are survey sites, not hunting spots
+    const allUnique = [...locationMap.values()]
+    const uniqueRows = includeNoAccess
+      ? allUnique
+      : allUnique.filter(r => isHuntable(accessOf(r.location_metadata).access))
+    const hiddenNoAccess = allUnique.length - uniqueRows.length
 
     // ── Step 2: Query open seasons + fetch push factors in parallel ─────────
     const openSeasonMap = new Map<string, SeasonRow[]>()
+    const statesWithSeasons = new Set<string>()
 
     // Build refugesByState map — collect ALL refuge coords per state for multi-point push scoring
     const refugesByState = new Map<string, { lat: number; lng: number }[]>()
@@ -278,7 +318,22 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
       }
     }
 
-    const [, pushResult] = await Promise.all([
+    const [, , pushResult] = await Promise.all([
+      // Which states HuntStack has any waterfowl seasons for this year: without them, "not open"
+      // means "we don't know", not "closed"
+      (async () => {
+        if (uniqueRows.length === 0) return
+        const rows = await db.execute(sql`
+          SELECT DISTINCT s.code AS state_code
+          FROM seasons se
+          JOIN states s ON se.state_id = s.id
+          JOIN species sp ON se.species_id = sp.id
+          WHERE s.code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})
+            AND se.year = ${seasonYear}
+            AND sp.category = 'waterfowl'
+        `)
+        for (const r of rows as unknown as { state_code: string }[]) statesWithSeasons.add(r.state_code)
+      })(),
       // Season query
       (async () => {
         if (uniqueRows.length === 0) return
@@ -296,7 +351,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
           JOIN states s ON se.state_id = s.id
           JOIN species sp ON se.species_id = sp.id
           WHERE s.code IN (${sql.join(stateCodes.map(c => sql`${c}`), sql`, `)})
-            AND se.year = ${targetYear}
+            AND se.year = ${seasonYear}
             AND se.start_date <= ${targetDateStr}::date
             AND se.end_date >= ${targetDateStr}::date
             -- Falconry-only segments (e.g. LA Nov 5-13, TX Feb 1-21) aren't open to gun hunters
@@ -320,7 +375,6 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
       pushFactorAt(row.state_code, row.center_point, pushResult.pushFactors, pushResult.regionalPushFactors)
 
     // ── Step 3: Compute trend + migration status + preliminary score ─────────
-    const maxCount = Math.max(...uniqueRows.map(r => r.count ?? 0), 1)
 
     type ScoredRow = {
       row: CountRow
@@ -330,6 +384,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
       migrationStatus: ReturnType<typeof getMigrationStatus>
       isAnomaly: boolean
       seasonOpen: boolean
+      seasonStatus: SeasonStatus
       season: SeasonRow | null
       trendScore: number
       magnitudeScore: number
@@ -367,12 +422,13 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
 
       const season = findOpenSeason(openSeasonMap, row.state_code, row.species_slug, huntZonesOf(row.location_metadata))
       const seasonOpen = season !== null
+      const seasonStatus = seasonStatusOf(seasonOpen, statesWithSeasons.has(row.state_code))
 
       const statePush = pushFor(row)
       const statePushScore = statePush?.pushScore ?? 0
 
       const trendScore = TREND_SCORES[trend] ?? 0
-      const magnitudeScore = row.count !== null ? Math.min(20, Math.round((row.count / maxCount) * 20)) : 0
+      const magnitudeScore = volumeScore(row.count)
       const seasonScore = seasonOpen ? 20 : 0
       const pushScore = PUSH_SCORES[statePushScore] ?? 0
       const migrationScore = MIGRATION_STATUS_SCORES[migrationStatus] ?? 0
@@ -382,7 +438,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
 
       return {
         row, trend, delta, deltaPercent, migrationStatus, isAnomaly,
-        seasonOpen, season,
+        seasonOpen, seasonStatus, season,
         trendScore, magnitudeScore, seasonScore,
         weatherScore: 0, // filled in step 4
         pushScore, migrationScore, anomalyBonus,
@@ -398,11 +454,15 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
     // (+15) can legitimately beat a #8 stuck with "poor" (+0). Below that
     // margin a candidate has no way to catch up, so it's safe to skip the
     // (rate-limited, external) weather call and score it 0.
-    scored.sort((a, b) => b.prelimScore - a.prelimScore)
+    scored.sort((a, b) => SEASON_TIER[a.seasonStatus] - SEASON_TIER[b.seasonStatus] || b.prelimScore - a.prelimScore)
     const WEATHER_MAX_BONUS = Math.max(...Object.values(WEATHER_SCORES))
     const guaranteedCount = Math.min(limit, scored.length)
-    const cutoffScore = guaranteedCount > 0 ? scored[guaranteedCount - 1].prelimScore : 0
-    let weatherPoolSize = scored.findIndex(item => item.prelimScore < cutoffScore - WEATHER_MAX_BONUS)
+    const cutoff = guaranteedCount > 0 ? scored[guaranteedCount - 1] : null
+    // Anyone in a lower season tier than the cutoff can't reach the top `limit`, whatever the weather
+    let weatherPoolSize = cutoff
+      ? scored.findIndex(item => SEASON_TIER[item.seasonStatus] > SEASON_TIER[cutoff.seasonStatus]
+          || (item.seasonStatus === cutoff.seasonStatus && item.prelimScore < cutoff.prelimScore - WEATHER_MAX_BONUS))
+      : -1
     if (weatherPoolSize === -1) weatherPoolSize = scored.length
     // Hard cap so a large tie cluster near the cutoff can't trigger unbounded
     // external weather calls in one request.
@@ -439,6 +499,8 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
     // ── Step 5: Final sort + shape response ─────────────────────────────────
     const allScored = [...topCandidates, ...rest]
     allScored.sort((a, b) => {
+      const tier = SEASON_TIER[a.seasonStatus] - SEASON_TIER[b.seasonStatus]
+      if (tier !== 0) return tier
       const scoreA = Math.min(100, a.trendScore + a.magnitudeScore + a.seasonScore + a.weatherScore + a.pushScore + a.migrationScore + a.anomalyBonus)
       const scoreB = Math.min(100, b.trendScore + b.magnitudeScore + b.seasonScore + b.weatherScore + b.pushScore + b.migrationScore + b.anomalyBonus)
       return scoreB - scoreA
@@ -456,6 +518,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         : null
 
       const statePush = pushFor(item.row)
+      const access = accessOf(item.row.location_metadata)
 
       return {
         rank: i + 1,
@@ -481,6 +544,10 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         coldFrontPresent: statePush?.coldFrontPresent ?? false,
         coldFrontIncoming: statePush?.coldFrontIncoming ?? false,
         seasonOpen: item.seasonOpen,
+        seasonStatus: item.seasonStatus,
+        access: access.access,
+        accessNote: access.note,
+        accessSource: access.source,
         // Zoned seasons: name the zone (or say several are open) instead of showing one zone's
         // dates on a location that may be in another zone. See seasonDisplayName.
         seasonName: seasonDisplayName(item.season),
@@ -508,6 +575,10 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
       recommendations,
       queryParams: { species: speciesSlug, states: stateCodes, date: targetDateStr },
       totalLocations: allScored.length,
+      // Places left out because they're private or closed to waterfowl hunting
+      hiddenNoAccess,
+      // Searched states HuntStack has no seasons for this year: their places show "No season data"
+      statesWithoutSeasonData: uniqueRows.length > 0 ? stateCodes.filter(c => !statesWithSeasons.has(c)) : [],
     }
   })
 }

@@ -9,6 +9,7 @@ import { getPushFactorsForStates, pushFactorLabel } from '../lib/weather.js'
 import { chatRequestSchema } from '@huntstack/shared'
 import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 import { DEFAULT_REPORT_SPECIES, getEBirdSpeciesReports, type EBirdSpeciesReport } from '../lib/ebird.js'
+import { accessLabel, accessOf } from '../lib/access.js'
 
 // States HuntStack covers: full seasons for the first six, survey counts for MO and IL.
 // A question that names no place is answered for these.
@@ -32,6 +33,7 @@ const STATE_ALIASES: Record<string, string> = {
   oklahoma: 'OK', ok: 'OK',
   colorado: 'CO', co: 'CO',
   missouri: 'MO', mo: 'MO',
+  illinois: 'IL', iowa: 'IA',
   montana: 'MT', mt: 'MT',
   wyoming: 'WY', wy: 'WY',
 }
@@ -107,6 +109,8 @@ interface StructuredContext {
   ebirdSightings: EBirdSpeciesReport[]
   sources: Array<{ title: string; url?: string; snippet: string }>
   lastScrapedByState: Record<string, string | null>
+  /** States the question is about that HuntStack has no seasons for (MO, IL, IA today) */
+  statesWithoutSeasons: string[]
 }
 
 // ─── Route handler ───────────────────────────────────────────────────────────
@@ -462,6 +466,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     ebirdSightings: [],
     sources: [],
     lastScrapedByState: {},
+    statesWithoutSeasons: [],
   }
 
   const { stateCodes, speciesSlugs } = entities
@@ -532,6 +537,10 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
           LIMIT 40
         `)
         result.seasons = rows as unknown as Array<Record<string, unknown>>
+        // Said out loud so the model doesn't fill the gap from memory ("Missouri's season is open")
+        const withSeasons = new Set(result.seasons.map(r => r.state_code as string))
+        result.statesWithoutSeasons = (stateCodes.length > 0 ? stateCodes : COVERED_STATES)
+          .filter(c => !withSeasons.has(c))
 
         // Add source URLs
         for (const row of result.seasons) {
@@ -637,7 +646,8 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
             rc.count,
             rc.survey_date,
             rc.survey_type,
-            rc.source_url
+            rc.source_url,
+            l.metadata AS location_metadata
           FROM refuge_counts rc
           JOIN locations l ON rc.location_id = l.id
           JOIN states st ON l.state_id = st.id
@@ -948,9 +958,10 @@ function formatStructuredContext(ctx: StructuredContext): string {
       const speciesList = counts
         .map(c => `${c.species_name}: ${Number(c.count).toLocaleString()}`)
         .join(', ')
-      lines.push(`- ${refuge} (${stateCode}, ${surveyDate}${surveyAgeNote(counts[0].survey_date as string | null, new Date())}): ${speciesList}`)
+      const access = accessLabel(accessOf(counts[0].location_metadata))
+      lines.push(`- ${refuge} (${stateCode}, ${surveyDate}${surveyAgeNote(counts[0].survey_date as string | null, new Date())}; ${access}): ${speciesList}`)
     }
-    sections.push(`## Latest Bird Survey Counts\nThe newest survey at each place. Counts marked as old say nothing about where birds are now.\n${lines.join('\n')}`)
+    sections.push(`## Latest Bird Survey Counts\nThe newest survey at each place. Counts marked as old say nothing about where birds are now. A survey site is where birds were counted, not necessarily a place anyone may hunt: each line says what HuntStack knows about hunting access there.\n${lines.join('\n')}`)
   }
 
   if (ctx.ebirdSightings.length > 0) {
@@ -977,9 +988,14 @@ function formatStructuredContext(ctx: StructuredContext): string {
       const zones = Array.isArray(meta?.huntZones) ? (meta!.huntZones as string[]) : []
       const zoneStr = zones.length > 0 ? `, season zones: ${zones.join(' / ')}` : ''
       const restrictions = l.restrictions ? `, restrictions: ${(l.restrictions as string).substring(0, 80)}` : ''
-      return `- ${l.name} (${l.state_code}, ${type}${acres}${flywayStr}${zoneStr})${desc}${restrictions}`
+      const access = `, ${accessLabel(accessOf(l.metadata))}`
+      return `- ${l.name} (${l.state_code}, ${type}${acres}${flywayStr}${zoneStr}${access})${desc}${restrictions}`
     })
-    sections.push(`## Public Hunting Locations\n${lines.join('\n')}`)
+    sections.push(`## Locations HuntStack Tracks\nRefuges, wildlife areas and survey sites. Not all are open to hunting: use the access on each line.\n${lines.join('\n')}`)
+  }
+
+  if (ctx.statesWithoutSeasons.length > 0) {
+    sections.push(`## Seasons HuntStack Does Not Have\nHuntStack has no season dates for: ${ctx.statesWithoutSeasons.join(', ')}. Do not say whether a season is open or closed there, and give no dates, unless a web result from that state's wildlife agency for the ${currentSeasonLabel(new Date())} season states them; then cite it. Otherwise say HuntStack doesn't have that state's seasons yet and point to the agency.`)
   }
 
   // Regulations (summaries only — full text is in vector chunks)
@@ -1175,7 +1191,7 @@ function buildSystemPrompt(
     })
     .join('\n\n---\n\n')
 
-  return `You are HuntStack AI, a hunting assistant for waterfowl hunters in the Central and Mississippi Flyways. HuntStack has seasons and rules for Texas, Oklahoma, Kansas, New Mexico, Arkansas and Louisiana, and survey counts for those states plus Missouri and Illinois. Today is ${now.toISOString().slice(0, 10)}; the current waterfowl season is ${currentSeasonLabel(now)}.
+  return `You are HuntStack AI, a hunting assistant for waterfowl hunters in the Central and Mississippi Flyways. HuntStack has seasons and rules for Texas, Oklahoma, Kansas, New Mexico, Arkansas and Louisiana, and survey counts for those states plus Missouri, Illinois and Iowa (no season dates for those three). Today is ${now.toISOString().slice(0, 10)}; the current waterfowl season is ${currentSeasonLabel(now)}.
 
 You get three kinds of information:
 1. WEB SEARCH RESULTS: pages found by searching the internet for this question, attached after these instructions when available. Use them as your main source for anything the database below does not cover.
@@ -1187,6 +1203,8 @@ Guidelines:
 - Check which season a web page or document is about before using its dates. Do not present a past season's dates as this season's; label them if you use them at all.
 - For rules, prefer the state wildlife agency's own pages over third-party sites. Treat forums, outfitter, app and news sites as reports, not as the rules.
 - Cite web results inline as markdown links, e.g. [ksoutdoors.gov](https://ksoutdoors.gov/...).
+- Never say a season is open, closed or opening on a date without a source above that gives the dates. If none does, say you don't have the dates and point to the state agency.
+- Never call a place public, or tell someone to hunt it, unless its access line says it is open to public hunting (fully or in part). Many survey sites are private clubs or refuges closed to waterfowl hunting. For a place whose access is not verified, say to check access with the managing agency before going.
 - If nothing here answers the question, say so plainly and point the user to the state wildlife agency. General hunting knowledge (gear, tactics, bird ID) is fine, but never invent dates, limits, prices or counts.
 - Always say which state's rules you mean, and remind users to confirm regulations with the official state agency.
 - When a question about birds, places or rules names no place, answer for the Central and Mississippi Flyways and say so. Mention other regions only briefly, if at all.

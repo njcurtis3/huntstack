@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bagLimitFor, findOpenSeason, getMigrationStatus, huntZonesOf, seasonDatesApply, seasonDisplayName, type SeasonRow } from './hunt.js'
+import { bagLimitFor, findOpenSeason, getMigrationStatus, huntZonesOf, seasonDatesApply, seasonDisplayName, seasonStatusOf, seasonYearOf, volumeScore, type SeasonRow } from './hunt.js'
 
 describe('getMigrationStatus', () => {
   it('maps a new location (no prior count) to first_survey', () => {
@@ -166,5 +166,37 @@ describe('seasonDisplayName / seasonDatesApply', () => {
     expect(seasonDatesApply(statewide)).toBe(true)
     expect(seasonDatesApply({ ...statewide, zone: null })).toBe(true)
     expect(seasonDisplayName(null)).toBeNull()
+  })
+})
+
+describe('volumeScore', () => {
+  it('scores on a fixed scale, not relative to the other results', () => {
+    expect(volumeScore(65)).toBe(7)
+    expect(volumeScore(1000)).toBe(12)
+    expect(volumeScore(10000)).toBe(16)
+    expect(volumeScore(100000)).toBe(20)
+    expect(volumeScore(5000000)).toBe(20)
+  })
+
+  it('scores no birds as 0', () => {
+    expect(volumeScore(null)).toBe(0)
+    expect(volumeScore(0)).toBe(0)
+  })
+})
+
+describe('seasonYearOf', () => {
+  it('uses the opening year: Aug-Dec is this year, Jan-Jul is last year', () => {
+    expect(seasonYearOf(new Date('2026-11-08'))).toBe(2026)
+    expect(seasonYearOf(new Date('2026-08-01'))).toBe(2026)
+    expect(seasonYearOf(new Date('2027-01-15'))).toBe(2026)
+    expect(seasonYearOf(new Date('2027-07-31'))).toBe(2026)
+  })
+})
+
+describe('seasonStatusOf', () => {
+  it('tells closed apart from no data', () => {
+    expect(seasonStatusOf(true, true)).toBe('open')
+    expect(seasonStatusOf(false, true)).toBe('closed')
+    expect(seasonStatusOf(false, false)).toBe('unknown')
   })
 })

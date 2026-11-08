@@ -101,6 +101,7 @@ export function ChatPage() {
   const [conversationId, setConversationId] = useState<string | undefined>(session.conversationId)
   const [suggestions, setSuggestions] = useState<string[]>(FALLBACK_SUGGESTIONS)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const scrollBoxRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Persist to localStorage whenever messages/conversationId change
@@ -109,8 +110,11 @@ export function ChatPage() {
   }, [messages, conversationId])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+    // Scroll only the message list. scrollIntoView also scrolled the page, which sent a phone to
+    // the footer after every answer.
+    const box = scrollBoxRef.current
+    if (box) box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' })
+  }, [messages, isLoading])
 
   // Auto-send if ?q= param is present (deep link from Regulations/Migration pages)
   const autoSentRef = useRef(false)
@@ -253,7 +257,9 @@ export function ChatPage() {
   const isEmpty = messages.length === 0
 
   return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+    // Fills the space Layout leaves under the header (Layout drops the footer here), so only the
+    // message list scrolls, not the page around it
+    <div className="flex-1 min-h-0 flex flex-col" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
       {/* Header */}
       <div className="border-b px-4 py-3" style={{ backgroundColor: `rgb(var(--color-bg-elevated))`, borderColor: `rgb(var(--color-border-primary))` }}>
         <div className="max-w-3xl mx-auto flex items-center justify-between">
@@ -274,6 +280,7 @@ export function ChatPage() {
               className="flex items-center gap-1.5 text-xs px-2 py-1.5 rounded-md hover:bg-earth-100 dark:hover:bg-earth-800 transition-colors"
               style={{ color: `rgb(var(--color-text-tertiary))` }}
               title="Clear conversation"
+              aria-label="Start a new chat"
             >
               <RotateCcw className="w-3.5 h-3.5" /> New chat
             </button>
@@ -282,7 +289,7 @@ export function ChatPage() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollBoxRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         <div className="max-w-3xl mx-auto px-4 py-6">
           {isEmpty ? (
             <div className="text-center py-12">
@@ -459,8 +466,10 @@ export function ChatPage() {
       >
         <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
           <div className="flex gap-3">
+            <label htmlFor="chat-input" className="sr-only">Your question</label>
             <input
               ref={inputRef}
+              id="chat-input"
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -469,7 +478,7 @@ export function ChatPage() {
               disabled={isLoading}
               autoComplete="off"
             />
-            <button type="submit" disabled={!input.trim() || isLoading} className="btn-primary px-6">
+            <button type="submit" disabled={!input.trim() || isLoading} className="btn-primary px-6" aria-label="Send question">
               <Send className="w-5 h-5" />
             </button>
           </div>

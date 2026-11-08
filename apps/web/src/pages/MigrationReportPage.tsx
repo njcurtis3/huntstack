@@ -5,6 +5,10 @@ import {
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { parseCalendarDate } from '../lib/dates'
+import {
+  computeMigrationIndex, freshWindowLabel, getAnomaly, getMigrationStatus, headlineStats,
+  type AnomalyType, type MigrationStatus,
+} from '../lib/migrationStats'
 
 // ─── Types (mirrored from MigrationPage) ──────────────────────────────────────
 
@@ -32,11 +36,6 @@ type PushFactor = {
   temperature: number | null
   temperatureUnit: string | null
 }
-
-type MigrationStatus =
-  | 'arriving' | 'building' | 'peak' | 'declining' | 'departing' | 'first_survey' | null
-
-type AnomalyType = 'spike' | 'drop' | null
 
 // ─── Pure helpers (copied from MigrationPage) ─────────────────────────────────
 
@@ -70,47 +69,6 @@ const STATUS_CONFIG: Record<NonNullable<MigrationStatus>, { label: string; color
 }
 
 const PUSH_SCORE_LABELS = ['Low', 'Moderate', 'High', 'Extreme']
-
-function getMigrationStatus(
-  trend: 'increasing' | 'decreasing' | 'stable' | 'new',
-  deltaPercent: number | null,
-): MigrationStatus {
-  if (trend === 'new') return 'first_survey'
-  if (trend === 'increasing') return (deltaPercent !== null && deltaPercent > 20) ? 'arriving' : 'building'
-  if (trend === 'stable') return 'peak'
-  if (trend === 'decreasing') return (deltaPercent !== null && deltaPercent < -20) ? 'departing' : 'declining'
-  return null
-}
-
-function getAnomaly(count: number, deltaPercent: number | null, previousCount: number | null): AnomalyType {
-  if (deltaPercent === null || previousCount === null) return null
-  if (deltaPercent >= 30 && count >= 500) return 'spike'
-  if (deltaPercent <= -40 && previousCount >= 500) return 'drop'
-  return null
-}
-
-function computeMigrationIndex(
-  counts: Array<{ trend: string; anomaly: AnomalyType; deltaPercent: number | null }>,
-  overallPushScore: number,
-): { score: number; label: string } {
-  if (counts.length === 0) return { score: 0, label: 'Quiet' }
-  const withData = counts.filter(c => c.trend !== 'new')
-  const increasing = withData.filter(c => c.trend === 'increasing').length
-  const trendScore = withData.length > 0 ? Math.round((increasing / withData.length) * 25) : 0
-  const posDeltas = withData.filter(c => c.deltaPercent !== null && c.deltaPercent > 0)
-  const avgDelta = posDeltas.length > 0 ? posDeltas.reduce((s, c) => s + (c.deltaPercent ?? 0), 0) / posDeltas.length : 0
-  const volumeScore = Math.min(25, Math.round((avgDelta / 60) * 25))
-  const weatherScore = Math.round((overallPushScore / 3) * 25)
-  const spikes = counts.filter(c => c.anomaly === 'spike').length
-  const drops = counts.filter(c => c.anomaly === 'drop').length
-  const anomalyScore = Math.max(0, Math.min(25, 12 + spikes * 6 - drops * 4))
-  const total = Math.min(100, trendScore + volumeScore + weatherScore + anomalyScore)
-  let label = 'Quiet'
-  if (total >= 76) label = 'Peak Movement'
-  else if (total >= 51) label = 'Strong'
-  else if (total >= 26) label = 'Active'
-  return { score: total, label }
-}
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -172,7 +130,7 @@ function StateReportCard({ sg }: { sg: StateGroup }) {
         </div>
         <div>
           <div style={{ fontSize: 24, fontWeight: 700, color: '#1f2328' }}>{sg.refugeCount}</div>
-          <div style={{ fontSize: 11, color: '#57606a' }}>refuges reporting</div>
+          <div style={{ fontSize: 11, color: '#57606a' }}>sites reporting</div>
         </div>
         <div>
           <div style={{ fontSize: 24, fontWeight: 700, color: '#1f2328' }}>{sg.speciesCount}</div>
@@ -207,6 +165,7 @@ export function MigrationReportPage() {
   const [counts, setCounts] = useState<CurrentCount[]>([])
   const [pushData, setPushData] = useState<{ pushFactors: PushFactor[]; overallPushScore: number } | null>(null)
   const [summary, setSummary] = useState<{ summary: string; generatedAt: string } | null>(null)
+  const [stateActivity, setStateActivity] = useState<Array<{ activityLevel: 'high' | 'moderate' | 'low' }> | undefined>(undefined)
   const [loading, setLoading] = useState(true)
 
   // Update page title
@@ -223,13 +182,17 @@ export function MigrationReportPage() {
     async function load() {
       setLoading(true)
       try {
-        const [dashboardData, summaryData] = await Promise.all([
+        const [dashboardData, summaryData, activity] = await Promise.all([
           api.getMigrationDashboard({ flyway, species }),
           api.getMigrationWeeklySummary({ flyway, species }),
+          // Part of the Migration Index, the same as on the Migration page
+          api.getMigrationRegionalActivity({ flyway, species }).catch(() => null),
         ])
         if (cancelled) return
-        setCounts(dashboardData.currentCounts)
+        // The same counts the Migration page's headline uses: fresh agency surveys only
+        setCounts(headlineStats(dashboardData.currentCounts as CurrentCount[]).fresh)
         setSummary(summaryData)
+        setStateActivity(activity?.stateActivity)
 
         // Fetch push factors for states in the data
         const states = [...new Set(dashboardData.currentCounts.map((c: CurrentCount) => c.state))]
@@ -306,10 +269,10 @@ export function MigrationReportPage() {
       anomaly: getAnomaly(c.count, c.deltaPercent, c.previousCount),
       deltaPercent: c.deltaPercent,
     }))
-    return computeMigrationIndex(enriched, pushData?.overallPushScore ?? 0)
-  }, [counts, pushData])
+    return computeMigrationIndex(enriched, pushData?.overallPushScore ?? 0, stateActivity)
+  }, [counts, pushData, stateActivity])
 
-  const totalBirds = counts.reduce((s, c) => s + c.count, 0)
+  const totalBirds = counts.reduce((s, c) => s + c.count, 0) // counts are already the fresh ones
   const refugeCount = new Set(counts.map(c => c.refugeId)).size
   const overallPushScore = pushData?.overallPushScore ?? 0
   const pushLabel = PUSH_SCORE_LABELS[Math.min(overallPushScore, 3)]
@@ -330,7 +293,7 @@ export function MigrationReportPage() {
       <style>{`@media print { .no-print { display: none !important; } body { background: #fff; } }`}</style>
 
       {/* Header */}
-      <div style={{ borderBottom: '1px solid #d0d7de', padding: '16px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff' }} className="no-print">
+      <div style={{ borderBottom: '1px solid #d0d7de', padding: '12px 16px', display: 'flex', flexWrap: 'wrap', rowGap: 8, columnGap: 16, alignItems: 'center', justifyContent: 'space-between', background: '#fff' }} className="no-print">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <img src="/duck-image-1.png" alt="HuntStack" style={{ width: 28, height: 28 }} />
           <span style={{ fontWeight: 700, fontSize: 16, color: '#1f2328' }}>huntstack</span>
@@ -349,11 +312,11 @@ export function MigrationReportPage() {
       <div style={{ display: 'none', padding: '20px 32px 0' }} className="print-only">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
           <Bird style={{ width: 20, height: 20, color: '#1f883d' }} />
-          <span style={{ fontWeight: 700, fontSize: 18, color: '#1f2328' }}>huntstack.com — Migration Conditions Report</span>
+          <span style={{ fontWeight: 700, fontSize: 18, color: '#1f2328' }}>huntstack.pages.dev — Migration Conditions Report</span>
         </div>
       </div>
 
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '32px 24px' }}>
+      <div style={{ maxWidth: 900, margin: '0 auto', padding: '24px 16px' }}>
 
         {/* Report title block */}
         <div style={{ marginBottom: 32 }}>
@@ -398,10 +361,10 @@ export function MigrationReportPage() {
             )}
 
             {/* Summary Stats Row */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16, marginBottom: 24 }}>
               {[
-                { label: 'Total Birds', value: totalBirds.toLocaleString() },
-                { label: 'Refuges Reporting', value: refugeCount.toString() },
+                { label: 'Birds Counted', value: totalBirds.toLocaleString(), sub: `agency surveys, ${freshWindowLabel(new Date())}` },
+                { label: 'Sites Reporting', value: refugeCount.toString() },
                 { label: 'Migration Index', value: `${migrationIndex.score}/100`, sub: migrationIndex.label },
               ].map(stat => (
                 <div key={stat.label} style={{ border: '1px solid #d0d7de', borderRadius: 8, padding: '16px 20px', background: '#fff', textAlign: 'center' }}>
@@ -450,7 +413,7 @@ export function MigrationReportPage() {
                 <h2 style={{ fontSize: 16, fontWeight: 600, color: '#1f2328', marginBottom: 14 }}>
                   Current Activity by State
                 </h2>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 380px), 1fr))', gap: 16 }}>
                   {stateGroups.map(sg => (
                     <StateReportCard key={sg.state} sg={sg} />
                   ))}
@@ -469,7 +432,7 @@ export function MigrationReportPage() {
         {/* Footer */}
         <div style={{ marginTop: 48, paddingTop: 24, borderTop: '1px solid #d0d7de', fontSize: 12, color: '#57606a' }}>
           <p style={{ margin: '0 0 4px' }}>
-            Generated {generatedDate} · Data from USFWS, state wildlife agencies, and NWS · <strong>huntstack.com</strong>
+            Generated {generatedDate} · Data from USFWS, state wildlife agencies, and NWS · <strong>huntstack.pages.dev</strong>
           </p>
           <p style={{ margin: 0 }}>
             Always verify regulations with official sources before hunting.

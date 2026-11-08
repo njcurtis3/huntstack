@@ -146,18 +146,18 @@ function SourceCard({ group, summary }: { group: SourceGroup; summary?: string |
       )}
       <ul className="space-y-2">
         {group.sources.map((source) => (
-          <li key={source.url} className="flex items-start justify-between gap-2 text-sm">
+          <li key={source.url} className="flex flex-wrap items-start justify-between gap-x-2 gap-y-0.5 text-sm">
             <a
               href={source.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-accent-500 hover:underline flex items-center gap-1.5"
+              className="text-accent-500 hover:underline inline-flex items-center gap-1.5 min-w-0 [overflow-wrap:anywhere] py-1"
             >
               {source.name}
               <ExternalLink className="w-3 h-3 flex-shrink-0" />
             </a>
             {source.note && (
-              <span className="text-xs flex-shrink-0" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+              <span className="text-xs py-1" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                 {source.note}
               </span>
             )}

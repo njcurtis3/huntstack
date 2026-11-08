@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { getUser, onAuthStateChange, signIn, signOut, signUp } from '../lib/supabase'
+import { getUser, onAuthStateChange, sendPasswordReset, signIn, signOut, signUp, updatePassword } from '../lib/supabase'
 
 interface User {
   id: string
@@ -13,12 +13,16 @@ interface AuthState {
   user: User | null
   isLoading: boolean
   isAuthenticated: boolean
-  
+  /** Set when the person arrived from a password-reset email and must choose a new password */
+  passwordRecovery: boolean
+
   // Actions
   initialize: () => Promise<void>
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, userType?: 'hunter' | 'outfitter') => Promise<void>
   logout: () => Promise<void>
+  requestPasswordReset: (email: string) => Promise<void>
+  setNewPassword: (password: string) => Promise<void>
   setUser: (user: User | null) => void
 }
 
@@ -28,6 +32,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       isLoading: true,
       isAuthenticated: false,
+      passwordRecovery: false,
 
       initialize: async () => {
         try {
@@ -49,7 +54,8 @@ export const useAuthStore = create<AuthState>()(
 
           // Listen for auth changes
           onAuthStateChange((event, session) => {
-            if (event === 'SIGNED_IN' && session) {
+            if (event === 'PASSWORD_RECOVERY') set({ passwordRecovery: true })
+            if ((event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY') && session) {
               const user = session.user
               set({
                 user: {
@@ -99,6 +105,17 @@ export const useAuthStore = create<AuthState>()(
         } finally {
           set({ isLoading: false })
         }
+      },
+
+      requestPasswordReset: async (email: string) => {
+        const { error } = await sendPasswordReset(email)
+        if (error) throw error
+      },
+
+      setNewPassword: async (password: string) => {
+        const { error } = await updatePassword(password)
+        if (error) throw error
+        set({ passwordRecovery: false })
       },
 
       setUser: (user) => {
