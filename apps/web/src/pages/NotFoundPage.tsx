@@ -5,7 +5,7 @@ export function NotFoundPage() {
   return (
     <div className="min-h-[60vh] flex items-center justify-center px-4">
       <div className="text-center">
-        <img src="/duck-image-1.png" alt="" className="w-16 h-16 mx-auto mb-4" />
+        <img src="/duck-image-1.png" alt="" className="w-16 h-16 mx-auto mb-4 dark:invert" />
         <h1 className="text-4xl font-bold mb-4" style={{ color: `rgb(var(--color-text-primary))` }}>Page Not Found</h1>
         <p className="mb-8 max-w-md mx-auto" style={{ color: `rgb(var(--color-text-secondary))` }}>
           Looks like this trail went cold. The page you're looking for doesn't exist or has been moved.

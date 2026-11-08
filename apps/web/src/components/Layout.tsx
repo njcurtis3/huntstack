@@ -167,7 +167,7 @@ export function Layout() {
           <div className="flex justify-between items-center h-16">
             {/* Logo */}
             <Link to="/" className="flex items-center gap-2">
-              <img src="/duck-image-1.png" alt="HuntStack" className="w-8 h-8" />
+              <img src="/duck-image-1.png" alt="HuntStack" className="w-8 h-8 dark:invert" />
               <span className="font-semibold text-xl" style={{ color: `rgb(var(--color-text-primary))` }}>
                 huntstack
               </span>
