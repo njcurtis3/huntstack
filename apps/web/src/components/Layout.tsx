@@ -1,7 +1,6 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
 import {
   Home,
-  Map,
   Bird,
   FileText,
   Users,
@@ -16,7 +15,7 @@ import {
 import { useEffect, useState } from 'react'
 import { useThemeStore } from '../stores/themeStore'
 import { useAuthStore } from '../stores/authStore'
-import { AuthModal } from './AuthModal'
+import { AuthModal, type AuthMode } from './AuthModal'
 import { FieldReportSheet } from './FieldReportSheet'
 import { DismissibleNotice } from './DismissibleNotice'
 import { feedbackMailto } from '../lib/contact'
@@ -29,8 +28,8 @@ const primaryNav = [
   { name: 'Ask AI', href: '/chat', icon: MessageSquare },
 ]
 
+// The Map page is a "coming soon" placeholder: reachable by URL, not linked until it's built
 const secondaryNav = [
-  { name: 'Map', href: '/map', icon: Map },
   { name: 'Outfitters', href: '/outfitters', icon: Users },
 ]
 
@@ -42,24 +41,93 @@ const mobileNav = [
 ]
 
 // Where hunters are looking at birds, so where "Report birds" is offered.
-const reportRoutes = ['/migration', '/where-to-hunt', '/map']
+const reportRoutes = ['/migration', '/where-to-hunt']
+
+// Browser tab titles, so tabs, history and bookmarks can be told apart.
+const PAGE_TITLES: Array<[RegExp, string]> = [
+  [/^\/$/, 'HuntStack - Plan your hunt'],
+  [/^\/where-to-hunt/, 'Where to Hunt'],
+  [/^\/migration/, 'Migration'],
+  [/^\/regulations/, 'Regulations'],
+  [/^\/chat/, 'Ask AI'],
+  [/^\/outfitters\/list-your-business/, 'List Your Business'],
+  [/^\/outfitters\/dashboard/, 'Outfitter Dashboard'],
+  [/^\/outfitters\/reg-alerts/, 'Regulation Alerts'],
+  [/^\/outfitters/, 'Outfitters'],
+  [/^\/map/, 'Map'],
+  [/^\/data-sources/, 'Data Sources'],
+  [/^\/developers/, 'API'],
+  [/^\/about/, 'About'],
+  [/^\/contact/, 'Contact'],
+  [/^\/blog/, 'Blog'],
+  [/^\/privacy/, 'Privacy'],
+  [/^\/terms/, 'Terms'],
+  [/^\/admin/, 'Admin'],
+]
+
+function pageTitleFor(pathname: string): string {
+  const hit = PAGE_TITLES.find(([re]) => re.test(pathname))
+  if (!hit) return 'Page not found - HuntStack'
+  return pathname === '/' ? hit[1] : `${hit[1]} - HuntStack`
+}
 
 export function Layout() {
   const location = useLocation()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [authModal, setAuthModal] = useState<'signin' | 'signup' | null>(null)
+  const [authModal, setAuthModal] = useState<AuthMode | null>(null)
   const { resolvedTheme, setTheme } = useThemeStore()
-  const { user, isAuthenticated, initialize, logout } = useAuthStore()
+  const { user, isAuthenticated, initialize, logout, passwordRecovery } = useAuthStore()
   const [reportOpen, setReportOpen] = useState(false)
   // Set when a signed-out user taps Report birds: the sheet opens once sign-in lands.
   const [reportPending, setReportPending] = useState(false)
   const showReport = reportRoutes.includes(location.pathname.replace(/\/+$/, ''))
-  const onMigration = location.pathname.startsWith('/migration')
+  // Chat fills the screen under the header and scrolls inside itself, with no footer below
+  const fullHeight = location.pathname.startsWith('/chat')
 
   useEffect(() => {
     initialize()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Arrived from a password-reset email: ask for the new password
+  useEffect(() => {
+    if (passwordRecovery) setAuthModal('newpassword')
+  }, [passwordRecovery])
+
+  // A new page starts at the top (an outfitter opened from halfway down the list used to open at
+  // its footer), with its own tab title, and with the phone menu closed. Search-param changes on
+  // the same page (filters) keep their place.
+  useEffect(() => {
+    if (!location.hash) window.scrollTo(0, 0)
+    document.title = pageTitleFor(location.pathname)
+    setMobileMenuOpen(false)
+  }, [location.pathname, location.hash])
+
+  // Hide the phone Report birds button while a page's main button is on screen (it covered
+  // Find Hunts). Pages mark that button with data-fab-avoid.
+  const [fabBlocked, setFabBlocked] = useState(false)
+  useEffect(() => {
+    setFabBlocked(false)
+    if (!showReport || typeof IntersectionObserver === 'undefined') return
+    let observer: IntersectionObserver | null = null
+    const t = window.setTimeout(() => {
+      const targets = document.querySelectorAll('[data-fab-avoid]')
+      if (targets.length === 0) return
+      const visible = new Set<Element>()
+      observer = new IntersectionObserver(entries => {
+        for (const e of entries) {
+          if (e.isIntersecting) visible.add(e.target)
+          else visible.delete(e.target)
+        }
+        setFabBlocked(visible.size > 0)
+      })
+      targets.forEach(el => observer!.observe(el))
+    }, 300)
+    return () => {
+      window.clearTimeout(t)
+      observer?.disconnect()
+    }
+  }, [location.pathname, showReport])
 
   useEffect(() => {
     if (!reportPending) return
@@ -86,7 +154,7 @@ export function Layout() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className={fullHeight ? 'h-[100dvh] flex flex-col' : 'min-h-screen flex flex-col'}>
       {/* Header — GitHub-style */}
       <header
         className="sticky top-0 z-50 border-b"
@@ -205,8 +273,11 @@ export function Layout() {
                 )}
               </button>
               <button
-                className="p-2 rounded-md hover:bg-earth-100 dark:hover:bg-earth-800"
+                className="p-2.5 rounded-md hover:bg-earth-100 dark:hover:bg-earth-800"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+                aria-expanded={mobileMenuOpen}
+                aria-controls="mobile-menu"
               >
                 {mobileMenuOpen ? (
                   <X className="w-6 h-6" />
@@ -221,6 +292,7 @@ export function Layout() {
         {/* Mobile Navigation */}
         {mobileMenuOpen && (
           <div
+            id="mobile-menu"
             className="md:hidden border-t"
             style={{
               backgroundColor: `rgb(var(--color-bg-elevated))`,
@@ -337,48 +409,46 @@ export function Layout() {
       </DismissibleNotice>
 
       {/* Main Content */}
-      <main className="flex-1">
+      {/* On phones, room at the bottom so the Report birds button never covers the last content */}
+      <main className={`flex-1 ${fullHeight ? 'min-h-0 flex flex-col' : ''} ${showReport ? 'pb-20 md:pb-0' : ''}`}>
         <Outlet />
       </main>
 
       {/* Footer — GitHub-style */}
-      <footer className="border-t" style={{ backgroundColor: `rgb(var(--color-bg-secondary))`, borderColor: `rgb(var(--color-border-primary))` }}>
+      {!fullHeight && <footer className="border-t" style={{ backgroundColor: `rgb(var(--color-bg-secondary))`, borderColor: `rgb(var(--color-border-primary))` }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             <div>
               <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Hunters</h3>
-              <ul className="space-y-2 text-sm">
-                <li><Link to="/where-to-hunt" className="text-accent-500 hover:underline">Where to Hunt</Link></li>
-                <li><Link to="/map" className="text-accent-500 hover:underline">Explore Map</Link></li>
-                <li><Link to="/migration" className="text-accent-500 hover:underline">Migration</Link></li>
-                <li><Link to="/regulations" className="text-accent-500 hover:underline">Regulations</Link></li>
-                <li><Link to="/chat" className="text-accent-500 hover:underline">Ask AI</Link></li>
+              <ul className="space-y-1 text-sm">
+                <li><Link to="/where-to-hunt" className="inline-block py-1.5 text-accent-500 hover:underline">Where to Hunt</Link></li>
+                <li><Link to="/migration" className="inline-block py-1.5 text-accent-500 hover:underline">Migration</Link></li>
+                <li><Link to="/regulations" className="inline-block py-1.5 text-accent-500 hover:underline">Regulations</Link></li>
+                <li><Link to="/chat" className="inline-block py-1.5 text-accent-500 hover:underline">Ask AI</Link></li>
               </ul>
             </div>
             <div>
               <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Outfitters</h3>
-              <ul className="space-y-2 text-sm">
-                <li><Link to="/outfitters/list-your-business" className="text-accent-500 hover:underline">List Your Business</Link></li>
-                <li><Link to="/outfitters/reg-alerts" className="text-accent-500 hover:underline">Reg Alerts</Link></li>
-                <li><Link to="/outfitters/dashboard" className="text-accent-500 hover:underline">Dashboard</Link></li>
+              <ul className="space-y-1 text-sm">
+                <li><Link to="/outfitters/list-your-business" className="inline-block py-1.5 text-accent-500 hover:underline">List Your Business</Link></li>
+                <li><Link to="/outfitters/dashboard" className="inline-block py-1.5 text-accent-500 hover:underline">Dashboard</Link></li>
               </ul>
             </div>
             <div>
               <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Resources</h3>
-              <ul className="space-y-2 text-sm">
-                <li><Link to="/blog" className="text-accent-500 hover:underline">Blog</Link></li>
-                <li><Link to="/data-sources" className="text-accent-500 hover:underline">Data Sources</Link></li>
-                <li><Link to="/developers" className="text-accent-500 hover:underline">API</Link></li>
+              <ul className="space-y-1 text-sm">
+                <li><Link to="/data-sources" className="inline-block py-1.5 text-accent-500 hover:underline">Data Sources</Link></li>
+                <li><Link to="/developers" className="inline-block py-1.5 text-accent-500 hover:underline">API</Link></li>
               </ul>
             </div>
             <div>
               <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Company</h3>
-              <ul className="space-y-2 text-sm">
-                <li><Link to="/about" className="text-accent-500 hover:underline">About</Link></li>
-                <li><Link to="/contact" className="text-accent-500 hover:underline">Contact</Link></li>
-                <li><a href={feedbackMailto(typeof window !== 'undefined' ? window.location.href : location.pathname)} className="text-accent-500 hover:underline">Send Feedback</a></li>
-                <li><Link to="/privacy" className="text-accent-500 hover:underline">Privacy</Link></li>
-                <li><Link to="/terms" className="text-accent-500 hover:underline">Terms</Link></li>
+              <ul className="space-y-1 text-sm">
+                <li><Link to="/about" className="inline-block py-1.5 text-accent-500 hover:underline">About</Link></li>
+                <li><Link to="/contact" className="inline-block py-1.5 text-accent-500 hover:underline">Contact</Link></li>
+                <li><a href={feedbackMailto(typeof window !== 'undefined' ? window.location.href : location.pathname)} className="inline-block py-1.5 text-accent-500 hover:underline">Send Feedback</a></li>
+                <li><Link to="/privacy" className="inline-block py-1.5 text-accent-500 hover:underline">Privacy</Link></li>
+                <li><Link to="/terms" className="inline-block py-1.5 text-accent-500 hover:underline">Terms</Link></li>
               </ul>
             </div>
           </div>
@@ -390,17 +460,17 @@ export function Layout() {
             </p>
           </div>
         </div>
-      </footer>
+      </footer>}
 
-      {/* Mobile: Report FAB. On /migration it stacks above that page's Ask HuntStack AI button. */}
-      {showReport && !reportOpen && (
+      {/* Mobile: Report FAB. Hidden while the page's own main button is on screen. */}
+      {showReport && !reportOpen && !fabBlocked && (
         <button
           onClick={openReport}
           data-report-trigger
           className="md:hidden fixed right-4 z-40 flex items-center gap-2 px-4 min-h-12 rounded-full shadow-lg text-white text-base font-medium"
           style={{
             backgroundColor: 'rgb(var(--color-accent-600, 5 150 105))',
-            bottom: `calc(${onMigration ? '5.5rem' : '1rem'} + env(safe-area-inset-bottom))`,
+            bottom: 'calc(1rem + env(safe-area-inset-bottom))',
           }}
         >
           <Bird className="w-5 h-5" />

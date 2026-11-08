@@ -2,8 +2,9 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Loader2, Crosshair, TrendingUp, TrendingDown, Minus, Sparkles,
   ExternalLink, CheckCircle2, XCircle, AlertCircle, Wind, Thermometer, Zap,
-  MapPin, Navigation, X as XIcon, ArrowUpDown,
+  MapPin, Navigation, X as XIcon, ArrowUpDown, HelpCircle, Lock, Ban,
 } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '../lib/api'
 import { parseCalendarDate } from '../lib/dates'
 
@@ -16,6 +17,25 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 }
 
 const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
+
+// Where a hunter checks seasons for a state HuntStack has no season dates for
+const STATE_AGENCIES: Record<string, { name: string; url: string }> = {
+  MO: { name: 'Missouri Dept. of Conservation', url: 'https://mdc.mo.gov/hunting-trapping/species/waterfowl' },
+  IL: { name: 'Illinois DNR', url: 'https://dnr.illinois.gov/hunting/waterfowl.html' },
+  IA: { name: 'Iowa DNR', url: 'https://www.iowadnr.gov/hunting/migratory-game-birds' },
+}
+
+type Access = 'public' | 'limited' | 'closed' | 'private' | 'unknown'
+
+const ACCESS_CONFIG: Record<Access, { label: string; className: string }> = {
+  public:  { label: 'Public hunting', className: 'bg-forest-100 dark:bg-forest-900/40 text-forest-700 dark:text-forest-300' },
+  limited: { label: 'Limited public hunting', className: 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300' },
+  closed:  { label: 'Closed to waterfowl hunting', className: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300' },
+  private: { label: 'Private land', className: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300' },
+  unknown: { label: 'Access not verified', className: 'bg-earth-100 dark:bg-earth-800 text-earth-700 dark:text-earth-300' },
+}
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 type MigrationStatus = 'arriving' | 'building' | 'peak' | 'declining' | 'departing' | 'first_survey' | 'no_data'
 
@@ -42,6 +62,10 @@ type Recommendation = {
   coldFrontPresent: boolean
   coldFrontIncoming: boolean
   seasonOpen: boolean
+  seasonStatus?: 'open' | 'closed' | 'unknown'
+  access?: Access
+  accessNote?: string | null
+  accessSource?: string | null
   seasonName: string | null
   seasonStart: string | null
   seasonEnd: string | null
@@ -122,9 +146,12 @@ function TrendBadge({ trend, delta, deltaPercent }: {
   }
 
   const formattedDelta = delta !== null ? `${delta >= 0 ? '+' : ''}${delta.toLocaleString()}` : null
-  const formattedPct = deltaPercent !== null
-    ? ` (${deltaPercent >= 0 ? '+' : ''}${deltaPercent.toFixed(1)}%)`
-    : ''
+  // "+9400%" means nothing to a hunter; past doubling, say how many times more
+  const formattedPct = deltaPercent === null
+    ? ''
+    : deltaPercent >= 100
+      ? ` (${Math.round(1 + deltaPercent / 100)}× last survey)`
+      : ` (${deltaPercent >= 0 ? '+' : ''}${deltaPercent.toFixed(1)}%)`
 
   if (trend === 'stable') return (
     <span className="flex items-center gap-1 text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
@@ -172,11 +199,21 @@ function RankBadge({ rank }: { rank: number }) {
 }
 
 export function WhereToHuntPage() {
-  const [selectedSpecies, setSelectedSpecies] = useState('')
-  const [selectedStates, setSelectedStates] = useState<Set<string>>(new Set(V1_STATES))
-  const [selectedDate, setSelectedDate] = useState(() => {
-    return new Date().toISOString().split('T')[0]
+  // Filters live in the URL so a search can be shared, bookmarked and refreshed
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [selectedSpecies, setSelectedSpecies] = useState(() => searchParams.get('species') ?? '')
+  const [selectedStates, setSelectedStates] = useState<Set<string>>(() => {
+    const fromUrl = (searchParams.get('states') ?? '').split(',').filter(s => V1_STATES.includes(s))
+    return new Set(fromUrl.length > 0 ? fromUrl : V1_STATES)
   })
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = searchParams.get('date')
+    return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : new Date().toISOString().split('T')[0]
+  })
+  const [includeNoAccess, setIncludeNoAccess] = useState(() => searchParams.get('all') === '1')
+  const [hiddenNoAccess, setHiddenNoAccess] = useState(0)
+  const [statesWithoutSeasonData, setStatesWithoutSeasonData] = useState<string[]>([])
+  const resultsRef = useRef<HTMLDivElement>(null)
   const [speciesOptions, setSpeciesOptions] = useState<SpeciesOption[]>([])
 
   const [results, setResults] = useState<Recommendation[] | null>(null)
@@ -300,25 +337,51 @@ export function WhereToHuntPage() {
     })
   }
 
-  const handleSearch = async () => {
+  const handleSearch = async (opts: { includeNoAccess?: boolean } = {}) => {
+    const withNoAccess = opts.includeNoAccess ?? includeNoAccess
     setLoading(true)
     setError(null)
     setHasSearched(true)
+    const states = V1_STATES.filter(s => selectedStates.has(s))
+    const next = new URLSearchParams()
+    if (selectedSpecies) next.set('species', selectedSpecies)
+    next.set('date', selectedDate)
+    if (states.length < V1_STATES.length) next.set('states', states.join(','))
+    if (withNoAccess) next.set('all', '1')
+    next.set('go', '1')
+    setSearchParams(next, { replace: true })
+    // On a phone the results sit below the form; bring them into view
+    requestAnimationFrame(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
     try {
       const data = await api.getHuntRecommendations({
         species: selectedSpecies || undefined,
-        states: [...selectedStates].join(','),
+        states: states.join(','),
         date: selectedDate,
         limit: 10,
+        includeNoAccess: withNoAccess || undefined,
       })
       setResults(data.recommendations)
       setTotalLocations(data.totalLocations)
+      setHiddenNoAccess(data.hiddenNoAccess ?? 0)
+      setStatesWithoutSeasonData(data.statesWithoutSeasonData ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch recommendations')
       setResults(null)
     } finally {
       setLoading(false)
     }
+  }
+
+  // A shared or refreshed search link runs its search
+  useEffect(() => {
+    if (searchParams.get('go') === '1') handleSearch()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const toggleIncludeNoAccess = () => {
+    const next = !includeNoAccess
+    setIncludeNoAccess(next)
+    handleSearch({ includeNoAccess: next })
   }
 
   const bagLimitStr = (bl: unknown): string | null => {
@@ -352,10 +415,11 @@ export function WhereToHuntPage() {
           <div className="grid md:grid-cols-3 gap-6 mb-6">
             {/* Species */}
             <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
+              <label htmlFor="wth-species" className="block text-sm font-medium mb-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
                 Species
               </label>
               <select
+                id="wth-species"
                 className="input w-full"
                 value={selectedSpecies}
                 onChange={e => setSelectedSpecies(e.target.value)}
@@ -369,10 +433,11 @@ export function WhereToHuntPage() {
 
             {/* Date */}
             <div>
-              <label className="block text-sm font-medium mb-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
+              <label htmlFor="wth-date" className="block text-sm font-medium mb-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
                 Hunt Date
               </label>
               <input
+                id="wth-date"
                 type="date"
                 className="input w-full"
                 value={selectedDate}
@@ -383,8 +448,9 @@ export function WhereToHuntPage() {
             {/* Search button */}
             <div className="flex items-end">
               <button
-                onClick={handleSearch}
+                onClick={() => handleSearch()}
                 disabled={loading}
+                data-fab-avoid
                 className="btn-primary w-full flex items-center justify-center gap-2"
               >
                 {loading ? (
@@ -399,7 +465,7 @@ export function WhereToHuntPage() {
 
           {/* Near Me */}
           <div className="border-t pt-5 mt-1" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
-            <label className="block text-sm font-medium mb-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
+            <label htmlFor="wth-location" className="block text-sm font-medium mb-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
               Near Me <span className="font-normal text-xs ml-1" style={{ color: 'rgb(var(--color-text-tertiary))' }}>— sort by distance from your location</span>
             </label>
             <div className="flex gap-2">
@@ -407,6 +473,7 @@ export function WhereToHuntPage() {
                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'rgb(var(--color-text-tertiary))' }} />
                 <input
                   ref={locationInputRef}
+                  id="wth-location"
                   type="text"
                   value={locationInput}
                   onChange={e => setLocationInput(e.target.value)}
@@ -417,7 +484,8 @@ export function WhereToHuntPage() {
                 {locationInput && (
                   <button
                     onClick={clearLocation}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:opacity-70"
+                    aria-label="Clear location"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded hover:opacity-70"
                     style={{ color: 'rgb(var(--color-text-tertiary))' }}
                   >
                     <XIcon className="w-3.5 h-3.5" />
@@ -436,6 +504,7 @@ export function WhereToHuntPage() {
                 onClick={handleGps}
                 disabled={locationLoading}
                 title="Use my current location"
+                aria-label="Use my current location"
                 className="btn-secondary px-3 flex items-center gap-1.5 text-sm"
               >
                 {locationLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
@@ -453,16 +522,17 @@ export function WhereToHuntPage() {
 
           {/* State pills */}
           <div className="mt-5">
-            <label className="block text-sm font-medium mb-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
+            <p id="wth-states" className="block text-sm font-medium mb-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
               States
-            </label>
-            <div className="flex flex-wrap gap-2">
+            </p>
+            <div className="flex flex-wrap gap-2" role="group" aria-labelledby="wth-states">
               {V1_STATES.map(code => {
                 const active = selectedStates.has(code)
                 return (
                   <button
                     key={code}
                     onClick={() => toggleState(code)}
+                    aria-pressed={active}
                     className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
                       active
                         ? 'bg-accent-600 dark:bg-accent-700 text-white border-accent-600 dark:border-accent-700'
@@ -483,6 +553,8 @@ export function WhereToHuntPage() {
           </div>
         </div>
 
+        <div ref={resultsRef} className="scroll-mt-20" />
+
         {/* Scoring Legend */}
         <div className="flex flex-wrap gap-4 mb-6 text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
           <span className="font-medium" style={{ color: 'rgb(var(--color-text-secondary))' }}>Score factors:</span>
@@ -493,6 +565,7 @@ export function WhereToHuntPage() {
           <span>Push factor <span className="font-medium">10 pts</span></span>
           <span>Migration status <span className="font-medium">10 pts</span></span>
           <span>Spike bonus <span className="font-medium">+5</span></span>
+          <span className="w-full sm:w-auto">Places with an open season come first, then places with no season data, then closed ones.</span>
         </div>
 
         {/* Loading */}
@@ -528,6 +601,43 @@ export function WhereToHuntPage() {
             <p className="text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
               Recommendations use refuge counts from the last few weeks. Try expanding your state selection or choosing a different species, or check back after the next weekly survey.
             </p>
+          </div>
+        )}
+
+        {/* What was left out, and what HuntStack doesn't know */}
+        {!loading && !error && hasSearched && (hiddenNoAccess > 0 || includeNoAccess || statesWithoutSeasonData.length > 0) && (
+          <div className="card p-4 mb-4 text-sm space-y-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
+            {statesWithoutSeasonData.length > 0 && (
+              <p className="flex items-start gap-2">
+                <HelpCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>
+                  HuntStack doesn't have season dates for {statesWithoutSeasonData.join(', ')} yet, so places there are
+                  listed after places with an open season. Check dates with{' '}
+                  {statesWithoutSeasonData.some(c => STATE_AGENCIES[c])
+                    ? statesWithoutSeasonData.filter(c => STATE_AGENCIES[c]).map((c, i, arr) => (
+                        <span key={c}>
+                          <a href={STATE_AGENCIES[c].url} target="_blank" rel="noopener noreferrer" className="underline text-accent-600 dark:text-accent-400">
+                            {STATE_AGENCIES[c].name}
+                          </a>{i < arr.length - 1 ? ', ' : ''}
+                        </span>
+                      ))
+                    : 'the state wildlife agency'}.
+                </span>
+              </p>
+            )}
+            {(hiddenNoAccess > 0 || includeNoAccess) && (
+              <p className="flex items-start gap-2">
+                <Lock className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>
+                  {includeNoAccess
+                    ? 'Showing private places and places closed to waterfowl hunting too. They are survey sites, not hunting spots.'
+                    : `${hiddenNoAccess} place${hiddenNoAccess === 1 ? ' is' : 's are'} hidden because ${hiddenNoAccess === 1 ? "it's" : "they're"} private or closed to waterfowl hunting.`}{' '}
+                  <button onClick={toggleIncludeNoAccess} className="underline text-accent-600 dark:text-accent-400 py-1">
+                    {includeNoAccess ? 'Hide them' : 'Show them anyway'}
+                  </button>
+                </span>
+              </p>
+            )}
           </div>
         )}
 
@@ -592,7 +702,7 @@ export function WhereToHuntPage() {
                             </span>
                             {rec.flyway && (
                               <span className={`text-xs rounded px-2 py-0.5 ${FLYWAY_COLORS[rec.flyway] || 'bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300'}`}>
-                                {rec.flyway}
+                                {capitalize(rec.flyway)} Flyway
                               </span>
                             )}
                             {rec.migrationStatus && rec.migrationStatus !== 'no_data' && MIGRATION_STATUS_CONFIG[rec.migrationStatus].label && (
@@ -616,7 +726,8 @@ export function WhereToHuntPage() {
                             href={rec.websiteUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="flex-shrink-0 text-accent-500 hover:text-accent-600 dark:hover:text-accent-400"
+                            aria-label={`${rec.locationName} website (opens in a new tab)`}
+                            className="flex-shrink-0 -m-2 p-2 text-accent-500 hover:text-accent-600 dark:hover:text-accent-400"
                           >
                             <ExternalLink className="w-4 h-4" />
                           </a>
@@ -624,6 +735,28 @@ export function WhereToHuntPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Hunting access */}
+                  {(() => {
+                    const access = rec.access ?? 'unknown'
+                    const cfg = ACCESS_CONFIG[access]
+                    const Icon = access === 'closed' || access === 'private' ? Ban : access === 'unknown' ? HelpCircle : CheckCircle2
+                    const note = rec.accessNote ?? (access === 'unknown' ? 'Check with the managing agency before you go.' : null)
+                    return (
+                      <div className="mb-3 text-xs flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-medium ${cfg.className}`}>
+                          <Icon className="w-3.5 h-3.5" />
+                          {cfg.label}
+                        </span>
+                        {note && <span style={{ color: 'rgb(var(--color-text-secondary))' }}>{note}</span>}
+                        {rec.accessSource && (
+                          <a href={rec.accessSource} target="_blank" rel="noopener noreferrer" className="underline text-accent-600 dark:text-accent-400">
+                            Hunting rules
+                          </a>
+                        )}
+                      </div>
+                    )
+                  })()}
 
                   {/* Score bar */}
                   <div className="mb-4">
@@ -677,10 +810,24 @@ export function WhereToHuntPage() {
                             </p>
                           )}
                         </div>
-                      ) : (
+                      ) : rec.seasonStatus === 'closed' ? (
                         <div className="flex items-center gap-1" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
                           <XCircle className="w-4 h-4 flex-shrink-0" />
-                          <span className="text-sm">Closed / No data</span>
+                          <span className="text-sm">Closed on this date</span>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-1 text-amber-700 dark:text-amber-300">
+                            <HelpCircle className="w-4 h-4 flex-shrink-0" />
+                            <span className="text-sm font-medium">No season data</span>
+                          </div>
+                          {STATE_AGENCIES[rec.state] ? (
+                            <a href={STATE_AGENCIES[rec.state].url} target="_blank" rel="noopener noreferrer" className="text-xs underline text-accent-600 dark:text-accent-400">
+                              Check {STATE_AGENCIES[rec.state].name}
+                            </a>
+                          ) : (
+                            <p className="text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>Check the state agency</p>
+                          )}
                         </div>
                       )}
                     </div>
@@ -711,8 +858,8 @@ export function WhereToHuntPage() {
                       )}
                       {/* Push factor indicator */}
                       {rec.pushScore > 0 && (
-                        <div className="mt-1.5 flex items-center gap-1">
-                          <span className="text-xs font-medium text-blue-600 dark:text-blue-400">Push</span>
+                        <div className="mt-1.5 flex items-center gap-1" title="Weather pushing birds south: cold front, north wind, freezing temperatures">
+                          <span className="text-xs font-medium text-blue-600 dark:text-blue-400">Weather push {rec.pushScore}/3</span>
                           <span className="flex gap-0.5">
                             {[1,2,3].map(n => (
                               <span key={n} className={`w-2 h-2 rounded-full ${n <= rec.pushScore ? 'bg-blue-500' : 'bg-earth-300 dark:bg-earth-600'}`} />
@@ -782,7 +929,7 @@ export function WhereToHuntPage() {
               Select your species, target date, and states above — then hit "Find Hunts" to see
               locations ranked by bird activity, open seasons, and weather.
             </p>
-            <button onClick={handleSearch} className="btn-primary">
+            <button onClick={() => handleSearch()} className="btn-primary">
               Find Hunts Now
             </button>
           </div>

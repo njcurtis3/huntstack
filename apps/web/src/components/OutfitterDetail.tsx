@@ -181,7 +181,9 @@ export function OutfitterDetail({ idOrSlug }: { idOrSlug: string }) {
             ) : reviewsQuery.isError ? (
               <p role="alert" className="text-base" style={secondary}>Could not load reviews. Please try again later.</p>
             ) : reviews.length === 0 ? (
-              <p className="text-base" style={secondary}>No reviews yet.</p>
+              <p className="text-base" style={secondary}>
+                No reviews yet. Hunters can't post reviews on HuntStack yet.
+              </p>
             ) : (
               <ul className="space-y-4">
                 {reviews.map((r) => {
@@ -262,9 +264,14 @@ export function OutfitterDetail({ idOrSlug }: { idOrSlug: string }) {
                   )}
                 </>
               ) : (
-                <Link to={`/outfitters/list-your-business?claim=${encodeURIComponent(outfitter.slug)}`} className={linkClass}>
-                  Is this your business?
-                </Link>
+                <>
+                  <p className="text-sm mb-2" style={secondary}>
+                    This outfitter hasn't claimed their listing yet, so messages can't reach them here. Call or visit their website.
+                  </p>
+                  <Link to={`/outfitters/list-your-business?claim=${encodeURIComponent(outfitter.slug)}`} className={linkClass}>
+                    Is this your business?
+                  </Link>
+                </>
               )}
             </div>
           </div>

@@ -46,7 +46,7 @@ export function DismissibleNotice({
           setHidden(true)
         }}
         aria-label="Dismiss notice"
-        className="flex-shrink-0 -my-1 -mr-1 p-1 rounded opacity-70 hover:opacity-100 transition-opacity"
+        className="flex-shrink-0 -my-2.5 -mr-2.5 p-2.5 rounded opacity-70 hover:opacity-100 transition-opacity"
       >
         <X className="w-4 h-4" />
       </button>

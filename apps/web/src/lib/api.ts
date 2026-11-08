@@ -747,6 +747,7 @@ class ApiClient {
     states?: string
     date?: string
     limit?: number
+    includeNoAccess?: boolean
   }) {
     return this.request<{
       recommendations: Array<{
@@ -772,6 +773,11 @@ class ApiClient {
         coldFrontPresent: boolean
         coldFrontIncoming: boolean
         seasonOpen: boolean
+        // Optional while an older API is still deployed
+        seasonStatus?: 'open' | 'closed' | 'unknown'
+        access?: 'public' | 'limited' | 'closed' | 'private' | 'unknown'
+        accessNote?: string | null
+        accessSource?: string | null
         seasonName: string | null
         seasonStart: string | null
         seasonEnd: string | null
@@ -793,6 +799,8 @@ class ApiClient {
       }>
       queryParams: { species: string | null; states: string[]; date: string }
       totalLocations: number
+      hiddenNoAccess?: number
+      statesWithoutSeasonData?: string[]
     }>('/api/hunt/recommendations', { params: options })
   }
 }

@@ -253,3 +253,68 @@ export function SiteMarkers({ sites, k, screenScale = 1, selectedId, onSiteClick
     </g>
   )
 }
+
+// Towns drawn when the map is zoomed in, so a hunter can tell where a site is. The map has no
+// basemap on purpose (HuntStack doesn't compete on maps); a few known places are enough to
+// read "that cluster is just north of St. Louis".
+const REFERENCE_TOWNS: Array<{ name: string; lat: number; lng: number }> = [
+  { name: 'St. Louis', lat: 38.627, lng: -90.199 },
+  { name: 'Kansas City', lat: 39.0997, lng: -94.5786 },
+  { name: 'St. Joseph', lat: 39.7675, lng: -94.8467 },
+  { name: 'Hannibal', lat: 39.7084, lng: -91.3585 },
+  { name: 'Columbia', lat: 38.9517, lng: -92.3341 },
+  { name: 'Springfield, MO', lat: 37.209, lng: -93.2923 },
+  { name: 'Peoria', lat: 40.6936, lng: -89.589 },
+  { name: 'Quincy', lat: 39.9356, lng: -91.4099 },
+  { name: 'Springfield, IL', lat: 39.7817, lng: -89.6501 },
+  { name: 'Burlington', lat: 40.8075, lng: -91.1129 },
+  { name: 'Little Rock', lat: 34.7465, lng: -92.2896 },
+  { name: 'Stuttgart', lat: 34.5004, lng: -91.5526 },
+  { name: 'Jonesboro', lat: 35.8423, lng: -90.7043 },
+  { name: 'Memphis', lat: 35.1495, lng: -90.049 },
+  { name: 'Lake Charles', lat: 30.2266, lng: -93.2174 },
+  { name: 'Lafayette', lat: 30.2241, lng: -92.0198 },
+  { name: 'Baton Rouge', lat: 30.4515, lng: -91.1871 },
+  { name: 'Monroe', lat: 32.5093, lng: -92.1193 },
+  { name: 'Houston', lat: 29.7604, lng: -95.3698 },
+  { name: 'Dallas', lat: 32.7767, lng: -96.797 },
+  { name: 'Sherman', lat: 33.6357, lng: -96.6089 },
+  { name: 'Amarillo', lat: 35.222, lng: -101.8313 },
+  { name: 'Lubbock', lat: 33.5779, lng: -101.8552 },
+  { name: 'Corpus Christi', lat: 27.8006, lng: -97.3964 },
+  { name: 'Oklahoma City', lat: 35.4676, lng: -97.5164 },
+  { name: 'Tulsa', lat: 36.154, lng: -95.9928 },
+  { name: 'Enid', lat: 36.3956, lng: -97.8784 },
+  { name: 'Wichita', lat: 37.6872, lng: -97.3301 },
+  { name: 'Great Bend', lat: 38.3645, lng: -98.7648 },
+  { name: 'Albuquerque', lat: 35.0844, lng: -106.6504 },
+  { name: 'Roswell', lat: 33.3943, lng: -104.523 },
+  { name: 'Socorro', lat: 34.0584, lng: -106.8914 },
+]
+
+/** Town dots and names, sized in screen pixels; only drawn when zoomed in (k > 1.5). */
+export function ReferenceTowns({ k, screenScale = 1 }: { k: number; screenScale?: number }) {
+  const { projection } = useMapContext()
+  if (k <= 1.5) return null
+  const px = screenScale / k
+  return (
+    <g aria-hidden="true" style={{ pointerEvents: 'none' }}>
+      {REFERENCE_TOWNS.map(t => {
+        const p = projection([t.lng, t.lat])
+        if (!p) return null
+        return (
+          <g key={t.name}>
+            <circle cx={p[0]} cy={p[1]} r={2.5 * px} fill="#57606a" stroke="#fff" strokeWidth={1 * px} />
+            <text
+              x={p[0] + 5 * px}
+              y={p[1] + 4 * px}
+              style={{ fontSize: 11 * px, fill: '#24292f', stroke: '#fff', strokeWidth: 3 * px, paintOrder: 'stroke', fontWeight: 600 }}
+            >
+              {t.name}
+            </text>
+          </g>
+        )
+      })}
+    </g>
+  )
+}

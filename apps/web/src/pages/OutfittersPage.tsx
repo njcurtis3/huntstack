@@ -285,6 +285,7 @@ function OutfitterDirectory() {
             <input
               type="search"
               inputMode="search"
+              aria-label="Search outfitters"
               placeholder="Search by name, location, or species..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -319,10 +320,10 @@ function OutfitterDirectory() {
             }}
           >
             <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: `rgb(var(--color-text-secondary))` }}>
+              <label htmlFor="outfitter-state" className="block text-sm font-medium mb-1.5" style={{ color: `rgb(var(--color-text-secondary))` }}>
                 State
               </label>
-              <select className="input text-base min-h-11" value={selectedState} onChange={(e) => setSelectedState(e.target.value)}>
+              <select id="outfitter-state" className="input text-base min-h-11" value={selectedState} onChange={(e) => setSelectedState(e.target.value)}>
                 <option value="">All States</option>
                 {availableStates.map((s) => (
                   <option key={s} value={s}>{STATE_NAMES[s] ?? s} ({s})</option>
@@ -330,10 +331,10 @@ function OutfitterDirectory() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1.5" style={{ color: `rgb(var(--color-text-secondary))` }}>
+              <label htmlFor="outfitter-price" className="block text-sm font-medium mb-1.5" style={{ color: `rgb(var(--color-text-secondary))` }}>
                 Price Range
               </label>
-              <select className="input text-base min-h-11" value={selectedPrice} onChange={(e) => setSelectedPrice(e.target.value)}>
+              <select id="outfitter-price" className="input text-base min-h-11" value={selectedPrice} onChange={(e) => setSelectedPrice(e.target.value)}>
                 <option value="">Any Price</option>
                 {Object.entries(PRICE_LABELS).map(([val, label]) => (
                   <option key={val} value={val}>{val} — {label}</option>
@@ -375,7 +376,7 @@ function OutfitterDirectory() {
               title={hasListings ? undefined : 'No listings yet'}
             >
               {s}
-              {!hasListings && <span className="ml-1 text-[10px] opacity-60">soon</span>}
+              {!hasListings && <span className="ml-1 text-xs opacity-75">soon</span>}
             </button>
           )
         })}

@@ -10,14 +10,18 @@ import {
   Tooltip, Legend, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import { ComposableMap, Geographies, Geography, Annotation } from 'react-simple-maps'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, type FieldReportPublic, type SurveyZone } from '../lib/api'
 import { isEarlierSeason, oldSurveyLabel, parseCalendarDate } from '../lib/dates'
+import {
+  computeMigrationIndex, flywayLabel, formatChange, freshWindowLabel, getAnomaly, getMigrationStatus, headlineStats, staleThresholdFor,
+  type AnomalyType, type MigrationIndexResult, type MigrationStatus,
+} from '../lib/migrationStats'
 import { SurveyZoneBreakdown } from '../components/SurveyZoneBreakdown'
 import { useThemeStore } from '../stores/themeStore'
 import { getMapColors, getChartColors } from '../lib/themeColors'
 import { DismissibleNotice } from '../components/DismissibleNotice'
-import { EBIRD_COLOR, REPORT_COLOR, SiteMarkers, ZoomGroup, type MapSite } from '../components/SiteMarkers'
+import { EBIRD_COLOR, REPORT_COLOR, ReferenceTowns, SiteMarkers, ZoomGroup, type MapSite } from '../components/SiteMarkers'
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json'
 
@@ -143,30 +147,6 @@ type PushFactor = {
 
 // ─── Migration status classification ─────────────────────────────────────────
 
-type MigrationStatus =
-  | 'arriving'
-  | 'building'
-  | 'peak'
-  | 'declining'
-  | 'departing'
-  | 'first_survey'
-  | null
-
-function getMigrationStatus(
-  trend: 'increasing' | 'decreasing' | 'stable' | 'new',
-  deltaPercent: number | null,
-): MigrationStatus {
-  if (trend === 'new') return 'first_survey'
-  if (trend === 'increasing') {
-    return (deltaPercent !== null && deltaPercent > 20) ? 'arriving' : 'building'
-  }
-  if (trend === 'stable') return 'peak'
-  if (trend === 'decreasing') {
-    return (deltaPercent !== null && deltaPercent < -20) ? 'departing' : 'declining'
-  }
-  return null
-}
-
 const STATUS_CONFIG: Record<NonNullable<MigrationStatus>, { label: string; className: string }> = {
   arriving:     { label: 'Arriving',     className: 'bg-forest-100 dark:bg-forest-900/30 text-forest-700 dark:text-forest-300' },
   building:     { label: 'Building',     className: 'bg-accent-100 dark:bg-accent-900/30 text-accent-700 dark:text-accent-300' },
@@ -178,82 +158,11 @@ const STATUS_CONFIG: Record<NonNullable<MigrationStatus>, { label: string; class
 
 // ─── Anomaly detection ────────────────────────────────────────────────────────
 
-type AnomalyType = 'spike' | 'drop' | null
-
-function getAnomaly(count: number, deltaPercent: number | null, previousCount: number | null): AnomalyType {
-  if (deltaPercent === null || previousCount === null) return null
-  if (deltaPercent >= 30 && count >= 500) return 'spike'
-  if (deltaPercent <= -40 && previousCount >= 500) return 'drop'
-  return null
-}
-
-// ─── Migration Index Score ────────────────────────────────────────────────────
-// Composite 0–100 score: trend (25) + volume (20) + weather (15) + eBird community (25) + anomaly (15)
-
-type MigrationIndexResult = {
-  score: number
-  label: 'Quiet' | 'Active' | 'Strong' | 'Peak Movement'
-  labelColor: string
-  components: {
-    trend: number     // 0-25
-    volume: number    // 0-20
-    weather: number   // 0-15
-    ebird: number     // 0-25
-    anomaly: number   // 0-15
-  }
-}
-
-function computeMigrationIndex(
-  counts: Array<{ trend: string; anomaly: AnomalyType; deltaPercent: number | null }>,
-  overallPushScore: number,
-  stateActivity?: Array<{ activityLevel: 'high' | 'moderate' | 'low' }>,
-): MigrationIndexResult {
-  const empty: MigrationIndexResult = {
-    score: 0, label: 'Quiet', labelColor: 'text-earth-500 dark:text-earth-400',
-    components: { trend: 0, volume: 0, weather: 0, ebird: 0, anomaly: 0 },
-  }
-  if (counts.length === 0) return empty
-
-  const withData = counts.filter(c => c.trend !== 'new')
-
-  // Trend component: % of refuges increasing (0–25)
-  const increasing = withData.filter(c => c.trend === 'increasing').length
-  const trend = withData.length > 0 ? Math.round((increasing / withData.length) * 25) : 0
-
-  // Volume delta component: average positive deltaPercent (0–20)
-  const posDeltas = withData.filter(c => c.deltaPercent !== null && c.deltaPercent > 0)
-  const avgDelta = posDeltas.length > 0
-    ? posDeltas.reduce((s, c) => s + (c.deltaPercent ?? 0), 0) / posDeltas.length
-    : 0
-  const volume = Math.min(20, Math.round((avgDelta / 60) * 20))
-
-  // Weather push component: pushScore 0–3 → 0–15
-  const weather = Math.round((overallPushScore / 3) * 15)
-
-  // eBird community activity: high=2pts, moderate=1pt per state, max 25
-  const totalStates = stateActivity?.length ?? 0
-  let ebird = 0
-  if (totalStates > 0) {
-    const highCount = stateActivity!.filter(s => s.activityLevel === 'high').length
-    const modCount = stateActivity!.filter(s => s.activityLevel === 'moderate').length
-    ebird = Math.min(25, Math.round(((highCount * 2 + modCount * 1) / (totalStates * 2)) * 25))
-  }
-
-  // Anomaly bonus: spikes add, drops subtract — no artificial baseline (0–15)
-  const spikes = counts.filter(c => c.anomaly === 'spike').length
-  const drops = counts.filter(c => c.anomaly === 'drop').length
-  const anomaly = Math.max(0, Math.min(15, spikes * 5 - drops * 3))
-
-  const total = Math.min(100, trend + volume + weather + ebird + anomaly)
-
-  let label: MigrationIndexResult['label']
-  let labelColor: string
-  if (total >= 76) { label = 'Peak Movement'; labelColor = 'text-red-600 dark:text-red-400' }
-  else if (total >= 51) { label = 'Strong'; labelColor = 'text-orange-600 dark:text-orange-400' }
-  else if (total >= 26) { label = 'Active'; labelColor = 'text-amber-600 dark:text-amber-400' }
-  else { label = 'Quiet'; labelColor = 'text-earth-500 dark:text-earth-400' }
-
-  return { score: total, label, labelColor, components: { trend, volume, weather, ebird, anomaly } }
+/** Chart axis numbers: 950, 12k, 6M (not "6000k") */
+function compactCount(v: number): string {
+  if (v >= 1_000_000) return `${+(v / 1_000_000).toFixed(1)}M`
+  if (v >= 1000) return `${(v / 1000).toFixed(0)}k`
+  return String(v)
 }
 
 // ─── Movement Direction Detection ─────────────────────────────────────────────
@@ -305,15 +214,6 @@ function detectMovementDirection(
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-// Counts older than this are not actionable. Off-season (March-August) the previous season's
-// counts after Feb 1 still read as the latest picture; from September on, the season is live
-// and weekly surveys older than four weeks no longer say what the birds are doing.
-function staleThresholdFor(now: Date): Date {
-  const month = now.getMonth() // 0-indexed
-  if (month >= 2 && month <= 7) return new Date(now.getFullYear(), 1, 1)
-  return new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000)
-}
 
 const FLYWAY_OPTIONS = [
   { value: '', label: 'All Flyways' },
@@ -408,7 +308,7 @@ function DeltaBadge({ trend, delta, deltaPercent }: {
     ? `${delta >= 0 ? '+' : ''}${delta.toLocaleString()}`
     : null
   const formattedPct = deltaPercent !== null
-    ? ` (${deltaPercent >= 0 ? '+' : ''}${deltaPercent.toFixed(1)}%)`
+    ? ` (${formatChange(deltaPercent)})`
     : ''
 
   if (trend === 'stable') {
@@ -1152,7 +1052,9 @@ function MigrationChat({ speciesName, selectedStates }: {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-full shadow-lg text-white text-sm font-medium transition-all hover:scale-105"
+        // Desktop only: on a phone it stacked on the Report birds button and covered the page. Phones
+        // reach the AI from the menu and the Ask AI button at the top of this page.
+        className="hidden md:flex fixed bottom-6 right-6 z-50 items-center gap-2 px-4 py-3 rounded-full shadow-lg text-white text-sm font-medium transition-all hover:scale-105"
         style={{ backgroundColor: 'rgb(var(--color-accent-500, 6 95 70))' }}
       >
         <MessageSquare className="w-4 h-4" />
@@ -1292,6 +1194,7 @@ function MigrationChat({ speciesName, selectedStates }: {
             value={input}
             onChange={e => setInput(e.target.value)}
             placeholder="Ask about migration conditions..."
+            aria-label="Ask about migration conditions"
             className="input flex-1 text-xs py-2"
             disabled={isLoading}
           />
@@ -1312,9 +1215,19 @@ function MigrationChat({ speciesName, selectedStates }: {
 
 export function MigrationPage() {
   const navigate = useNavigate()
-  const [selectedFlyway, setSelectedFlyway] = useState('')
-  const [selectedSpecies, setSelectedSpecies] = useState('')
-  const [selectedState, setSelectedState] = useState('')
+  // Filters live in the URL so a view can be shared, bookmarked and refreshed
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [selectedFlyway, setSelectedFlyway] = useState(() => searchParams.get('flyway') ?? '')
+  const [selectedSpecies, setSelectedSpecies] = useState(() => searchParams.get('species') ?? '')
+  const [selectedState, setSelectedState] = useState(() => (searchParams.get('state') ?? '').toUpperCase())
+  useEffect(() => {
+    const next = new URLSearchParams()
+    if (selectedFlyway) next.set('flyway', selectedFlyway)
+    if (selectedSpecies) next.set('species', selectedSpecies)
+    if (selectedState) next.set('state', selectedState)
+    if (next.toString() !== searchParams.toString()) setSearchParams(next, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedFlyway, selectedSpecies, selectedState])
 
   const [currentCounts, setCurrentCounts] = useState<CurrentCount[]>([])
   const [ebirdCounts, setEbirdCounts] = useState<CurrentCount[]>([])
@@ -1674,18 +1587,20 @@ export function MigrationPage() {
   }, [enrichedCounts])
 
   // Session B computed values — all client-side from already-fetched data
+  // Index and movement read the same counts as the headline numbers: fresh agency surveys
+  const freshEnriched = useMemo(() => headlineStats(enrichedCounts).fresh, [enrichedCounts])
   const migrationIndex = useMemo(() =>
     computeMigrationIndex(
-      enrichedCounts,
+      freshEnriched,
       pushFactorsData?.overallPushScore ?? 0,
       regionalActivity?.stateActivity,
     ),
-    [enrichedCounts, pushFactorsData, regionalActivity]
+    [freshEnriched, pushFactorsData, regionalActivity]
   )
 
   const movementDirection = useMemo(() =>
-    detectMovementDirection(enrichedCounts, pushFactorsData?.pushFactors ?? []),
-    [enrichedCounts, pushFactorsData]
+    detectMovementDirection(freshEnriched, pushFactorsData?.pushFactors ?? []),
+    [freshEnriched, pushFactorsData]
   )
 
   // Group sorted counts by refuge for the collapsible refuge cards
@@ -1885,15 +1800,20 @@ export function MigrationPage() {
   const mapZoomTarget = mapTarget ?? (selectedState ? mapSites : null)
   const mapZoomed = !!mapTarget || (!!selectedState && mapSites.length > 0)
 
+  // A marker opens a short summary right under the map; the full card further down is one
+  // tap away. Jumping straight to the card lost the map, thousands of pixels up the page.
   const handleMapSiteClick = useCallback((site: MapSite) => {
     setSelectedState(site.state)
     setMapSiteId(site.id)
-    setExpandedStates(prev => new Set(prev).add(site.state))
-    setExpandedRefuges(prev => new Set(prev).add(site.id))
-    setShowAllSites(prev => new Set(prev).add(site.state))
-    setSiteQuery(prev => ({ ...prev, [site.state]: '' }))
+  }, [])
+
+  const openSiteCard = useCallback((siteId: string, state: string) => {
+    setExpandedStates(prev => new Set(prev).add(state))
+    setExpandedRefuges(prev => new Set(prev).add(siteId))
+    setShowAllSites(prev => new Set(prev).add(state))
+    setSiteQuery(prev => ({ ...prev, [state]: '' }))
     setTimeout(() => {
-      document.getElementById(`site-card-${site.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      document.getElementById(`site-card-${siteId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 400)
   }, [])
 
@@ -1952,16 +1872,12 @@ export function MigrationPage() {
     return () => { cancelled = true }
   }, [filteredCounts])
 
-  const staleThreshold = staleThresholdFor(new Date())
-  const freshCounts = filteredCounts.filter(c => parseCalendarDate(c.surveyDate) >= staleThreshold)
-
-  // Summary stats — use only fresh counts so stale data doesn't inflate totals
-  const totalBirds = freshCounts.reduce((sum, c) => sum + (c.count || 0), 0)
-  const refugeCount = new Set(freshCounts.map(c => c.refugeName)).size
+  // Summary stats: fresh agency survey counts only (see lib/migrationStats). eBird reports and
+  // old surveys are left out, the same as on the /report page.
+  const { totalBirds, siteCount: refugeCount } = headlineStats(filteredCounts)
   const latestDate = filteredCounts.length > 0
     ? new Date(Math.max(...filteredCounts.map(c => parseCalendarDate(c.surveyDate).getTime())))
     : null
-  const hasStaleData = filteredCounts.length > freshCounts.length
 
   // Historical chart data
   const chartData = useMemo(() => {
@@ -2018,7 +1934,6 @@ export function MigrationPage() {
   // 3B — Hunt Recommendation: rule-based synthesis of top state + push factors + trend
   const huntRecommendation = useMemo(() => {
     if (stateGroups.length === 0) return null
-    const overallPush = pushFactorsData?.overallPushScore ?? 0
     const pushFactors = pushFactorsData?.pushFactors ?? []
 
     const scoredStates = stateGroups.map(sg => {
@@ -2047,7 +1962,8 @@ export function MigrationPage() {
         ? `The newest refuge surveys are from last season. Check back when this season's surveys start (October to late November, depending on the survey).`
         : `No refuge has a survey from the last 4 weeks. Check back after the next round of surveys.`
       urgency = 'low'
-    } else if (overallPush >= 2 && top.isArriving) {
+    // The top state's own weather: the strongest front anywhere said nothing about this state
+    } else if (top.pushScore >= 2 && top.isArriving) {
       action = `Hunt ${top.stateName} this weekend`
       reasoning = `Cold front pushing birds south with numbers actively arriving. ${birdCount.toLocaleString()} birds counted — conditions are stacking up.`
       urgency = 'high'
@@ -2059,7 +1975,7 @@ export function MigrationPage() {
       action = `${top.stateName} is heating up`
       reasoning = `Numbers are building (${birdCount.toLocaleString()} birds) with an arriving trend. Worth positioning now before peak.`
       urgency = 'medium'
-    } else if (overallPush >= 1 && birdCount > 1000) {
+    } else if (top.pushScore >= 1 && birdCount > 1000) {
       action = `Watch ${top.stateName} over the next 48 hours`
       reasoning = `Push conditions developing. Current count: ${birdCount.toLocaleString()}${staleNote} — movement likely incoming.`
       urgency = 'medium'
@@ -2159,230 +2075,10 @@ export function MigrationPage() {
           Refuge count data is currently limited to select states and sources. We're actively working to expand coverage across more refuges and flyways.
         </DismissibleNotice>
 
-        {/* Weekly Intelligence */}
-        {(weeklySummary || weeklySummaryLoading) && (
-          <div className="rounded-lg border" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
-            <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
-              <span className="text-base font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>Weekly Intelligence</span>
-              <div className="flex items-center gap-3">
-                {weeklySummary && (
-                  <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                    {weeklySummary.cached ? 'cached' : 'live'} · {new Date(weeklySummary.generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                )}
-                <button
-                  onClick={() => fetchWeeklySummary(true)}
-                  disabled={weeklySummaryLoading}
-                  className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
-                  style={{ color: `rgb(var(--color-text-tertiary))`, backgroundColor: `rgb(var(--color-bg-tertiary))` }}
-                  title="Regenerate summary"
-                >
-                  <RefreshCw className={`w-3 h-3 ${weeklySummaryLoading ? 'animate-spin' : ''}`} />
-                  Refresh
-                </button>
-              </div>
-            </div>
-            <div className="p-5">
-              {weeklySummaryLoading && !weeklySummary ? (
-                <div className="flex items-center gap-2 text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Generating intelligence report…
-                </div>
-              ) : weeklySummary ? (
-                <p className="text-sm leading-relaxed" style={{ color: `rgb(var(--color-text-secondary))` }}>
-                  {weeklySummary.summary
-                    .replace(/\*\*([^*]+)\*\*/g, '$1')
-                    .replace(/\*([^*]+)\*/g, '$1')
-                    .replace(/^#+\s+/gm, '')
-                    .replace(/^[-*]\s+/gm, '')
-                    .trim()
-                  }
-                </p>
-              ) : null}
-            </div>
-          </div>
-        )}
-
-        {/* Quick Intel */}
-        <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
-          <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
-            <span className="text-base font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>Quick Intel</span>
-          </div>
-          <div className="p-3 space-y-3">
-            <MigrationIndexPanel
-              index={migrationIndex}
-              selectedFlyway={selectedFlyway}
-              selectedSpecies={selectedSpecies}
-            />
-            {weatherAlerts.length > 0 && <WeatherAlertsPanel alerts={weatherAlerts} />}
-            {pushFactorsData && (
-              <PushFactorsPanel
-                pushFactors={pushFactorsData.pushFactors}
-                regionalPushFactors={pushFactorsData.regionalPushFactors}
-                overallPushScore={pushFactorsData.overallPushScore}
-                states={stateOptions.length > 0 ? stateOptions : ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']}
-              />
-            )}
-            {stateGroups.length > 0 && (
-              <FlowVisualization
-                stateGroups={stateGroups}
-                pushFactorsData={pushFactorsData}
-                selectedFlyway={selectedFlyway}
-              />
-            )}
-          </div>
-        </div>
-
-        {/* Regional Activity — eBird community data */}
-        {(regionalActivityLoading || (regionalActivity && regionalActivity.stateActivity.length > 0)) && (
-          <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
-            <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
-              <div className="flex items-center gap-2">
-                <span className="text-base font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>Regional Activity</span>
-                <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>Community observations</span>
-              </div>
-              <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>via eBird</span>
-            </div>
-            <div className="p-3">
-              {regionalActivityLoading && !regionalActivity ? (
-                <div className="flex items-center gap-2 text-sm py-4" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Loading community observations...
-                </div>
-              ) : regionalActivity ? (
-                <RegionalActivitySection data={regionalActivity} />
-              ) : null}
-            </div>
-          </div>
-        )}
-
-        {/* My Area */}
-        <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
-          <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
-            <span className="text-base font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>My Area</span>
-          </div>
-          <div className="p-4">
-          <div className="flex flex-col sm:flex-row gap-3 items-start flex-wrap">
-            <div className="relative flex-1 min-w-0 max-w-xs">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: `rgb(var(--color-text-tertiary))` }} />
-              <input
-                type="text"
-                className="input w-full pl-9"
-                placeholder="City, State or Zip Code"
-                value={myZip}
-                onChange={e => { setMyZip(e.target.value); setMyLocation(null); setMyAreaError(null) }}
-                onKeyDown={e => e.key === 'Enter' && handleMyAreaSearch()}
-              />
-            </div>
-            <select
-              className="input max-w-xs"
-              value={myAreaRadius}
-              onChange={e => setMyAreaRadius(Number(e.target.value))}
-            >
-              <option value={50}>Within 50 mi</option>
-              <option value={100}>Within 100 mi</option>
-              <option value={200}>Within 200 mi</option>
-              <option value={300}>Within 300 mi</option>
-            </select>
-            <button
-              className="btn btn-primary flex-shrink-0"
-              onClick={handleMyAreaSearch}
-              disabled={myAreaLoading || !myZip.trim()}
-            >
-              {myAreaLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
-            </button>
-            <button
-              className="btn btn-secondary flex-shrink-0 flex items-center gap-1.5"
-              onClick={handleMyAreaGps}
-              disabled={myAreaLoading}
-              title="Use my current location"
-            >
-              {myAreaLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
-            </button>
-            {myLocation && (
-              <button
-                className="text-xs self-center flex-shrink-0"
-                style={{ color: `rgb(var(--color-text-tertiary))` }}
-                onClick={() => { setMyLocation(null); setMyZip(''); setMyAreaError(null) }}
-              >
-                Clear
-              </button>
-            )}
-          </div>
-
-          {myAreaError && (
-            <p className="text-sm mt-2" style={{ color: 'rgb(239 68 68)' }}>{myAreaError}</p>
-          )}
-
-          {myLocation && (
-            <div className="mt-4">
-              <div className="flex items-center gap-3 mb-3 flex-wrap">
-                <span className="text-sm font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>
-                  {myLocation.city}{myLocation.city && myLocation.state ? ', ' : ''}{myLocation.state}
-                </span>
-                <span className={`text-xs font-semibold rounded-full px-3 py-1 ${
-                  localActivityLevel === 'High'     ? 'bg-forest-100 dark:bg-forest-900/30 text-forest-700 dark:text-forest-300' :
-                  localActivityLevel === 'Moderate' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300' :
-                  localActivityLevel === 'Low'      ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300' :
-                                                      'bg-earth-100 dark:bg-earth-800 text-earth-500 dark:text-earth-400'
-                }`}>
-                  {localActivityLevel} Activity
-                </span>
-                <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                  {nearbyRefuges.length} refuge{nearbyRefuges.length !== 1 ? 's' : ''} within {myAreaRadius} mi
-                </span>
-              </div>
-
-              {nearbyRefuges.length === 0 ? (
-                <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                  No refuges with current count data found within {myAreaRadius} miles.
-                </p>
-              ) : (
-                <div className="flex flex-col">
-                  {nearbyRefuges.slice(0, 5).map(r => {
-                    const statusCfg = r.dominantStatus ? STATUS_CONFIG[r.dominantStatus] : null
-                    return (
-                      <div
-                        key={r.refugeId}
-                        className="flex items-center justify-between gap-3 py-2 border-t"
-                        style={{ borderColor: `rgb(var(--color-border-primary))` }}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>
-                            {r.refugeName}
-                          </span>
-                          <span className="ml-2 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                            {r.state} · {r.distance} mi
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span className="text-sm font-semibold text-forest-600 dark:text-forest-400">
-                            {r.totalBirds.toLocaleString()}
-                          </span>
-                          {statusCfg && (
-                            <span className={`text-xs rounded-full px-2 py-0.5 ${statusCfg.className}`}>
-                              {statusCfg.label}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {nearbyRefuges.length > 5 && (
-                    <p className="text-xs mt-2" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                      +{nearbyRefuges.length - 5} more refuges within {myAreaRadius} miles
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-          </div>
-        </div>
-
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4 mb-4">
           <select
+            aria-label="State"
             className="input max-w-xs"
             value={selectedState}
             onChange={(e) => setSelectedState(e.target.value)}
@@ -2393,6 +2089,7 @@ export function MigrationPage() {
             ))}
           </select>
           <select
+            aria-label="Species"
             className="input max-w-xs"
             value={selectedSpecies}
             onChange={(e) => setSelectedSpecies(e.target.value)}
@@ -2403,6 +2100,7 @@ export function MigrationPage() {
             ))}
           </select>
           <select
+            aria-label="Flyway"
             className="input max-w-xs"
             value={selectedFlyway}
             onChange={(e) => setSelectedFlyway(e.target.value)}
@@ -2576,6 +2274,7 @@ export function MigrationPage() {
               })
             })()}
 
+            <ReferenceTowns k={k} screenScale={mapScreenScale} />
             <SiteMarkers
               sites={[...mapSites, ...reportSites]}
               k={k}
@@ -2623,6 +2322,54 @@ export function MigrationPage() {
             )}
           </div>
         </div>
+
+        {mapSiteId && !reportCellId && (() => {
+          const group = refugeGroups.find(g => g.refugeId === mapSiteId)
+          const site = mapSites.find(m => m.id === mapSiteId)
+          if (!group && !site) return null
+          const name = group?.refugeName ?? site!.name
+          const state = group?.state ?? site!.state
+          const isEbird = group ? group.items.every(i => i.source === 'ebird') : site!.kind !== 'survey'
+          const topSpecies = group ? [...group.items].sort((a, b) => b.count - a.count).slice(0, 4) : []
+          return (
+            <div className="card p-4 mb-4" role="region" aria-label={`${name} summary`}>
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="min-w-0">
+                  <h3 className="font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>{name}</h3>
+                  <p className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                    {state}
+                    {group && ` · ${isEbird ? 'eBird reports' : 'survey'} ${parseCalendarDate(group.latestDate).toLocaleDateString()}`}
+                    {group?.isStale && ' · old survey'}
+                    {group?.dominantStatus && STATUS_CONFIG[group.dominantStatus] && ` · ${STATUS_CONFIG[group.dominantStatus].label}`}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setMapSiteId(null)}
+                  aria-label="Close site summary"
+                  className="min-w-[44px] min-h-[44px] flex items-center justify-center -mt-2 -mr-2"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              {group ? (
+                <>
+                  <p className="text-sm mb-1" style={{ color: `rgb(var(--color-text-secondary))` }}>
+                    <span className="font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>{group.totalBirds.toLocaleString()}</span>
+                    {isEbird ? ' birds in birder reports' : ' birds counted'}
+                  </p>
+                  <p className="text-sm" style={{ color: `rgb(var(--color-text-secondary))` }}>
+                    {topSpecies.map(i => `${i.speciesName} ${i.count.toLocaleString()}`).join(' · ')}
+                  </p>
+                  <button onClick={() => openSiteCard(group.refugeId, group.state)} className="mt-2 text-sm text-accent-600 dark:text-accent-400 underline py-1">
+                    Full site details, trend and weather
+                  </button>
+                </>
+              ) : (
+                <p className="text-sm" style={{ color: `rgb(var(--color-text-secondary))` }}>No ducks or geese reported here in the last 14 days.</p>
+              )}
+            </div>
+          )
+        })()}
 
         {reportCellId && reportCellReports.length > 0 && (
           <div className="card p-4 mb-4" role="region" aria-label="Hunter reports, unverified">
@@ -2687,8 +2434,8 @@ export function MigrationPage() {
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               <div className="card p-4">
                 <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                  Total Birds Counted
-                  {hasStaleData && <span className="ml-1 text-xs text-earth-400 dark:text-earth-500">(recent surveys only)</span>}
+                  Birds Counted
+                  <span className="ml-1 text-xs text-earth-500 dark:text-earth-400">(agency surveys, {freshWindowLabel(new Date())})</span>
                 </p>
                 <p className="text-2xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>
                   {totalBirds > 0 ? totalBirds.toLocaleString() : '—'}
@@ -2800,7 +2547,7 @@ export function MigrationPage() {
                       Season Comparison
                     </h2>
                     <p className="text-xs mt-0.5" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                      {seasonComparison.seasonYear - 1}–{seasonComparison.seasonYear} season vs {seasonComparison.seasonYear - 2}–{seasonComparison.seasonYear - 1} · season-to-date totals
+                      {seasonComparison.seasonYear - 1}–{seasonComparison.seasonYear} season vs {seasonComparison.seasonYear - 2}–{seasonComparison.seasonYear - 1} · every survey this season added together, so a site counted weekly is counted each week
                     </p>
                   </div>
                 </div>
@@ -2838,7 +2585,7 @@ export function MigrationPage() {
                                 ? 'text-red-600 dark:text-red-400'
                                 : ''
                             }`} style={row.deltaPercent === 0 ? { color: `rgb(var(--color-text-tertiary))` } : undefined}>
-                              {row.deltaPercent > 0 ? '+' : ''}{row.deltaPercent}%
+                              {formatChange(row.deltaPercent, 0)}
                             </span>
                           </td>
                         </tr>
@@ -2852,12 +2599,238 @@ export function MigrationPage() {
               </div>
             </div>
 
+            {/* Weekly Intelligence */}
+            {(weeklySummary || weeklySummaryLoading) && (
+              <div className="rounded-lg border" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+                <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+                  <span className="text-base font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>Weekly Summary <span className="text-xs font-normal" style={{ color: `rgb(var(--color-text-tertiary))` }}>written by AI from the data on this page</span></span>
+                  <div className="flex items-center gap-3">
+                    {weeklySummary && (
+                      <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                        {new Date(weeklySummary.generatedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => fetchWeeklySummary(true)}
+                      disabled={weeklySummaryLoading}
+                      className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                      style={{ color: `rgb(var(--color-text-tertiary))`, backgroundColor: `rgb(var(--color-bg-tertiary))` }}
+                      title="Regenerate summary"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${weeklySummaryLoading ? 'animate-spin' : ''}`} />
+                      Refresh
+                    </button>
+                  </div>
+                </div>
+                <div className="p-5">
+                  {weeklySummaryLoading && !weeklySummary ? (
+                    <div className="flex items-center gap-2 text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generating intelligence report…
+                    </div>
+                  ) : weeklySummary ? (
+                    <p className="text-sm leading-relaxed" style={{ color: `rgb(var(--color-text-secondary))` }}>
+                      {weeklySummary.summary
+                        .replace(/\*\*([^*]+)\*\*/g, '$1')
+                        .replace(/\*([^*]+)\*/g, '$1')
+                        .replace(/^#+\s+/gm, '')
+                        .replace(/^[-*]\s+/gm, '')
+                        .trim()
+                      }
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            {/* Quick Intel */}
+            <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+              <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+                <span className="text-base font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>Quick Intel</span>
+              </div>
+              <div className="p-3 space-y-3">
+                <MigrationIndexPanel
+                  index={migrationIndex}
+                  selectedFlyway={selectedFlyway}
+                  selectedSpecies={selectedSpecies}
+                />
+                {weatherAlerts.length > 0 && <WeatherAlertsPanel alerts={weatherAlerts} />}
+                {pushFactorsData && (
+                  <PushFactorsPanel
+                    pushFactors={pushFactorsData.pushFactors}
+                    regionalPushFactors={pushFactorsData.regionalPushFactors}
+                    overallPushScore={pushFactorsData.overallPushScore}
+                    states={stateOptions.length > 0 ? stateOptions : ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']}
+                  />
+                )}
+                {stateGroups.length > 0 && (
+                  <FlowVisualization
+                    stateGroups={stateGroups}
+                    pushFactorsData={pushFactorsData}
+                    selectedFlyway={selectedFlyway}
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Regional Activity — eBird community data */}
+            {(regionalActivityLoading || (regionalActivity && regionalActivity.stateActivity.length > 0)) && (
+              <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+                <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>Regional Activity</span>
+                    <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>Community observations</span>
+                  </div>
+                  <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>via eBird</span>
+                </div>
+                <div className="p-3">
+                  {regionalActivityLoading && !regionalActivity ? (
+                    <div className="flex items-center gap-2 text-sm py-4" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading community observations...
+                    </div>
+                  ) : regionalActivity ? (
+                    <RegionalActivitySection data={regionalActivity} />
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            {/* My Area */}
+            <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+              <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+                <span className="text-base font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>My Area</span>
+              </div>
+              <div className="p-4">
+              <div className="flex flex-col sm:flex-row gap-3 items-start flex-wrap">
+                <div className="relative flex-1 min-w-0 max-w-xs">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: `rgb(var(--color-text-tertiary))` }} />
+                  <input
+                    type="text"
+                    className="input w-full pl-9"
+                    aria-label="Your city, state or zip code"
+                    placeholder="City, State or Zip Code"
+                    value={myZip}
+                    onChange={e => { setMyZip(e.target.value); setMyLocation(null); setMyAreaError(null) }}
+                    onKeyDown={e => e.key === 'Enter' && handleMyAreaSearch()}
+                  />
+                </div>
+                <select
+                  aria-label="Distance"
+                  className="input max-w-xs"
+                  value={myAreaRadius}
+                  onChange={e => setMyAreaRadius(Number(e.target.value))}
+                >
+                  <option value={50}>Within 50 mi</option>
+                  <option value={100}>Within 100 mi</option>
+                  <option value={200}>Within 200 mi</option>
+                  <option value={300}>Within 300 mi</option>
+                </select>
+                <button
+                  className="btn btn-primary flex-shrink-0"
+                  onClick={handleMyAreaSearch}
+                  disabled={myAreaLoading || !myZip.trim()}
+                >
+                  {myAreaLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
+                </button>
+                <button
+                  className="btn btn-secondary flex-shrink-0 flex items-center gap-1.5"
+                  onClick={handleMyAreaGps}
+                  disabled={myAreaLoading}
+                  title="Use my current location"
+                >
+                  {myAreaLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
+                </button>
+                {myLocation && (
+                  <button
+                    className="text-xs self-center flex-shrink-0"
+                    style={{ color: `rgb(var(--color-text-tertiary))` }}
+                    onClick={() => { setMyLocation(null); setMyZip(''); setMyAreaError(null) }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              {myAreaError && (
+                <p className="text-sm mt-2" style={{ color: 'rgb(239 68 68)' }}>{myAreaError}</p>
+              )}
+
+              {myLocation && (
+                <div className="mt-4">
+                  <div className="flex items-center gap-3 mb-3 flex-wrap">
+                    <span className="text-sm font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>
+                      {myLocation.city}{myLocation.city && myLocation.state ? ', ' : ''}{myLocation.state}
+                    </span>
+                    <span className={`text-xs font-semibold rounded-full px-3 py-1 ${
+                      localActivityLevel === 'High'     ? 'bg-forest-100 dark:bg-forest-900/30 text-forest-700 dark:text-forest-300' :
+                      localActivityLevel === 'Moderate' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300' :
+                      localActivityLevel === 'Low'      ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300' :
+                                                          'bg-earth-100 dark:bg-earth-800 text-earth-500 dark:text-earth-400'
+                    }`}>
+                      {localActivityLevel} Activity
+                    </span>
+                    <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                      {nearbyRefuges.length} refuge{nearbyRefuges.length !== 1 ? 's' : ''} within {myAreaRadius} mi
+                    </span>
+                  </div>
+
+                  {nearbyRefuges.length === 0 ? (
+                    <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                      No refuges with current count data found within {myAreaRadius} miles.
+                    </p>
+                  ) : (
+                    <div className="flex flex-col">
+                      {nearbyRefuges.slice(0, 5).map(r => {
+                        const statusCfg = r.dominantStatus ? STATUS_CONFIG[r.dominantStatus] : null
+                        return (
+                          <div
+                            key={r.refugeId}
+                            className="flex items-center justify-between gap-3 py-2 border-t"
+                            style={{ borderColor: `rgb(var(--color-border-primary))` }}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <span className="text-sm font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>
+                                {r.refugeName}
+                              </span>
+                              <span className="ml-2 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                                {r.state} · {r.distance} mi
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="text-sm font-semibold text-forest-600 dark:text-forest-400">
+                                {r.totalBirds.toLocaleString()}
+                              </span>
+                              {statusCfg && (
+                                <span className={`text-xs rounded-full px-2 py-0.5 ${statusCfg.className}`}>
+                                  {statusCfg.label}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                      {nearbyRefuges.length > 5 && (
+                        <p className="text-xs mt-2" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                          +{nearbyRefuges.length - 5} more refuges within {myAreaRadius} miles
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              </div>
+            </div>
+
             {/* Current Counts — State → Refuge → Species hierarchy */}
             {stateGroups.length > 0 ? (
               <div className="mb-8">
                 <h2 className="text-xl font-semibold mb-4" style={{ color: `rgb(var(--color-text-primary))` }}>
                   Latest Refuge Counts
                 </h2>
+                <p className="text-xs -mt-3 mb-4" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                  The newest survey at each site, so these totals are smaller than the season-to-date sums above.
+                </p>
                 <div className="flex flex-col gap-4">
                   {stateGroups.map((sg) => {
                     const isStateExpanded = expandedStates.has(sg.state)
@@ -3024,7 +2997,7 @@ export function MigrationPage() {
                                           )}
                                           {group.flyway && (
                                             <span className={`text-xs rounded px-2 py-0.5 flex-shrink-0 ${FLYWAY_COLORS[group.flyway] || 'bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300'}`}>
-                                              {group.flyway}
+                                              {flywayLabel(group.flyway)}
                                             </span>
                                           )}
                                         </div>
@@ -3090,7 +3063,7 @@ export function MigrationPage() {
                                               {isSpike && (
                                                 <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-t-md -mx-5 -mt-5 px-5 py-1.5 mb-3">
                                                   <Zap className="w-3 h-3" />
-                                                  Spike detected — {item.deltaPercent !== null ? `+${item.deltaPercent.toFixed(0)}%` : ''} this survey
+                                                  Spike detected — {item.deltaPercent !== null ? formatChange(item.deltaPercent, 0) : ''} this survey
                                                 </div>
                                               )}
                                               {isDrop && (
@@ -3145,7 +3118,7 @@ export function MigrationPage() {
                                                   )}
                                                   {item.flyway && (
                                                     <span className={`text-xs rounded px-2 py-0.5 ${FLYWAY_COLORS[item.flyway] || 'bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300'}`}>
-                                                      {item.flyway}
+                                                      {flywayLabel(item.flyway)}
                                                     </span>
                                                   )}
                                                 </div>
@@ -3216,7 +3189,7 @@ export function MigrationPage() {
                           stroke={chartColors.axis}
                         />
                         <YAxis
-                          tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
+                          tickFormatter={compactCount}
                           stroke={chartColors.axis}
                         />
                         <Tooltip
@@ -3302,7 +3275,7 @@ export function MigrationPage() {
                       interval="preserveStartEnd"
                     />
                     <YAxis
-                      tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
+                      tickFormatter={compactCount}
                       stroke={chartColors.axis}
                     />
                     <Tooltip
@@ -3385,7 +3358,7 @@ export function MigrationPage() {
                     <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
                     <XAxis dataKey="year" stroke={chartColors.axis} />
                     <YAxis
-                      tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)}
+                      tickFormatter={compactCount}
                       stroke={chartColors.axis}
                     />
                     <Tooltip

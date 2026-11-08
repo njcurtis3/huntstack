@@ -24,7 +24,7 @@ const steps = [
     icon: Compass,
     question: 'Is this weekend worth it?',
     title: 'Where to Hunt',
-    description: 'Public areas near you ranked by bird numbers, open seasons, hunt-day weather and distance.',
+    description: 'Survey sites and refuges ranked by bird numbers, open seasons and hunt-day weather, with hunting access shown for each.',
     href: '/where-to-hunt',
     cta: 'Find a spot',
   },
@@ -48,12 +48,12 @@ const stats = [
 
 const flyways = [
   { name: 'Central Flyway', states: 'TX · OK · KS · NM', note: null, color: 'text-forest-400' },
-  { name: 'Mississippi Flyway', states: 'AR · LA', note: 'Survey counts also for MO · IL', color: 'text-accent-400' },
+  { name: 'Mississippi Flyway', states: 'AR · LA', note: 'Survey counts only (no season dates yet): MO · IL · IA', color: 'text-accent-400' },
 ]
 
 const exampleQuestions = [
   'Is duck season open in the Kansas Low Plains this weekend?',
-  'Where should I hunt snow geese near Amarillo?',
+  'Where are the most ducks being counted this week?',
   'What is the duck bag limit in Arkansas?',
 ]
 
@@ -241,8 +241,8 @@ export function HomePage() {
                 Central &amp; Mississippi Flyways
               </h2>
               <p className="mt-2 text-sm" style={{ color: `rgb(var(--color-text-secondary))` }}>
-                Six states have full seasons, regulations and survey counts today. More survey sites and states
-                across both flyways are on the way.
+                Six states have full seasons, regulations and survey counts today. Missouri, Illinois and Iowa
+                have survey counts but no season dates yet. Outfitter listings are Texas only for now.
               </p>
             </div>
             <div className="md:w-2/3 grid grid-cols-1 sm:grid-cols-2 gap-3">
