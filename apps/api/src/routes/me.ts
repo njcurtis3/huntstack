@@ -292,7 +292,7 @@ export function buildMeRoutes(deps: MeDeps): FastifyPluginAsync {
     }, async (request, reply) => {
       const listing = await store.findByOwner(request.authUser.id)
       if (!listing) return reply.status(404).send(errorBody(404, NO_LISTING))
-      const all = await store.listInquiries(listing.id, 'all')
+      const all = await store.listInquiries(listing.id, request.authUser.id, 'all')
       const { status } = request.query
       return {
         inquiries: all
@@ -332,7 +332,7 @@ export function buildMeRoutes(deps: MeDeps): FastifyPluginAsync {
       }
       const listing = await store.findByOwner(request.authUser.id)
       const { id } = request.params
-      const changed = listing && UUID_RE.test(id) ? await store.setInquiryStatus(id.toLowerCase(), listing.id, status as InquiryStatus) : false
+      const changed = listing && UUID_RE.test(id) ? await store.setInquiryStatus(id.toLowerCase(), listing.id, request.authUser.id, status as InquiryStatus) : false
       if (!changed) return reply.status(404).send(errorBody(404, 'Inquiry not found'))
       return { id: id.toLowerCase(), status }
     })

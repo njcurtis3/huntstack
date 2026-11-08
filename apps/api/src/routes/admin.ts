@@ -3,6 +3,7 @@ import { decorateAuthUser, parseAdminIds, requireAdmin, type VerifyUser } from '
 import { UUID_RE, drizzleOutfitterStore, type OutfitterRecord, type OutfitterStore } from '../lib/outfitter-store.js'
 import {
   approveSubmission,
+  releaseListing,
   privateListingSchema,
   rejectSubmission,
   submissionSchema,
@@ -165,10 +166,9 @@ export function buildAdminRoutes(deps: AdminDeps): FastifyPluginAsync {
         response: outfitterResponse,
       },
     }, async (request, reply) => {
-      const { id } = request.params
-      const updated = UUID_RE.test(id) ? await store.releaseOwner(id.toLowerCase(), deps.now()) : null
-      if (!updated) return reply.status(404).send(errorBody(404, 'Outfitter not found'))
-      return { outfitter: adminListing(updated) }
+      const result = await releaseListing(store, request.authUser.id, request.params.id, deps.now())
+      if (!result.ok) return reply.status(result.status).send(errorBody(result.status, result.message))
+      return { outfitter: adminListing(result.outfitter) }
     })
   }
 }

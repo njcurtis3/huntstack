@@ -494,10 +494,14 @@ export async function approveSubmission(
   if (!UUID_RE.test(submissionId)) return refuse(404, 'Submission not found')
   return mapConflict(() =>
     store.transaction(async (tx) => {
-      const s = await tx.lockSubmission(submissionId.toLowerCase())
+      // Lock order everywhere is the user's advisory lock, then rows. Submitters take the advisory lock
+      // before re-saving their pending row, so taking the row lock first here would deadlock with them.
+      const peek = await tx.getSubmission(submissionId.toLowerCase())
+      if (!peek) return refuse(404, 'Submission not found')
+      await tx.lockKey(peek.userId)
+      const s = await tx.lockSubmission(peek.id)
       if (!s) return refuse(404, 'Submission not found')
       if (s.status !== 'pending') return refuse(409, 'This request was already decided')
-      await tx.lockKey(s.userId)
       const decide = (outfitterId?: string | null) => tx.decide(s.id, { status: 'approved', rejectReason: null, reviewedBy: adminId, now, outfitterId })
 
       if (s.kind === 'new_listing') {
@@ -546,6 +550,20 @@ export async function rejectSubmission(store: OutfitterStore, adminId: string, s
   })
 }
 
+/** Admin removes the owner. The former owner's pending edit and replies are closed so the next owner starts clean. */
+export async function releaseListing(store: OutfitterStore, adminId: string, outfitterId: string, now: Date): Promise<Outcome<{ outfitter: OutfitterRecord }>> {
+  if (!UUID_RE.test(outfitterId)) return refuse(404, 'Outfitter not found')
+  return store.transaction(async (tx) => {
+    const current = await tx.findById(outfitterId.toLowerCase())
+    if (!current) return refuse(404, 'Outfitter not found')
+    // same lock order as the owner's own submissions: advisory lock first, then rows
+    if (current.ownerId) await tx.lockKey(current.ownerId)
+    await tx.closeOwnerSubmissions(current.id, 'ownership released', adminId, now)
+    const outfitter = await tx.releaseOwner(current.id, now)
+    return outfitter ? { ok: true as const, outfitter } : refuse(404, 'Outfitter not found')
+  })
+}
+
 // ---- inquiries ----
 
 export async function createInquiry(
@@ -557,6 +575,10 @@ export async function createInquiry(
 ): Promise<Outcome<{ inquiry: InquiryRecord }>> {
   return store.transaction(async (tx) => {
     await tx.lockKey(user.id)
+    // Re-read inside the transaction: the owner may have been released since the route looked
+    const target = await tx.findById(outfitterId)
+    if (!target || !target.isActive) return refuse(404, 'Outfitter not found')
+    if (target.ownerId === null) return refuse(409, 'This outfitter has not claimed their listing yet')
     const day = await tx.countInquiriesSince(user.id, new Date(now.getTime() - DAY_MS))
     if (day >= INQUIRIES_PER_DAY) return refuse(429, `You can send ${INQUIRIES_PER_DAY} inquiries a day. Please try again later.`)
     const week = await tx.countInquiriesSince(user.id, new Date(now.getTime() - 7 * DAY_MS), outfitterId)
@@ -564,6 +586,8 @@ export async function createInquiry(
     const inquiry = await tx.insertInquiry({
       outfitterId,
       userId: user.id,
+      // only this owner may read the inquiry, even if the listing is released and claimed again
+      recipientOwnerId: target.ownerId,
       // the verified account email, never a body field
       hunterEmail: user.email,
       hunterName: input.name,

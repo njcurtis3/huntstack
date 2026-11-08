@@ -12,7 +12,9 @@ import {
   validateReplyBody,
   validateSubmissionRequest,
 } from './outfitters.js'
-import { createMemoryOutfitterStore, type OutfitterRecord } from './outfitter-store.js'
+import { drizzle } from 'drizzle-orm/pg-proxy'
+import { createDrizzleOutfitterStore, createMemoryOutfitterStore, type OutfitterRecord, type ListingInput } from './outfitter-store.js'
+import type { getDb } from './db.js'
 
 const PUBLIC_KEYS = [
   'claimed', 'city', 'description', 'huntTypes', 'id', 'isVerified', 'name', 'phone', 'priceNote', 'priceRange',
@@ -192,5 +194,38 @@ describe('buildDailyStats', () => {
     expect(daily[6]).toEqual({ day: '2026-11-07', impression: 0, detail: 3, contact: 0 })
     expect(daily[4]).toEqual({ day: '2026-11-05', impression: 9, detail: 0, contact: 0 })
     expect(daily.reduce((n, d) => n + d.contact, 0)).toBe(0)
+  })
+})
+
+// The memory store cannot see how jsonb is bound. drizzle 0.32 + postgres-js stores a JSON-encoded string
+// SCALAR for a plain object bound to jsonb (location/metadata became arrays on edit). This captures the
+// real SQL the Drizzle store emits and checks every jsonb value is bound as text and cast server side.
+describe('drizzle store jsonb writes', () => {
+  const input: ListingInput = {
+    name: 'Prairie Wing', city: 'Amarillo', state: 'TX', statesServed: ['TX'], huntTypes: ['guided'], speciesOffered: ['Mallard'],
+    priceRange: '$$', priceNote: 'Call', description: 'Guided waterfowl hunts across the Panhandle.', phone: null, website: null,
+  }
+  const captured: Array<{ sql: string; params: unknown[] }> = []
+  const db = drizzle(async (sql, params) => { captured.push({ sql, params }); return { rows: [] } }) as unknown as ReturnType<typeof getDb>
+  const store = createDrizzleOutfitterStore(() => db)
+  const now = new Date('2026-11-07T12:00:00Z')
+  const run = async (fn: () => Promise<unknown>) => { captured.length = 0; await fn().catch(() => undefined); return captured.map(c => c.sql).join(' ') }
+
+  it('updateListing merges location and metadata through ::text::jsonb', async () => {
+    const sql = await run(() => store.updateListing('x', input, now))
+    expect(sql).toMatch(/location.*\|\|.*::text::jsonb/)
+    expect(sql).toMatch(/metadata.*\|\|.*::text::jsonb/)
+    expect(sql).not.toMatch(/\$\d+::jsonb/)
+  })
+
+  it('insertListing and submissions bind jsonb as text too', async () => {
+    const inserted = await run(() => store.insertListing(input, { slug: 's', ownerId: 'u', isVerified: false, now }))
+    expect(inserted.match(/::text::jsonb/g)?.length).toBe(5)
+    const sub = await run(() => store.insertSubmission({ kind: 'edit', userId: 'u', submitterEmail: null, outfitterId: 'o', reviewId: null, payload: input, now }))
+    expect(sub).toContain('::text::jsonb')
+    const replaced = await run(() => store.replacePayload('id', input, now))
+    expect(replaced).toContain('::text::jsonb')
+    // the bound value is the JSON text itself, not a pre-encoded string of it
+    expect(captured.some(c => c.params.includes(JSON.stringify(input)))).toBe(true)
   })
 })

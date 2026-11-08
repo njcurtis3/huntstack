@@ -99,6 +99,8 @@ export interface InquiryRecord {
   id: string
   outfitterId: string
   userId: string
+  /** The owner who held the listing when this was sent; only that owner may read it */
+  recipientOwnerId: string
   hunterEmail: string
   hunterName: string | null
   hunterPhone: string | null
@@ -156,6 +158,8 @@ export interface OutfitterTx {
   countSubmissionsSince(userId: string, since: Date): Promise<number>
   withdraw(id: string, userId: string, now: Date): Promise<SubmissionRecord | null>
   decide(id: string, decision: Decision): Promise<SubmissionRecord>
+  /** Rejects the pending edit and review_reply submissions on a listing (they belong to its former owner) */
+  closeOwnerSubmissions(outfitterId: string, reason: string, reviewedBy: string, now: Date): Promise<number>
   lastDecision(userId: string): Promise<SubmissionRecord | null>
   listSubmissions(scope: 'pending' | 'decided'): Promise<SubmissionRecord[]>
 
@@ -165,8 +169,8 @@ export interface OutfitterTx {
 
   countInquiriesSince(userId: string, since: Date, outfitterId?: string): Promise<number>
   insertInquiry(input: NewInquiry): Promise<InquiryRecord>
-  listInquiries(outfitterId: string, status: InquiryStatus | 'all'): Promise<InquiryRecord[]>
-  setInquiryStatus(id: string, outfitterId: string, status: InquiryStatus): Promise<boolean>
+  listInquiries(outfitterId: string, recipientOwnerId: string, status: InquiryStatus | 'all'): Promise<InquiryRecord[]>
+  setInquiryStatus(id: string, outfitterId: string, recipientOwnerId: string, status: InquiryStatus): Promise<boolean>
 
   addViews(deltas: ViewDelta[]): Promise<void>
   viewCounts(outfitterId: string, fromDay: string, toDay: string): Promise<Array<{ day: string; kind: ViewKind; count: number }>>
@@ -242,15 +246,20 @@ function toInquiry(row: typeof outfitterInquiries.$inferSelect): InquiryRecord {
   return { ...row, status: row.status as InquiryStatus }
 }
 
+// drizzle 0.32 + postgres-js JSON-encodes a jsonb value twice, which stores a jsonb STRING scalar instead
+// of an object or array. Binding the JSON text as text and casting it server side stores the real value.
+// Every jsonb this store writes goes through here; reads stay tolerant via decodeJsonbField.
+const jsonb = (value: unknown) => sql`${JSON.stringify(value)}::text::jsonb`
+
 function listingColumns(fields: ListingInput) {
   return {
     name: fields.name,
     description: fields.description,
     contactPhone: fields.phone,
     website: fields.website,
-    huntTypes: fields.huntTypes,
-    speciesOffered: fields.speciesOffered,
-    statesServed: fields.statesServed,
+    huntTypes: jsonb(fields.huntTypes),
+    speciesOffered: jsonb(fields.speciesOffered),
+    statesServed: jsonb(fields.statesServed),
     priceRange: fields.priceRange,
   }
 }
@@ -298,8 +307,8 @@ function makeOps(db: Executor): OutfitterTx {
         ownerId,
         isVerified,
         isActive: true,
-        location: { city: fields.city, state: fields.state },
-        metadata: { priceNote: fields.priceNote },
+        location: jsonb({ city: fields.city, state: fields.state }),
+        metadata: jsonb({ priceNote: fields.priceNote }),
         createdAt: now,
         updatedAt: now,
       }).returning()
@@ -309,8 +318,8 @@ function makeOps(db: Executor): OutfitterTx {
       const row = await one(db.update(outfitters).set({
         ...listingColumns(fields),
         // merge so keys this form does not own (address, zip, legacyId) survive an edit
-        location: sql`coalesce(${outfitters.location}, '{}'::jsonb) || ${JSON.stringify({ city: fields.city, state: fields.state })}::jsonb`,
-        metadata: sql`coalesce(${outfitters.metadata}, '{}'::jsonb) || ${JSON.stringify({ priceNote: fields.priceNote })}::jsonb`,
+        location: sql`coalesce(${outfitters.location}, '{}'::jsonb) || ${JSON.stringify({ city: fields.city, state: fields.state })}::text::jsonb`,
+        metadata: sql`coalesce(${outfitters.metadata}, '{}'::jsonb) || ${JSON.stringify({ priceNote: fields.priceNote })}::text::jsonb`,
         updatedAt: now,
       }).where(eq(outfitters.id, id)).returning())
       return row ? toRecord(row) : null
@@ -347,14 +356,14 @@ function makeOps(db: Executor): OutfitterTx {
         submitterEmail: input.submitterEmail,
         outfitterId: input.outfitterId,
         reviewId: input.reviewId,
-        payload: input.payload,
+        payload: jsonb(input.payload),
         createdAt: input.now,
         updatedAt: input.now,
       }).returning()
       return toSubmission(row)
     },
     async replacePayload(id, payload, now) {
-      const [row] = await db.update(outfitterSubmissions).set({ payload, updatedAt: now }).where(eq(outfitterSubmissions.id, id)).returning()
+      const [row] = await db.update(outfitterSubmissions).set({ payload: jsonb(payload), updatedAt: now }).where(eq(outfitterSubmissions.id, id)).returning()
       return toSubmission(row)
     },
     async pendingForUser(userId) {
@@ -412,6 +421,16 @@ function makeOps(db: Executor): OutfitterTx {
         ...(d.outfitterId ? { outfitterId: d.outfitterId } : {}),
       }).where(eq(outfitterSubmissions.id, id)).returning()
       return toSubmission(row)
+    },
+    async closeOwnerSubmissions(outfitterId, reason, reviewedBy, now) {
+      const rows = await db.update(outfitterSubmissions).set({
+        status: 'rejected', rejectReason: reason, reviewedBy, reviewedAt: now, updatedAt: now,
+      }).where(and(
+        eq(outfitterSubmissions.outfitterId, outfitterId),
+        eq(outfitterSubmissions.status, 'pending'),
+        inArray(outfitterSubmissions.kind, ['edit', 'review_reply']),
+      )).returning({ id: outfitterSubmissions.id })
+      return rows.length
     },
     async lastDecision(userId) {
       const row = await one(db.select().from(outfitterSubmissions).where(and(
@@ -476,16 +495,15 @@ function makeOps(db: Executor): OutfitterTx {
       const [row] = await db.insert(outfitterInquiries).values(input).returning()
       return toInquiry(row)
     },
-    async listInquiries(outfitterId, status) {
-      const where = status === 'all'
-        ? eq(outfitterInquiries.outfitterId, outfitterId)
-        : and(eq(outfitterInquiries.outfitterId, outfitterId), eq(outfitterInquiries.status, status))
+    async listInquiries(outfitterId, recipientOwnerId, status) {
+      const mine = and(eq(outfitterInquiries.outfitterId, outfitterId), eq(outfitterInquiries.recipientOwnerId, recipientOwnerId))
+      const where = status === 'all' ? mine : and(mine, eq(outfitterInquiries.status, status))
       const rows = await db.select().from(outfitterInquiries).where(where).orderBy(desc(outfitterInquiries.createdAt)).limit(500)
       return rows.map(toInquiry)
     },
-    async setInquiryStatus(id, outfitterId, status) {
+    async setInquiryStatus(id, outfitterId, recipientOwnerId, status) {
       const rows = await db.update(outfitterInquiries).set({ status })
-        .where(and(eq(outfitterInquiries.id, id), eq(outfitterInquiries.outfitterId, outfitterId)))
+        .where(and(eq(outfitterInquiries.id, id), eq(outfitterInquiries.outfitterId, outfitterId), eq(outfitterInquiries.recipientOwnerId, recipientOwnerId)))
         .returning({ id: outfitterInquiries.id })
       return rows.length > 0
     },
@@ -644,6 +662,11 @@ export function createMemoryOutfitterStore(initial: Partial<MemoryState> = {}): 
       if (d.outfitterId) s.outfitterId = d.outfitterId
       return copy(s)
     },
+    async closeOwnerSubmissions(outfitterId, reason, reviewedBy, now) {
+      const open = state.submissions.filter(s => s.outfitterId === outfitterId && s.status === 'pending' && (s.kind === 'edit' || s.kind === 'review_reply'))
+      for (const s of open) Object.assign(s, { status: 'rejected', rejectReason: reason, reviewedBy, reviewedAt: now, updatedAt: now })
+      return open.length
+    },
     async lastDecision(userId) {
       const done = state.submissions
         .filter(s => s.userId === userId && (s.status === 'approved' || s.status === 'rejected') && s.kind !== 'review_reply')
@@ -681,13 +704,13 @@ export function createMemoryOutfitterStore(initial: Partial<MemoryState> = {}): 
       state.inquiries.push(row)
       return copy(row)
     },
-    async listInquiries(outfitterId, status) {
+    async listInquiries(outfitterId, recipientOwnerId, status) {
       return copy(state.inquiries
-        .filter(i => i.outfitterId === outfitterId && (status === 'all' || i.status === status))
+        .filter(i => i.outfitterId === outfitterId && i.recipientOwnerId === recipientOwnerId && (status === 'all' || i.status === status))
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()))
     },
-    async setInquiryStatus(id, outfitterId, status) {
-      const i = state.inquiries.find(x => x.id === id && x.outfitterId === outfitterId)
+    async setInquiryStatus(id, outfitterId, recipientOwnerId, status) {
+      const i = state.inquiries.find(x => x.id === id && x.outfitterId === outfitterId && x.recipientOwnerId === recipientOwnerId)
       if (!i) return false
       i.status = status
       return true

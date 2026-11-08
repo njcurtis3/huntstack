@@ -222,8 +222,8 @@ describe('/api/me', () => {
 
   it('inbox lists inquiries for the owner only and updates status', async () => {
     ctx.store.state.inquiries.push(
-      { id: '70000000-0000-4000-8000-000000000001', outfitterId: LISTING_ID, userId: NEWBIE, hunterEmail: 'newbie@example.com', hunterName: 'Sam', hunterPhone: null, preferredDates: null, partySize: 3, message: 'Hello there, any openings?', status: 'new', createdAt: new Date('2026-11-06T00:00:00Z') },
-      { id: '70000000-0000-4000-8000-000000000002', outfitterId: LISTING_ID, userId: OTHER, hunterEmail: 'other@example.com', hunterName: null, hunterPhone: null, preferredDates: null, partySize: null, message: 'Another question for you', status: 'read', createdAt: new Date('2026-11-05T00:00:00Z') },
+      { id: '70000000-0000-4000-8000-000000000001', outfitterId: LISTING_ID, userId: NEWBIE, recipientOwnerId: OWNER, hunterEmail: 'newbie@example.com', hunterName: 'Sam', hunterPhone: null, preferredDates: null, partySize: 3, message: 'Hello there, any openings?', status: 'new', createdAt: new Date('2026-11-06T00:00:00Z') },
+      { id: '70000000-0000-4000-8000-000000000002', outfitterId: LISTING_ID, userId: OTHER, recipientOwnerId: OWNER, hunterEmail: 'other@example.com', hunterName: null, hunterPhone: null, preferredDates: null, partySize: null, message: 'Another question for you', status: 'read', createdAt: new Date('2026-11-05T00:00:00Z') },
     )
     const all = (await call('GET', '/outfitter/inquiries', 'owner')).json()
     expect(all.inquiries).toHaveLength(2)
@@ -239,6 +239,31 @@ describe('/api/me', () => {
     const ok = await call('POST', `/outfitter/inquiries/${id}/status`, 'owner', { status: 'archived' })
     expect(ok.json()).toEqual({ id, status: 'archived' })
     expect((await call('GET', '/outfitter/inquiries', 'owner')).json().unread).toBe(0)
+  })
+
+  it('after release and reclaim the new owner sees none of the previous owner inquiries or pending changes', async () => {
+    ctx.store.state.inquiries.push(
+      { id: '70000000-0000-4000-8000-000000000009', outfitterId: LISTING_ID, userId: OTHER, recipientOwnerId: OWNER, hunterEmail: 'other@example.com', hunterName: null, hunterPhone: null, preferredDates: null, partySize: null, message: 'Sent to the first owner', status: 'new', createdAt: new Date('2026-11-05T00:00:00Z') },
+    )
+    const stale = (await call('POST', '/outfitter/submissions', 'owner', { kind: 'edit', listing: edit })).json()
+    const reply = (await call('POST', `/outfitter/reviews/${REVIEW_ID}/reply`, 'owner', { body: 'Old owner reply' })).json()
+    expect((await ctx.app.inject({ method: 'POST', url: `/api/admin/outfitters/${LISTING_ID}/release`, headers: as('admin') })).statusCode).toBe(200)
+    for (const id of [stale.id, reply.id]) {
+      const row = ctx.store.state.submissions.find(x => x.id === id)!
+      expect(row.status).toBe('rejected')
+      expect(row.rejectReason).toBe('ownership released')
+    }
+    const claim = (await call('POST', '/outfitter/submissions', 'newbie', { kind: 'claim', claim: { outfitterId: LISTING_ID, role: 'Owner', contactPhone: null, contactEmail: null, note: '' } })).json()
+    expect((await ctx.app.inject({ method: 'POST', url: `/api/admin/submissions/${claim.id}/approve`, headers: as('admin'), payload: {} })).statusCode).toBe(200)
+
+    const mine = (await call('GET', '/outfitter', 'newbie')).json()
+    expect(mine.pending).toBeNull()
+    expect((await call('GET', '/outfitter/inquiries', 'newbie')).json()).toEqual({ inquiries: [], unread: 0 })
+    expect((await call('POST', '/outfitter/inquiries/70000000-0000-4000-8000-000000000009/status', 'newbie', { status: 'read' })).statusCode).toBe(404)
+    // the new owner's own edit is a fresh row, approvable
+    const fresh = (await call('POST', '/outfitter/submissions', 'newbie', { kind: 'edit', listing: edit })).json()
+    expect(fresh.id).not.toBe(stale.id)
+    expect((await ctx.app.inject({ method: 'POST', url: `/api/admin/submissions/${fresh.id}/approve`, headers: as('admin'), payload: {} })).statusCode).toBe(200)
   })
 
   it('429 once a user has made 20 submissions in 24 hours', async () => {

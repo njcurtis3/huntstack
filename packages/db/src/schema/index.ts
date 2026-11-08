@@ -471,6 +471,7 @@ export const outfitterInquiries = pgTable('outfitter_inquiries', {
   id: uuid('id').primaryKey().defaultRandom(),
   outfitterId: uuid('outfitter_id').notNull().references(() => outfitters.id, { onDelete: 'cascade' }),
   userId: uuid('user_id').notNull(),
+  recipientOwnerId: uuid('recipient_owner_id').notNull(), // the owner at send time; the inbox is scoped to it
   hunterEmail: text('hunter_email').notNull(), // the verified account email, never a body field
   hunterName: text('hunter_name'),
   hunterPhone: text('hunter_phone'),

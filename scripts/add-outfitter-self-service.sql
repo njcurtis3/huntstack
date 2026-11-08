@@ -66,11 +66,14 @@ CREATE TABLE IF NOT EXISTS review_replies (
 ALTER TABLE review_replies ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON review_replies FROM anon, authenticated;
 
--- (5) hunter inquiries to a claimed outfitter; hunter_email is the verified account email
+-- (5) hunter inquiries to a claimed outfitter; hunter_email is the verified account email.
+-- recipient_owner_id is the owner when it was sent: after a release and reclaim the new owner
+-- never sees the previous owner's inquiries (they hold hunters' emails and phones).
 CREATE TABLE IF NOT EXISTS outfitter_inquiries (
   id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
   outfitter_id    uuid        NOT NULL REFERENCES outfitters (id) ON DELETE CASCADE,
   user_id         uuid        NOT NULL,
+  recipient_owner_id uuid     NOT NULL,
   hunter_email    text        NOT NULL,
   hunter_name     text        CONSTRAINT inquiries_name_check CHECK (length(hunter_name) <= 80),
   hunter_phone    text        CONSTRAINT inquiries_phone_check CHECK (length(hunter_phone) <= 30),
