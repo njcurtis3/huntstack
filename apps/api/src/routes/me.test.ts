@@ -108,7 +108,7 @@ describe('/api/me', () => {
     expect(mine.listing.name).toBe('Old Name Outfitters')
     expect(mine.pending.id).toBe(sub.json().id)
 
-    const approved = await ctx.app.inject({ method: 'POST', url: `/api/admin/submissions/${sub.json().id}/approve`, headers: as('admin'), payload: {} })
+    const approved = await ctx.app.inject({ method: 'POST', url: `/api/admin/submissions/${sub.json().id}/approve`, headers: as('admin'), payload: { expectedUpdatedAt: NOW.toISOString() } })
     expect(approved.statusCode).toBe(200)
     const after = await publicName()
     expect(after.name).toBe('New Name Outfitters')
@@ -216,7 +216,7 @@ describe('/api/me', () => {
     await call('POST', `/outfitter/reviews/${REVIEW_ID}/reply`, 'owner', { body: 'Edited reply' })
     expect(ctx.store.state.submissions.filter(s => s.status === 'pending')).toHaveLength(1)
 
-    await ctx.app.inject({ method: 'POST', url: `/api/admin/submissions/${res.json().id}/approve`, headers: as('admin'), payload: {} })
+    await ctx.app.inject({ method: 'POST', url: `/api/admin/submissions/${res.json().id}/approve`, headers: as('admin'), payload: { expectedUpdatedAt: NOW.toISOString() } })
     expect((await publicReviews())[0].reply.body).toBe('Edited reply')
   })
 
@@ -254,7 +254,7 @@ describe('/api/me', () => {
       expect(row.rejectReason).toBe('ownership released')
     }
     const claim = (await call('POST', '/outfitter/submissions', 'newbie', { kind: 'claim', claim: { outfitterId: LISTING_ID, role: 'Owner', contactPhone: null, contactEmail: null, note: '' } })).json()
-    expect((await ctx.app.inject({ method: 'POST', url: `/api/admin/submissions/${claim.id}/approve`, headers: as('admin'), payload: {} })).statusCode).toBe(200)
+    expect((await ctx.app.inject({ method: 'POST', url: `/api/admin/submissions/${claim.id}/approve`, headers: as('admin'), payload: { expectedUpdatedAt: NOW.toISOString() } })).statusCode).toBe(200)
 
     const mine = (await call('GET', '/outfitter', 'newbie')).json()
     expect(mine.pending).toBeNull()
@@ -263,7 +263,7 @@ describe('/api/me', () => {
     // the new owner's own edit is a fresh row, approvable
     const fresh = (await call('POST', '/outfitter/submissions', 'newbie', { kind: 'edit', listing: edit })).json()
     expect(fresh.id).not.toBe(stale.id)
-    expect((await ctx.app.inject({ method: 'POST', url: `/api/admin/submissions/${fresh.id}/approve`, headers: as('admin'), payload: {} })).statusCode).toBe(200)
+    expect((await ctx.app.inject({ method: 'POST', url: `/api/admin/submissions/${fresh.id}/approve`, headers: as('admin'), payload: { expectedUpdatedAt: NOW.toISOString() } })).statusCode).toBe(200)
   })
 
   it('429 once a user has made 20 submissions in 24 hours', async () => {

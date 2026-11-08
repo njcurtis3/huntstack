@@ -34,6 +34,8 @@ const adminSubmissionSchema = {
     ...submissionSchema.properties,
     userId: { type: 'string' },
     submitterEmail: nullableString,
+    // the version the admin is looking at; sent back as expectedUpdatedAt on approve
+    updatedAt: { type: 'string' },
     current: { ...privateListingSchema, nullable: true },
     review: {
       type: 'object',
@@ -81,6 +83,7 @@ export function buildAdminRoutes(deps: AdminDeps): FastifyPluginAsync {
           ...toSubmissionJson(s),
           userId: s.userId,
           submitterEmail: s.submitterEmail,
+          updatedAt: s.updatedAt.toISOString(),
           current: current ? adminListing(current) : null,
           review: review ? { id: review.id, rating: review.rating, title: review.title, content: review.content } : null,
         })
@@ -102,9 +105,13 @@ export function buildAdminRoutes(deps: AdminDeps): FastifyPluginAsync {
         },
       },
     }, async (request, reply) => {
-      const flag = (request.body as { markVerified?: unknown } | null | undefined)?.markVerified
+      const body = request.body as { markVerified?: unknown; expectedUpdatedAt?: unknown } | null | undefined
+      const flag = body?.markVerified
       if (flag !== undefined && typeof flag !== 'boolean') return reply.status(400).send(errorBody(400, 'markVerified must be true or false'))
-      const result = await approveSubmission(store, request.authUser.id, request.params.id, flag === true, deps.now())
+      // Approve only the version the admin saw: the owner may have re-saved it since the queue loaded.
+      const seen = typeof body?.expectedUpdatedAt === 'string' ? new Date(body.expectedUpdatedAt) : null
+      if (!seen || Number.isNaN(seen.getTime())) return reply.status(400).send(errorBody(400, 'Reload the queue and approve again'))
+      const result = await approveSubmission(store, request.authUser.id, request.params.id, flag === true, seen, deps.now())
       if (!result.ok) return reply.status(result.status).send(errorBody(result.status, result.message))
       return { submission: toSubmissionJson(result.submission), outfitter: result.outfitter ? adminListing(result.outfitter) : null }
     })

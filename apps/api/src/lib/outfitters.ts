@@ -483,12 +483,20 @@ export async function submitReply(store: OutfitterStore, user: AuthUser, reviewI
   }))
 }
 
-/** An admin approves a pending submission and applies it. Locks the submission row and re-checks it is still pending. */
+export const STALE_SUBMISSION = 'This request changed after you opened it. Review it again.'
+
+/**
+ * An admin approves a pending submission and applies it. Locks the submission row and re-checks it is
+ * still pending and still the version the admin saw: the owner can re-save a pending edit or reply in
+ * place, so expectedUpdatedAt (the updatedAt the admin UI displayed) must match the locked row or
+ * nothing is applied and the result is a 409.
+ */
 export async function approveSubmission(
   store: OutfitterStore,
   adminId: string,
   submissionId: string,
   markVerified: boolean,
+  expectedUpdatedAt: Date,
   now: Date,
 ): Promise<Outcome<{ submission: SubmissionRecord; outfitter: OutfitterRecord | null }>> {
   if (!UUID_RE.test(submissionId)) return refuse(404, 'Submission not found')
@@ -502,6 +510,7 @@ export async function approveSubmission(
       const s = await tx.lockSubmission(peek.id)
       if (!s) return refuse(404, 'Submission not found')
       if (s.status !== 'pending') return refuse(409, 'This request was already decided')
+      if (s.updatedAt.getTime() !== expectedUpdatedAt.getTime()) return refuse(409, STALE_SUBMISSION)
       const decide = (outfitterId?: string | null) => tx.decide(s.id, { status: 'approved', rejectReason: null, reviewedBy: adminId, now, outfitterId })
 
       if (s.kind === 'new_listing') {

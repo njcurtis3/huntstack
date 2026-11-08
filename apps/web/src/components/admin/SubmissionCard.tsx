@@ -102,7 +102,11 @@ export function SubmissionCard({ submission, decided = false }: { submission: Ad
   const errorText = error instanceof AdminApiError ? error.message : error ? 'Something went wrong. Please try again.' : null
 
   function onApprove() {
-    approve.mutate({ id: submission.id, markVerified: canVerify ? markVerified : undefined })
+    approve.mutate({
+      id: submission.id,
+      markVerified: canVerify ? markVerified : undefined,
+      expectedUpdatedAt: submission.updatedAt,
+    })
   }
 
   function onReject() {

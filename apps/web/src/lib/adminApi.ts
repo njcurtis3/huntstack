@@ -39,6 +39,8 @@ export interface AdminSubmission {
   rejectReason: string | null
   createdAt: string
   reviewedAt: string | null
+  /** The version on screen. Sent back on approve; the API refuses with 409 if the owner re-saved since. */
+  updatedAt: string
   submitterEmail: string | null
   userId: string
   current: AdminListing | null
@@ -124,11 +126,13 @@ export function useAdminOutfitters(userId: string | null, enabled: boolean) {
 export function useApproveSubmission() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, markVerified }: { id: string; markVerified?: boolean }) =>
+    mutationFn: ({ id, markVerified, expectedUpdatedAt }: { id: string; markVerified?: boolean; expectedUpdatedAt: string }) =>
       adminFetch<unknown>(`/api/admin/submissions/${encodeURIComponent(id)}/approve`, {
         method: 'POST',
-        body: markVerified === undefined ? {} : { markVerified },
+        body: markVerified === undefined ? { expectedUpdatedAt } : { markVerified, expectedUpdatedAt },
       }),
+    // Refetches the queue after every outcome, including the 409 "This request changed after you
+    // opened it": the card then shows the owner's latest version and its new updatedAt.
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
   })
 }

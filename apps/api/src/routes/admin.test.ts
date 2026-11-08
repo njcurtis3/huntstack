@@ -8,6 +8,8 @@ import { parseAdminIds, type AuthUser } from '../lib/auth-guard.js'
 import { AuthUnconfiguredError } from '../lib/supabase-auth.js'
 
 const NOW = new Date('2026-11-07T12:00:00Z')
+// every submission in these tests is written at NOW, so this is the version the admin saw
+const SEEN = NOW.toISOString()
 const ADMIN = '11111111-1111-4111-8111-111111111111'
 const OWNER = '22222222-2222-4222-8222-222222222222'
 const NEWBIE = '44444444-4444-4444-8444-444444444444'
@@ -39,12 +41,12 @@ const newListing = {
 }
 const claimOf = (outfitterId: string) => ({ kind: 'claim', claim: { outfitterId, role: 'Owner', contactPhone: null, contactEmail: null, note: '' } })
 
-async function build(adminIds: ReadonlySet<string> = new Set([ADMIN]), verify = verifyUser) {
+async function build(adminIds: ReadonlySet<string> = new Set([ADMIN]), verify = verifyUser, now: () => Date = () => NOW) {
   const store = createMemoryOutfitterStore({ listings: [listing({}), listing({ id: OWNED, name: 'Owned Camp', slug: 'owned-camp', ownerId: OWNER })] })
   const app = Fastify()
   await app.register(rateLimit, { max: 1000, timeWindow: '1 minute' })
-  await app.register(buildAdminRoutes({ store, verifyUser: verify, adminIds, now: () => NOW }), { prefix: '/api/admin' })
-  await app.register(buildMeRoutes({ store, verifyUser: verify, adminIds, now: () => NOW }), { prefix: '/api/me' })
+  await app.register(buildAdminRoutes({ store, verifyUser: verify, adminIds, now }), { prefix: '/api/admin' })
+  await app.register(buildMeRoutes({ store, verifyUser: verify, adminIds, now }), { prefix: '/api/me' })
   return { app, store }
 }
 
@@ -109,7 +111,7 @@ describe('/api/admin moderation', () => {
 
   it('approving a new listing creates a live, owned listing and records the reviewer', async () => {
     const sub = await submit('newbie', { kind: 'new_listing', listing: newListing })
-    const res = await admin('POST', `/submissions/${sub.id}/approve`, { markVerified: true })
+    const res = await admin('POST', `/submissions/${sub.id}/approve`, { markVerified: true, expectedUpdatedAt: SEEN })
     expect(res.statusCode).toBe(200)
     const { submission, outfitter } = res.json()
     expect(outfitter.slug).toBe('prairie-wing-outfitters')
@@ -124,7 +126,7 @@ describe('/api/admin moderation', () => {
 
   it('approving a claim sets the owner; markVerified defaults to false', async () => {
     const sub = await submit('newbie', claimOf(CAMP))
-    const res = await admin('POST', `/submissions/${sub.id}/approve`, {})
+    const res = await admin('POST', `/submissions/${sub.id}/approve`, { expectedUpdatedAt: SEEN })
     expect(res.statusCode).toBe(200)
     expect(res.json().outfitter.ownerId).toBe(NEWBIE)
     expect(res.json().outfitter.isVerified).toBe(false)
@@ -133,7 +135,7 @@ describe('/api/admin moderation', () => {
   it('approving a claim when owner_id is already set is 409 with no change', async () => {
     const sub = await submit('newbie', claimOf(CAMP))
     ctx.store.state.listings.find(l => l.id === CAMP)!.ownerId = RIVAL
-    const res = await admin('POST', `/submissions/${sub.id}/approve`, {})
+    const res = await admin('POST', `/submissions/${sub.id}/approve`, { expectedUpdatedAt: SEEN })
     expect(res.statusCode).toBe(409)
     expect(ctx.store.state.listings.find(l => l.id === CAMP)!.ownerId).toBe(RIVAL)
     expect(ctx.store.state.submissions.find(s => s.id === sub.id)!.status).toBe('pending')
@@ -141,14 +143,14 @@ describe('/api/admin moderation', () => {
 
   it('a second approve or a reject of a decided submission is 409', async () => {
     const sub = await submit('newbie', claimOf(CAMP))
-    expect((await admin('POST', `/submissions/${sub.id}/approve`, {})).statusCode).toBe(200)
-    expect((await admin('POST', `/submissions/${sub.id}/approve`, {})).statusCode).toBe(409)
+    expect((await admin('POST', `/submissions/${sub.id}/approve`, { expectedUpdatedAt: SEEN })).statusCode).toBe(200)
+    expect((await admin('POST', `/submissions/${sub.id}/approve`, { expectedUpdatedAt: SEEN })).statusCode).toBe(409)
     expect((await admin('POST', `/submissions/${sub.id}/reject`, { reason: 'too late' })).statusCode).toBe(409)
   })
 
   it('concurrent approvals of one submission apply once', async () => {
     const sub = await submit('newbie', claimOf(CAMP))
-    const results = await Promise.all([admin('POST', `/submissions/${sub.id}/approve`, {}), admin('POST', `/submissions/${sub.id}/approve`, {})])
+    const results = await Promise.all([admin('POST', `/submissions/${sub.id}/approve`, { expectedUpdatedAt: SEEN }), admin('POST', `/submissions/${sub.id}/approve`, { expectedUpdatedAt: SEEN })])
     expect(results.map(r => r.statusCode).sort()).toEqual([200, 409])
   })
 
@@ -174,5 +176,76 @@ describe('/api/admin moderation', () => {
     const released = await admin('POST', `/outfitters/${OWNED}/release`)
     expect(released.json().outfitter.ownerId).toBeNull()
     expect((await admin('POST', '/outfitters/nope/release')).statusCode).toBe(404)
+  })
+})
+
+describe('/api/admin approve applies only the version the admin saw', () => {
+  const STALE = 'This request changed after you opened it. Review it again.'
+  let clock: Date
+  let ctx: Awaited<ReturnType<typeof build>>
+  beforeEach(async () => {
+    clock = NOW
+    ctx = await build(new Set([ADMIN]), verifyUser, () => clock)
+  })
+  const admin = (method: 'GET' | 'POST', url: string, payload?: unknown) =>
+    ctx.app.inject({ method, url: `/api/admin${url}`, headers: as('admin'), payload: payload as object | undefined })
+  const submit = async (token: string, url: string, body: unknown) =>
+    (await ctx.app.inject({ method: 'POST', url: `/api/me${url}`, headers: as(token), payload: body as object })).json()
+  const queued = async (id: string) =>
+    (await admin('GET', '/submissions')).json().submissions.find((s: { id: string }) => s.id === id)
+
+  it('the queue carries updatedAt for each submission', async () => {
+    const sub = await submit('owner', '/outfitter/submissions', { kind: 'edit', listing: { ...newListing, name: 'Owned Camp Two' } })
+    expect((await queued(sub.id)).updatedAt).toBe(NOW.toISOString())
+  })
+
+  it('an edit re-saved after the admin loaded it: 409, nothing applied, still pending', async () => {
+    const sub = await submit('owner', '/outfitter/submissions', { kind: 'edit', listing: { ...newListing, name: 'What The Admin Saw' } })
+    const seen = (await queued(sub.id)).updatedAt
+    clock = new Date(NOW.getTime() + 60_000)
+    await submit('owner', '/outfitter/submissions', { kind: 'edit', listing: { ...newListing, name: 'Swapped In Later' } })
+
+    const res = await admin('POST', `/submissions/${sub.id}/approve`, { expectedUpdatedAt: seen })
+    expect(res.statusCode).toBe(409)
+    expect(res.json()).toEqual({ error: true, statusCode: 409, message: STALE })
+    expect(ctx.store.state.listings.find(l => l.id === OWNED)!.name).toBe('Owned Camp')
+    const stored = ctx.store.state.submissions.find(s => s.id === sub.id)!
+    expect(stored.status).toBe('pending')
+    expect(stored.reviewedBy).toBeNull()
+
+    // the admin reloads, sees the new version, and approves that
+    const fresh = await queued(sub.id)
+    expect(fresh.payload.name).toBe('Swapped In Later')
+    const ok = await admin('POST', `/submissions/${sub.id}/approve`, { expectedUpdatedAt: fresh.updatedAt })
+    expect(ok.statusCode).toBe(200)
+    expect(ctx.store.state.listings.find(l => l.id === OWNED)!.name).toBe('Swapped In Later')
+  })
+
+  it('a review reply re-saved after the admin loaded it: 409 and no reply published', async () => {
+    const reviewId = '60000000-0000-4000-8000-0000000000aa'
+    ctx.store.state.reviews.push({ id: reviewId, outfitterId: OWNED, rating: 5, title: null, content: null, huntDate: null, createdAt: NOW })
+    const sub = await submit('owner', `/outfitter/reviews/${reviewId}/reply`, { body: 'Thanks for coming out' })
+    const seen = (await queued(sub.id)).updatedAt
+    clock = new Date(NOW.getTime() + 1)
+    await submit('owner', `/outfitter/reviews/${reviewId}/reply`, { body: 'Something else entirely' })
+    expect((await admin('POST', `/submissions/${sub.id}/approve`, { expectedUpdatedAt: seen })).statusCode).toBe(409)
+    expect(ctx.store.state.replies).toHaveLength(0)
+  })
+
+  it('the matching version is 200 and applied', async () => {
+    const sub = await submit('owner', '/outfitter/submissions', { kind: 'edit', listing: { ...newListing, name: 'Owned Camp Two' } })
+    const res = await admin('POST', `/submissions/${sub.id}/approve`, { expectedUpdatedAt: (await queued(sub.id)).updatedAt })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().submission.status).toBe('approved')
+    expect(ctx.store.state.listings.find(l => l.id === OWNED)!.name).toBe('Owned Camp Two')
+  })
+
+  it('a missing or unparseable expectedUpdatedAt is 400 and nothing is applied', async () => {
+    const sub = await submit('newbie', '/outfitter/submissions', claimOf(CAMP))
+    expect((await admin('POST', `/submissions/${sub.id}/approve`, {})).statusCode).toBe(400)
+    expect((await admin('POST', `/submissions/${sub.id}/approve`, { expectedUpdatedAt: 'yesterday' })).statusCode).toBe(400)
+    expect((await admin('POST', `/submissions/${sub.id}/approve`, { expectedUpdatedAt: 12 })).statusCode).toBe(400)
+    expect(ctx.store.state.listings.find(l => l.id === CAMP)!.ownerId).toBeNull()
+    expect(ctx.store.state.submissions.find(s => s.id === sub.id)!.status).toBe('pending')
   })
 })
