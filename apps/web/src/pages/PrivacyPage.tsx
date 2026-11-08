@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 
-const LAST_UPDATED = 'July 20, 2026'
+const LAST_UPDATED = 'November 7, 2026'
 
 export function PrivacyPage() {
   return (
@@ -46,6 +46,19 @@ export function PrivacyPage() {
               third-party analytics or advertising trackers.
             </li>
           </ul>
+        </section>
+
+        <section>
+          <h2 className="text-lg font-semibold mb-2" style={{ color: `rgb(var(--color-text-primary))` }}>
+            Outfitter inquiries and listing views
+          </h2>
+          <p>
+            If you message an outfitter from their listing, we share your account email address, your
+            name and phone number if you gave them, and your message with that outfitter so they can
+            reply. Listing pages also count anonymous daily view and contact-tap totals for each listing,
+            which the outfitter can see. These counts are not tied to you, and no IP addresses are stored
+            for them.
+          </p>
         </section>
 
         <section>

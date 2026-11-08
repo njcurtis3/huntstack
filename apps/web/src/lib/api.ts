@@ -42,6 +42,38 @@ export type FieldReportsResponse = {
   reports: FieldReportPublic[]
 }
 
+/** An outfitter listing as the public API serves it. id is a uuid string. */
+export type PublicListing = {
+  id: string
+  name: string
+  slug: string
+  city: string
+  state: string
+  statesServed: string[]
+  speciesOffered: string[]
+  huntTypes: string[]
+  priceRange: string
+  priceNote: string | null
+  rating: number | null
+  reviewCount: number
+  description: string
+  website: string | null
+  phone: string | null
+  isVerified: boolean
+  /** true once an owner holds the listing; inquiries are only accepted then */
+  claimed: boolean
+}
+
+export type OutfitterReview = {
+  id: string
+  rating: number
+  title: string | null
+  content: string | null
+  huntDate: string | null
+  createdAt: string
+  reply: { body: string; updatedAt: string } | null
+}
+
 class ApiClient {
   private baseUrl: string
 
@@ -236,7 +268,7 @@ class ApiClient {
     }>(`/api/regulations/${stateCode}/licenses`, { params: options })
   }
 
-  // Hunter field reports (public GET, no Authorization header; unverified)
+  // Hunter field reports (public GET, sends no token; unverified)
   async getFieldReports(days = 7) {
     return this.request<FieldReportsResponse>('/api/field-reports', { params: { days } })
   }
@@ -453,7 +485,7 @@ class ApiClient {
     }>(`/api/refuges/${refugeId}/counts`, { params: options })
   }
 
-  // Outfitters
+  // Outfitters (public GETs; no token is ever sent from this client)
   async getOutfitters(options?: {
     q?: string
     state?: string
@@ -463,50 +495,35 @@ class ApiClient {
     offset?: number
   }) {
     return this.request<{
-      outfitters: Array<{
-        id: string
-        name: string
-        slug: string
-        city: string
-        state: string
-        statesServed: string[]
-        speciesOffered: string[]
-        huntTypes: string[]
-        priceRange: string
-        priceNote: string
-        rating: number | null
-        reviewCount: number
-        description: string
-        website: string | null
-        phone: string | null
-        isVerified: boolean
-      }>
+      outfitters: PublicListing[]
       total: number
       states: string[]
     }>('/api/outfitters', { params: options })
   }
 
-  async getOutfitterById(id: string) {
-    return this.request<{
-      outfitter: {
-        id: string
-        name: string
-        slug: string
-        city: string
-        state: string
-        statesServed: string[]
-        speciesOffered: string[]
-        huntTypes: string[]
-        priceRange: string
-        priceNote: string
-        rating: number
-        reviewCount: number
-        description: string
-        website: string | null
-        phone: string | null
-        isVerified: boolean
-      }
-    }>(`/api/outfitters/${id}`)
+  /** Accepts the uuid, the slug or a legacy id (tx-01..tx-14). */
+  async getOutfitterById(idOrSlug: string) {
+    return this.request<{ outfitter: PublicListing }>(`/api/outfitters/${encodeURIComponent(idOrSlug)}`)
+  }
+
+  async getOutfitterReviews(idOrSlug: string) {
+    return this.request<{ reviews: OutfitterReview[] }>(
+      `/api/outfitters/${encodeURIComponent(idOrSlug)}/reviews`,
+    )
+  }
+
+  /** Fire-and-forget: records a Call or Website tap. Never throws, never blocks navigation. */
+  recordContactClick(id: string, kind: 'call' | 'website'): void {
+    try {
+      void fetch(`${this.baseUrl}/api/outfitters/${encodeURIComponent(id)}/contact-click`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind }),
+        keepalive: true,
+      }).catch(() => {})
+    } catch {
+      // swallowed on purpose
+    }
   }
 
   // Chat
