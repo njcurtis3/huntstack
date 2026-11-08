@@ -1,25 +1,10 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Search, MapPin, BadgeCheck, Phone, Globe, ChevronDown, X, Users } from 'lucide-react'
-import { api } from '../lib/api'
+import { Link, useParams } from 'react-router-dom'
+import { api, safeHttpUrl, type PublicListing } from '../lib/api'
+import { OutfitterDetail } from '../components/OutfitterDetail'
 
-type Outfitter = {
-  id: string
-  name: string
-  slug: string
-  city: string
-  state: string
-  statesServed: string[]
-  speciesOffered: string[]
-  huntTypes: string[]
-  priceRange: string
-  priceNote: string
-  rating: number | null
-  reviewCount: number
-  description: string
-  website: string | null
-  phone: string | null
-  isVerified: boolean
-}
+type Outfitter = PublicListing
 
 // All V1 priority states — shown in pills even before they have listings
 const ALL_V1_STATES = ['AR', 'KS', 'LA', 'MO', 'NM', 'OK', 'TX']
@@ -77,8 +62,13 @@ function OutfitterCard({ outfitter }: { outfitter: Outfitter }) {
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <h3 className="font-semibold text-sm" style={{ color: `rgb(var(--color-text-primary))` }}>
-                {outfitter.name}
+              <h3 className="font-semibold text-base" style={{ color: `rgb(var(--color-text-primary))` }}>
+                <Link
+                  to={`/outfitters/${encodeURIComponent(outfitter.slug)}`}
+                  className="flex items-center min-h-11 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 rounded"
+                >
+                  {outfitter.name}
+                </Link>
               </h3>
               {outfitter.isVerified && (
                 <BadgeCheck className="w-4 h-4 text-accent-500 dark:text-accent-400 flex-shrink-0" />
@@ -117,7 +107,7 @@ function OutfitterCard({ outfitter }: { outfitter: Outfitter }) {
 
       {/* Body */}
       <div className="px-4 py-3 flex-1 flex flex-col gap-3">
-        <p className="text-xs leading-relaxed" style={{ color: `rgb(var(--color-text-secondary))` }}>
+        <p className="text-sm leading-relaxed break-words [overflow-wrap:anywhere]" style={{ color: `rgb(var(--color-text-secondary))` }}>
           {outfitter.description}
         </p>
 
@@ -166,31 +156,38 @@ function OutfitterCard({ outfitter }: { outfitter: Outfitter }) {
         </div>
 
         {/* Price note */}
-        <div className="text-xs font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>
-          {outfitter.priceNote}
-        </div>
+        {outfitter.priceNote && (
+          <div className="text-sm font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>
+            {outfitter.priceNote}
+          </div>
+        )}
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-3 border-t flex items-center gap-2" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+      <div className="px-4 py-3 border-t flex flex-wrap items-center gap-2" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
         {outfitter.phone && (
-          <a href={`tel:${outfitter.phone}`} className="flex items-center gap-1.5 text-xs btn-secondary px-2.5 py-1.5">
-            <Phone className="w-3 h-3" />
+          <a
+            href={`tel:${outfitter.phone}`}
+            onClick={() => api.recordContactClick(outfitter.id, 'call')}
+            className="flex items-center gap-1.5 text-sm btn-secondary min-h-11 px-3"
+          >
+            <Phone className="w-4 h-4" />
             Call
           </a>
         )}
-        {outfitter.website && (
+        {safeHttpUrl(outfitter.website) && (
           <a
-            href={outfitter.website}
+            href={safeHttpUrl(outfitter.website)!}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-xs btn-secondary px-2.5 py-1.5"
+            onClick={() => api.recordContactClick(outfitter.id, 'website')}
+            className="flex items-center gap-1.5 text-sm btn-secondary min-h-11 px-3"
           >
-            <Globe className="w-3 h-3" />
+            <Globe className="w-4 h-4" />
             Website
           </a>
         )}
-        {!outfitter.phone && !outfitter.website && (
+        {!outfitter.phone && !safeHttpUrl(outfitter.website) && (
           <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
             Contact info coming soon
           </span>
@@ -206,7 +203,7 @@ function OutfitterCard({ outfitter }: { outfitter: Outfitter }) {
   )
 }
 
-export function OutfittersPage() {
+function OutfitterDirectory() {
   const [outfitters, setOutfitters] = useState<Outfitter[]>([])
   const [availableStates, setAvailableStates] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -286,16 +283,17 @@ export function OutfittersPage() {
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: `rgb(var(--color-text-tertiary))` }} />
             <input
-              type="text"
+              type="search"
+              inputMode="search"
               placeholder="Search by name, location, or species..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="input pl-9 text-sm"
+              className="input pl-9 text-base min-h-11"
             />
           </div>
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className={`btn-secondary flex items-center gap-1.5 text-sm ${showFilters ? 'ring-1 ring-accent-400' : ''}`}
+            className={`btn-secondary min-h-11 flex items-center gap-1.5 text-sm ${showFilters ? 'ring-1 ring-accent-400' : ''}`}
           >
             Filters
             <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
@@ -303,7 +301,7 @@ export function OutfittersPage() {
           {hasActiveFilters && (
             <button
               onClick={() => { setSelectedState(''); setSelectedPrice(''); setSearchQuery('') }}
-              className="btn-secondary flex items-center gap-1.5 text-sm"
+              className="btn-secondary min-h-11 flex items-center gap-1.5 text-sm"
               style={{ color: 'rgb(209 36 47)' }}
             >
               <X className="w-4 h-4" />
@@ -321,10 +319,10 @@ export function OutfittersPage() {
             }}
           >
             <div>
-              <label className="block text-xs font-medium mb-1.5" style={{ color: `rgb(var(--color-text-secondary))` }}>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: `rgb(var(--color-text-secondary))` }}>
                 State
               </label>
-              <select className="input text-sm" value={selectedState} onChange={(e) => setSelectedState(e.target.value)}>
+              <select className="input text-base min-h-11" value={selectedState} onChange={(e) => setSelectedState(e.target.value)}>
                 <option value="">All States</option>
                 {availableStates.map((s) => (
                   <option key={s} value={s}>{STATE_NAMES[s] ?? s} ({s})</option>
@@ -332,10 +330,10 @@ export function OutfittersPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium mb-1.5" style={{ color: `rgb(var(--color-text-secondary))` }}>
+              <label className="block text-sm font-medium mb-1.5" style={{ color: `rgb(var(--color-text-secondary))` }}>
                 Price Range
               </label>
-              <select className="input text-sm" value={selectedPrice} onChange={(e) => setSelectedPrice(e.target.value)}>
+              <select className="input text-base min-h-11" value={selectedPrice} onChange={(e) => setSelectedPrice(e.target.value)}>
                 <option value="">Any Price</option>
                 {Object.entries(PRICE_LABELS).map(([val, label]) => (
                   <option key={val} value={val}>{val} — {label}</option>
@@ -347,10 +345,10 @@ export function OutfittersPage() {
       </div>
 
       {/* State pill filters */}
-      <div className="mb-6 flex flex-wrap gap-1.5">
+      <div className="mb-6 flex flex-wrap gap-2">
         <button
           onClick={() => setSelectedState('')}
-          className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+          className={`px-4 min-h-11 rounded-full text-sm font-medium border transition-colors ${
             !selectedState
               ? 'bg-forest-600 dark:bg-forest-700 text-white border-transparent'
               : 'border-earth-300 dark:border-earth-600 hover:border-forest-400 dark:hover:border-forest-600'
@@ -366,7 +364,7 @@ export function OutfittersPage() {
             <button
               key={s}
               onClick={() => setSelectedState(isSelected ? '' : s)}
-              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+              className={`px-4 min-h-11 rounded-full text-sm font-medium border transition-colors ${
                 isSelected
                   ? 'bg-forest-600 dark:bg-forest-700 text-white border-transparent'
                   : hasListings
@@ -420,12 +418,12 @@ export function OutfittersPage() {
                   : 'Try adjusting your filters or clearing your search.'}
               </p>
               {selectedState && !availableStates.includes(selectedState) && (
-                <a
-                  href={`mailto:listings@huntstack.com?subject=${encodeURIComponent(`Outfitter Listing Request — ${STATE_NAMES[selectedState] ?? selectedState}`)}&body=${encodeURIComponent(`Business name:\nState: ${STATE_NAMES[selectedState] ?? selectedState}\nSpecies offered:\nWebsite:\nContact phone:\n`)}`}
-                  className="btn-primary text-sm px-5 py-2 inline-block"
+                <Link
+                  to="/outfitters/list-your-business"
+                  className="btn-primary text-sm px-5 min-h-11 inline-flex items-center"
                 >
                   Request a Listing
-                </a>
+                </Link>
               )}
             </div>
           ) : groupedByState ? (
@@ -457,7 +455,7 @@ export function OutfittersPage() {
                       </span>
                       <button
                         onClick={() => setSelectedState(stateCode)}
-                        className="ml-auto text-xs text-accent-500 dark:text-accent-400 hover:underline"
+                        className="ml-auto min-h-11 px-2 text-sm text-accent-500 dark:text-accent-400 hover:underline"
                       >
                         View only {stateCode}
                       </button>
@@ -498,13 +496,19 @@ export function OutfittersPage() {
           Get listed in the HuntStack directory and reach hunters who are actively researching where to go.
           Listings include species, price range, hunt type, and a direct link to your website.
         </p>
-        <a
-          href={`mailto:listings@huntstack.com?subject=${encodeURIComponent('Outfitter Listing Request')}&body=${encodeURIComponent('Business name:\nState(s):\nSpecies offered:\nWebsite:\nContact phone:\n')}`}
-          className="btn-primary text-sm px-5 py-2 inline-block"
+        <Link
+          to="/outfitters/list-your-business"
+          className="btn-primary text-sm px-5 min-h-11 inline-flex items-center"
         >
-          Request a Listing
-        </a>
+          List Your Business
+        </Link>
       </div>
     </div>
   )
+}
+
+export function OutfittersPage() {
+  const { id } = useParams<{ id: string }>()
+  if (id) return <OutfitterDetail idOrSlug={id} />
+  return <OutfitterDirectory />
 }
