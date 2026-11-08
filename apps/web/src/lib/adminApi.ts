@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getSession } from './supabase'
 
@@ -91,18 +92,19 @@ async function adminFetch<T>(path: string, init?: { method?: 'POST'; body?: unkn
 }
 
 /** Who am I. Used only to decide whether to show the page; the API enforces admin on every call. */
-export function useAdminMe() {
+export function useAdminMe(userId: string | null) {
   return useQuery({
-    queryKey: ['me'],
+    queryKey: ['me', userId],
+    enabled: !!userId,
     queryFn: () => adminFetch<{ userId: string; email: string | null; isAdmin: boolean }>('/api/me'),
     retry: false,
     staleTime: 60_000,
   })
 }
 
-export function useAdminSubmissions(status: SubmissionFilter, enabled: boolean) {
+export function useAdminSubmissions(userId: string | null, status: SubmissionFilter, enabled: boolean) {
   return useQuery({
-    queryKey: ['admin', 'submissions', status],
+    queryKey: ['admin', userId, 'submissions', status],
     queryFn: async () =>
       (await adminFetch<{ submissions: AdminSubmission[] }>(`/api/admin/submissions?status=${status}`)).submissions,
     enabled,
@@ -110,9 +112,9 @@ export function useAdminSubmissions(status: SubmissionFilter, enabled: boolean) 
   })
 }
 
-export function useAdminOutfitters(enabled: boolean) {
+export function useAdminOutfitters(userId: string | null, enabled: boolean) {
   return useQuery({
-    queryKey: ['admin', 'outfitters'],
+    queryKey: ['admin', userId, 'outfitters'],
     queryFn: async () => (await adminFetch<{ outfitters: AdminListing[] }>('/api/admin/outfitters')).outfitters,
     enabled,
     retry: false,
@@ -127,7 +129,7 @@ export function useApproveSubmission() {
         method: 'POST',
         body: markVerified === undefined ? {} : { markVerified },
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
   })
 }
 
@@ -139,7 +141,7 @@ export function useRejectSubmission() {
         method: 'POST',
         body: { reason },
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
   })
 }
 
@@ -151,7 +153,7 @@ export function useSetOutfitterActive() {
         method: 'POST',
         body: { isActive },
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
   })
 }
 
@@ -160,6 +162,20 @@ export function useReleaseOutfitter() {
   return useMutation({
     mutationFn: ({ id }: { id: string }) =>
       adminFetch<unknown>(`/api/admin/outfitters/${encodeURIComponent(id)}/release`, { method: 'POST', body: {} }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['admin'] }),
   })
+}
+
+/**
+ * Drops every cached admin and identity query whenever the signed-in user changes
+ * (including sign-out), so one account's data can never be served to another.
+ */
+export function useClearAdminCacheOnUserChange(userId: string | null) {
+  const queryClient = useQueryClient()
+  useEffect(() => {
+    return () => {
+      queryClient.removeQueries({ queryKey: ['admin'] })
+      queryClient.removeQueries({ queryKey: ['me'] })
+    }
+  }, [userId, queryClient])
 }

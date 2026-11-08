@@ -42,7 +42,12 @@ function show(value: unknown): string {
   return String(value)
 }
 
+/** Arrays (species, states, hunt types) are compared as sets: order is not a change. */
 function sameValue(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) && Array.isArray(b)) {
+    const norm = (v: unknown[]) => Array.from(new Set(v.map(x => String(x).trim().toLowerCase()))).sort()
+    return JSON.stringify(norm(a)) === JSON.stringify(norm(b))
+  }
   return JSON.stringify(a ?? null) === JSON.stringify(b ?? null)
 }
 
@@ -149,6 +154,12 @@ export function SubmissionCard({ submission, decided = false }: { submission: Ad
           {current && (
             <Row label="Listing" proposed={`${current.name} (${current.city}, ${current.state})`} />
           )}
+          {current && (
+            <Row
+              label="Already claimed?"
+              proposed={current.ownerId || current.claimed ? 'Yes: approving will fail with a conflict' : 'No, unclaimed'}
+            />
+          )}
           {CLAIM_FIELDS.map(f => (
             <Row key={f.key} label={f.label} proposed={payload[f.key]} />
           ))}
@@ -194,7 +205,7 @@ export function SubmissionCard({ submission, decided = false }: { submission: Ad
           {rejecting && (
             <div>
               <label htmlFor={`reason-${submission.id}`} className="block text-sm font-medium mb-1" style={muted}>
-                Reason for rejecting (required, 3 to 500 characters)
+                Reason (required, 3 to 500 characters). The outfitter will see this reason.
               </label>
               <textarea
                 id={`reason-${submission.id}`}

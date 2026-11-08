@@ -2,7 +2,14 @@ import { useState } from 'react'
 import { NotFoundPage } from './NotFoundPage'
 import { SubmissionCard } from '../components/admin/SubmissionCard'
 import { AdminListings } from '../components/admin/AdminListings'
-import { AdminApiError, useAdminMe, useAdminSubmissions, type SubmissionFilter } from '../lib/adminApi'
+import { useAuthStore } from '../stores/authStore'
+import {
+  AdminApiError,
+  useAdminMe,
+  useAdminSubmissions,
+  useClearAdminCacheOnUserChange,
+  type SubmissionFilter,
+} from '../lib/adminApi'
 
 type Tab = 'queue' | 'history' | 'listings'
 
@@ -14,8 +21,8 @@ const TABS: { id: Tab; label: string }[] = [
 
 const muted = { color: 'rgb(var(--color-text-secondary))' }
 
-function SubmissionList({ status, enabled }: { status: SubmissionFilter; enabled: boolean }) {
-  const { data, isLoading, error } = useAdminSubmissions(status, enabled)
+function SubmissionList({ userId, status }: { userId: string; status: SubmissionFilter }) {
+  const { data, isLoading, error } = useAdminSubmissions(userId, status, true)
 
   if (isLoading) return <p className="text-base" style={muted}>Loading...</p>
   if (error) {
@@ -42,9 +49,13 @@ function SubmissionList({ status, enabled }: { status: SubmissionFilter; enabled
  * standard Not Found page; that is cosmetic, the API answers 403 to every non-admin call.
  */
 export function AdminPage() {
-  const me = useAdminMe()
+  const userId = useAuthStore(state => state.user?.id ?? null)
+  const isLoadingAuth = useAuthStore(state => state.isLoading)
+  const me = useAdminMe(userId)
   const [tab, setTab] = useState<Tab>('queue')
+  useClearAdminCacheOnUserChange(userId)
 
+  if (!userId) return isLoadingAuth ? null : <NotFoundPage />
   if (me.isLoading) {
     return <div className="max-w-7xl mx-auto px-4 py-8"><p className="text-base" style={muted}>Loading...</p></div>
   }
@@ -69,9 +80,9 @@ export function AdminPage() {
         ))}
       </div>
 
-      {tab === 'queue' && <SubmissionList status="pending" enabled />}
-      {tab === 'history' && <SubmissionList status="decided" enabled />}
-      {tab === 'listings' && <AdminListings enabled />}
+      {tab === 'queue' && <SubmissionList userId={userId} status="pending" />}
+      {tab === 'history' && <SubmissionList userId={userId} status="decided" />}
+      {tab === 'listings' && <AdminListings userId={userId} />}
     </div>
   )
 }
