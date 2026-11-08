@@ -53,11 +53,12 @@ export function PrivacyPage() {
             Outfitter inquiries and listing views
           </h2>
           <p>
-            If you message an outfitter from their listing, we share your account email address, your
-            name and phone number if you gave them, and your message with that outfitter so they can
-            reply. Listing pages also count anonymous daily view and contact-tap totals for each listing,
-            which the outfitter can see. These counts are not tied to you, and no IP addresses are stored
-            for them.
+            If you message an outfitter from their listing, we share the following with that outfitter so
+            they can reply: your account email address, your message, and whichever of your name, phone
+            number, preferred dates and party size you filled in. We also count, per listing and per day,
+            how many times it appeared in the directory, how many times its page was viewed, and how many
+            times its Call or Website button was tapped. These are daily totals only, not tied to you, and
+            no IP addresses are stored for them. The outfitter can see their own totals.
           </p>
         </section>
 
@@ -67,9 +68,9 @@ export function PrivacyPage() {
           </h2>
           <p>
             Solely to operate the product: authenticating you, answering location-based queries, and
-            maintaining/debugging the service. We do not sell your data, and we do not share it with third
-            parties except the infrastructure providers who host the app on our behalf (Supabase for
-            database/auth, and our hosting providers).
+            maintaining/debugging the service. We do not sell your data. We share it only with the
+            infrastructure providers who host the app on our behalf (Supabase for database/auth, and our
+            hosting providers), and with an outfitter when you send them an inquiry, as described above.
           </p>
         </section>
 

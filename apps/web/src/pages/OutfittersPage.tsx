@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Search, MapPin, BadgeCheck, Phone, Globe, ChevronDown, X, Users } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
-import { api, type PublicListing } from '../lib/api'
+import { api, safeHttpUrl, type PublicListing } from '../lib/api'
 import { OutfitterDetail } from '../components/OutfitterDetail'
 
 type Outfitter = PublicListing
@@ -65,7 +65,7 @@ function OutfitterCard({ outfitter }: { outfitter: Outfitter }) {
               <h3 className="font-semibold text-base" style={{ color: `rgb(var(--color-text-primary))` }}>
                 <Link
                   to={`/outfitters/${encodeURIComponent(outfitter.slug)}`}
-                  className="hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 rounded"
+                  className="flex items-center min-h-11 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 rounded"
                 >
                   {outfitter.name}
                 </Link>
@@ -107,7 +107,7 @@ function OutfitterCard({ outfitter }: { outfitter: Outfitter }) {
 
       {/* Body */}
       <div className="px-4 py-3 flex-1 flex flex-col gap-3">
-        <p className="text-sm leading-relaxed" style={{ color: `rgb(var(--color-text-secondary))` }}>
+        <p className="text-sm leading-relaxed break-words [overflow-wrap:anywhere]" style={{ color: `rgb(var(--color-text-secondary))` }}>
           {outfitter.description}
         </p>
 
@@ -175,9 +175,9 @@ function OutfitterCard({ outfitter }: { outfitter: Outfitter }) {
             Call
           </a>
         )}
-        {outfitter.website && (
+        {safeHttpUrl(outfitter.website) && (
           <a
-            href={outfitter.website}
+            href={safeHttpUrl(outfitter.website)!}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => api.recordContactClick(outfitter.id, 'website')}
@@ -187,7 +187,7 @@ function OutfitterCard({ outfitter }: { outfitter: Outfitter }) {
             Website
           </a>
         )}
-        {!outfitter.phone && !outfitter.website && (
+        {!outfitter.phone && !safeHttpUrl(outfitter.website) && (
           <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
             Contact info coming soon
           </span>

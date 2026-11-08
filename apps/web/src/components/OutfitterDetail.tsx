@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { MapPin, BadgeCheck, Phone, Globe, ArrowLeft } from 'lucide-react'
-import { api } from '../lib/api'
+import { api, safeHttpUrl } from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
 import { AuthModal } from './AuthModal'
 import { OutfitterInquiryForm } from './OutfitterInquiryForm'
@@ -98,6 +98,7 @@ export function OutfitterDetail({ idOrSlug }: { idOrSlug: string }) {
   }
 
   const reviews = reviewsQuery.data?.reviews ?? []
+  const website = safeHttpUrl(outfitter.website)
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -134,7 +135,7 @@ export function OutfitterDetail({ idOrSlug }: { idOrSlug: string }) {
             )}
           </header>
 
-          <p className="text-base leading-relaxed" style={secondary}>{outfitter.description}</p>
+          <p className="text-base leading-relaxed break-words [overflow-wrap:anywhere]" style={secondary}>{outfitter.description}</p>
 
           <div className="space-y-2">
             <div className="flex flex-wrap gap-1.5">
@@ -177,6 +178,8 @@ export function OutfitterDetail({ idOrSlug }: { idOrSlug: string }) {
             <h2 id="reviews-heading" className="text-lg font-semibold mb-3" style={primary}>Reviews</h2>
             {reviewsQuery.isLoading ? (
               <p className="text-base" style={secondary}>Loading reviews...</p>
+            ) : reviewsQuery.isError ? (
+              <p role="alert" className="text-base" style={secondary}>Could not load reviews. Please try again later.</p>
             ) : reviews.length === 0 ? (
               <p className="text-base" style={secondary}>No reviews yet.</p>
             ) : (
@@ -190,7 +193,7 @@ export function OutfitterDetail({ idOrSlug }: { idOrSlug: string }) {
                         <Stars rating={r.rating} />
                         {r.title && <span className="text-base font-semibold" style={primary}>{r.title}</span>}
                       </div>
-                      {r.content && <p className="mt-2 text-base leading-relaxed" style={secondary}>{r.content}</p>}
+                      {r.content && <p className="mt-2 text-base leading-relaxed break-words [overflow-wrap:anywhere]" style={secondary}>{r.content}</p>}
                       {(posted || hunted) && (
                         <p className="mt-2 text-sm" style={tertiary}>
                           {hunted ? `Hunted ${hunted}` : ''}{hunted && posted ? ' · ' : ''}{posted ? `Posted ${posted}` : ''}
@@ -199,7 +202,7 @@ export function OutfitterDetail({ idOrSlug }: { idOrSlug: string }) {
                       {r.reply && (
                         <div className="mt-3 border-l-2 pl-3" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
                           <p className="text-sm font-semibold" style={primary}>Response from the outfitter</p>
-                          <p className="mt-1 text-base leading-relaxed" style={secondary}>{r.reply.body}</p>
+                          <p className="mt-1 text-base leading-relaxed break-words [overflow-wrap:anywhere]" style={secondary}>{r.reply.body}</p>
                         </div>
                       )}
                     </li>
@@ -212,7 +215,7 @@ export function OutfitterDetail({ idOrSlug }: { idOrSlug: string }) {
 
         {/* Contact / inquiry sidebar */}
         <aside className="mt-6 md:mt-0">
-          <div className="rounded-lg border p-4 md:sticky md:top-4 space-y-4" style={cardStyle}>
+          <div className="rounded-lg border p-4 md:sticky md:top-20 space-y-4" style={cardStyle}>
             <h2 className="text-lg font-semibold" style={primary}>Contact</h2>
             <div className="flex flex-col gap-2">
               {outfitter.phone && (
@@ -225,9 +228,9 @@ export function OutfitterDetail({ idOrSlug }: { idOrSlug: string }) {
                   Call
                 </a>
               )}
-              {outfitter.website && (
+              {website && (
                 <a
-                  href={outfitter.website}
+                  href={website}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => api.recordContactClick(outfitter.id, 'website')}
@@ -237,7 +240,7 @@ export function OutfitterDetail({ idOrSlug }: { idOrSlug: string }) {
                   Website
                 </a>
               )}
-              {!outfitter.phone && !outfitter.website && (
+              {!outfitter.phone && !website && (
                 <p className="text-base" style={tertiary}>Contact info coming soon</p>
               )}
             </div>

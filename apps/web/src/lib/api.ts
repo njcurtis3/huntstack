@@ -74,6 +74,17 @@ export type OutfitterReview = {
   reply: { body: string; updatedAt: string } | null
 }
 
+/** Returns the URL only when it parses as http or https; guards hrefs built from DB data. */
+export function safeHttpUrl(value: string | null): string | null {
+  if (!value) return null
+  try {
+    const u = new URL(value)
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : null
+  } catch {
+    return null
+  }
+}
+
 class ApiClient {
   private baseUrl: string
 
