@@ -57,13 +57,13 @@ export function DashboardInbox() {
               <p className="text-sm" style={secondaryText}>{new Date(q.createdAt).toLocaleString()}</p>
             </div>
             <p className="text-base break-words">
-              <a href={`mailto:${q.hunterEmail}`} className="text-accent-500 underline inline-flex items-center min-h-11">
+              <a href={`mailto:${encodeURIComponent(q.hunterEmail)}`} className="text-accent-500 underline inline-flex items-center min-h-11">
                 {q.hunterEmail}
               </a>
             </p>
             {q.hunterPhone && (
               <p className="text-base">
-                <a href={`tel:${q.hunterPhone}`} className="text-accent-500 underline inline-flex items-center min-h-11">
+                <a href={`tel:${encodeURIComponent(q.hunterPhone)}`} className="text-accent-500 underline inline-flex items-center min-h-11">
                   {q.hunterPhone}
                 </a>
               </p>

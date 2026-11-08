@@ -113,6 +113,13 @@ export function ClaimForm({ initialSlug, onCancel, onSubmitted }: ClaimFormProps
         </ul>
       )}
 
+      {claimable.data && initialSlug && chosenId === null && !chosen && (
+        <p role="status" className="text-base" style={primaryText}>
+          The listing you followed a link for can't be claimed. It may already have an owner. Search for another below,
+          or add a new business.
+        </p>
+      )}
+
       {chosen && (
         <p className="text-base" style={primaryText}>
           Claiming: <strong>{chosen.name}</strong> ({chosen.city}, {chosen.state})

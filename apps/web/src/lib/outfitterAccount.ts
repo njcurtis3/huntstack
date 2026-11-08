@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAuthStore } from '../stores/authStore'
 import { getSession } from './supabase'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
@@ -215,10 +217,34 @@ export async function getClaimable(): Promise<ClaimableListing[]> {
   return data.outfitters
 }
 
-// ---- React-query hooks (keys per the contract) ----
+// ---- React-query hooks ----
+// Every private query is keyed ['me', userId, 'outfitter', ...] so one account's data can never be served
+// to another, and is disabled while signed out. The second segment (user id) keeps these apart from
+// other ['me', ...] keys used elsewhere in the app.
+
+function useUserId(): string | null {
+  return useAuthStore((state) => state.user?.id ?? null)
+}
+
+/** Drops cached ['me', ...] data belonging to any other user (or to nobody) once the user changes or signs out. */
+export function useClearPrivateDataOnUserChange() {
+  const queryClient = useQueryClient()
+  const userId = useUserId()
+  useEffect(() => {
+    queryClient.removeQueries({
+      predicate: (query) => query.queryKey[0] === 'me' && query.queryKey[1] !== userId,
+    })
+  }, [userId, queryClient])
+}
 
 export function useMyOutfitter(enabled: boolean) {
-  return useQuery({ queryKey: ['me', 'outfitter'], queryFn: getMyOutfitter, enabled, retry: false })
+  const userId = useUserId()
+  return useQuery({
+    queryKey: ['me', userId, 'outfitter'],
+    queryFn: getMyOutfitter,
+    enabled: enabled && userId !== null,
+    retry: false,
+  })
 }
 
 export function useClaimable() {
@@ -226,33 +252,42 @@ export function useClaimable() {
 }
 
 export function useMyStats(days: StatsDays, enabled: boolean) {
+  const userId = useUserId()
   return useQuery({
-    queryKey: ['me', 'outfitter', 'stats', days],
+    queryKey: ['me', userId, 'outfitter', 'stats', days],
     queryFn: () => getMyStats(days),
-    enabled,
+    enabled: enabled && userId !== null,
     retry: false,
   })
 }
 
 export function useMyReviews(enabled: boolean) {
-  return useQuery({ queryKey: ['me', 'outfitter', 'reviews'], queryFn: getMyReviews, enabled, retry: false })
-}
-
-export function useMyInquiries(status: InquiryStatus | 'all', enabled: boolean) {
+  const userId = useUserId()
   return useQuery({
-    queryKey: ['me', 'outfitter', 'inquiries', status],
-    queryFn: () => getMyInquiries(status),
-    enabled,
+    queryKey: ['me', userId, 'outfitter', 'reviews'],
+    queryFn: getMyReviews,
+    enabled: enabled && userId !== null,
     retry: false,
   })
 }
 
-/** Every write refreshes the ['me','outfitter'] prefix so nothing stale is shown as current. */
+export function useMyInquiries(status: InquiryStatus | 'all', enabled: boolean) {
+  const userId = useUserId()
+  return useQuery({
+    queryKey: ['me', userId, 'outfitter', 'inquiries', status],
+    queryFn: () => getMyInquiries(status),
+    enabled: enabled && userId !== null,
+    retry: false,
+  })
+}
+
+/** Every write refreshes this user's ['me', userId, 'outfitter'] prefix so nothing stale is shown as current. */
 function useOutfitterMutation<TVars, TData>(fn: (vars: TVars) => Promise<TData>) {
   const queryClient = useQueryClient()
+  const userId = useUserId()
   return useMutation({
     mutationFn: fn,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['me', 'outfitter'] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['me', userId, 'outfitter'] }),
   })
 }
 
@@ -268,6 +303,10 @@ export const useSetInquiryStatus = () =>
   useOutfitterMutation((v: { id: string; status: InquiryStatus }) => setInquiryStatus(v.id, v.status))
 
 // ---- Shared form helpers ----
+
+export function isSignInError(err: unknown): boolean {
+  return err instanceof AccountApiError && err.status === 401
+}
 
 export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : 'Something went wrong. Please try again.'

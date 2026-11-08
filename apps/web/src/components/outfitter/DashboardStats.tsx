@@ -10,6 +10,12 @@ import {
 
 const RANGES: StatsDays[] = [7, 30, 90]
 
+/** 'YYYY-MM-DD' -> 'Nov 7', without a timezone shift. */
+function shortDay(day: string): string {
+  const [y, m, d] = day.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
 export function DashboardStats() {
   const [days, setDays] = useState<StatsDays>(30)
   const stats = useMyStats(days, true)
@@ -55,7 +61,7 @@ export function DashboardStats() {
           </p>
 
           <section aria-label="Daily breakdown" className="rounded-lg border" style={panelStyle}>
-            <div className="grid grid-cols-4 gap-2 px-4 py-2 text-sm font-medium border-b"
+            <div className="grid grid-cols-[minmax(4.5rem,1.2fr)_1fr_1fr_1fr] gap-2 px-4 py-2 text-sm font-medium border-b"
               style={{ ...secondaryText, borderColor: 'rgb(var(--color-border-primary))' }}>
               <span>Day</span>
               <span className="text-right">Appeared</span>
@@ -64,8 +70,8 @@ export function DashboardStats() {
             </div>
             <ul>
               {[...stats.data.daily].reverse().map((row) => (
-                <li key={row.day} className="grid grid-cols-4 gap-2 px-4 py-2 text-base" style={primaryText}>
-                  <span>{row.day}</span>
+                <li key={row.day} className="grid grid-cols-[minmax(4.5rem,1.2fr)_1fr_1fr_1fr] gap-2 px-4 py-2 text-base" style={primaryText}>
+                  <span>{shortDay(row.day)}</span>
                   <span className="text-right">{row.impression}</span>
                   <span className="text-right">{row.detail}</span>
                   <span className="text-right">{row.contact}</span>

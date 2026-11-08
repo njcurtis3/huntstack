@@ -10,9 +10,11 @@ import {
   btnPrimary,
   btnSecondary,
   errorMessage,
+  isSignInError,
   panelStyle,
   primaryText,
   secondaryText,
+  useClearPrivateDataOnUserChange,
   useMyInquiries,
   useMyOutfitter,
 } from '../lib/outfitterAccount'
@@ -23,6 +25,7 @@ export function OutfitterDashboardPage() {
   const { isAuthenticated, isLoading } = useAuthStore()
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | null>(null)
   const [tab, setTab] = useState<Tab>('listing')
+  useClearPrivateDataOnUserChange()
   const me = useMyOutfitter(isAuthenticated)
   const hasListing = Boolean(me.data?.listing)
   // Same query key as the inbox's default filter, so the badge and the list share one request.
@@ -62,7 +65,11 @@ export function OutfitterDashboardPage() {
     body = (
       <div role="alert" className="rounded-lg border border-red-500 p-4 max-w-xl">
         <p className="text-base text-red-600 mb-3">{errorMessage(me.error)}</p>
-        <button type="button" className={btnSecondary} onClick={() => void me.refetch()}>Try again</button>
+        {isSignInError(me.error) ? (
+          <button type="button" className={btnPrimary} onClick={() => setAuthMode('signin')}>Sign in</button>
+        ) : (
+          <button type="button" className={btnSecondary} onClick={() => void me.refetch()}>Try again</button>
+        )}
       </div>
     )
   } else if (!me.data.listing) {

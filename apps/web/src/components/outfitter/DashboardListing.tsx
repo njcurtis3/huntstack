@@ -127,13 +127,19 @@ export function DashboardListing({ data }: { data: MyOutfitter }) {
               <div className="mt-2"><Summary listing={payloadToListing(pending.payload)} /></div>
             </details>
           )}
+          {pending.kind !== 'edit' && (
+            <p className="text-base mt-2" style={secondaryText}>
+              You can only have one {submissionKindText(pending)} waiting at a time. Withdraw it if you want to change it
+              and submit again.
+            </p>
+          )}
           {withdraw.error && <p role="alert" className="text-base text-red-600 mt-2">{errorMessage(withdraw.error)}</p>}
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <button type="button" className={btnSecondary} disabled={withdraw.isPending}
               onClick={() => withdraw.mutate(pending.id)}>
               {withdraw.isPending ? 'Withdrawing...' : 'Withdraw'}
             </button>
-            {pending.kind !== 'claim' && canEdit && (
+            {pending.kind === 'edit' && canEdit && (
               <button type="button" className={btnPrimary} onClick={() => setEditing(true)}>Edit submission</button>
             )}
           </div>
@@ -168,8 +174,10 @@ export function DashboardListing({ data }: { data: MyOutfitter }) {
           <div className="flex flex-col gap-1 mb-4 md:flex-row md:items-center md:justify-between">
             <h2 className="text-xl font-semibold" style={primaryText}>{listing.name}</h2>
             <span className="text-sm" style={secondaryText}>
-              Live on HuntStack{listing.isVerified ? ' - verified' : ''}
-              {!listing.isActive && ' - currently hidden from the directory'}
+              {listing.isActive
+                ? `Live on HuntStack${listing.isVerified ? ' - verified' : ''}`
+                : 'Hidden from the directory'}
+
             </span>
           </div>
           <Summary listing={listing} />

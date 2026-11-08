@@ -9,9 +9,11 @@ import {
   btnPrimary,
   btnSecondary,
   errorMessage,
+  isSignInError,
   panelStyle,
   primaryText,
   secondaryText,
+  useClearPrivateDataOnUserChange,
   useMyOutfitter,
 } from '../lib/outfitterAccount'
 
@@ -23,6 +25,7 @@ export function ListBusinessPage() {
   const claimSlug = searchParams.get('claim')
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | null>(null)
   const [mode, setMode] = useState<Mode>(claimSlug ? 'claim' : 'choose')
+  useClearPrivateDataOnUserChange()
   const me = useMyOutfitter(isAuthenticated)
 
   const header = (
@@ -63,7 +66,11 @@ export function ListBusinessPage() {
     body = (
       <div role="alert" className="rounded-lg border border-red-500 p-4">
         <p className="text-base text-red-600 mb-3">{errorMessage(me.error)}</p>
-        <button type="button" className={btnSecondary} onClick={() => void me.refetch()}>Try again</button>
+        {isSignInError(me.error) ? (
+          <button type="button" className={btnPrimary} onClick={() => setAuthMode('signin')}>Sign in</button>
+        ) : (
+          <button type="button" className={btnSecondary} onClick={() => void me.refetch()}>Try again</button>
+        )}
       </div>
     )
   } else if (me.data?.listing) {
