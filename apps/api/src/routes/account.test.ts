@@ -12,10 +12,13 @@ import type { StripeSubscription } from '../lib/stripe.js'
 const NOW = new Date('2026-11-08T15:00:00Z')
 const USER = '22222222-2222-4222-8222-222222222222'
 const OTHER = '33333333-3333-4333-8333-333333333333'
+const ADMIN = '44444444-4444-4444-8444-444444444444'
 const users: Record<string, AuthUser> = {
   user: { id: USER, email: 'hunter@example.com' },
   other: { id: OTHER, email: 'other@example.com' },
+  admin: { id: ADMIN, email: 'owner@example.com' },
 }
+const isAdmin = (id: string) => id === ADMIN
 const verifyUser = async (t: string) => users[t] ?? null
 const as = (t: string) => ({ authorization: `Bearer ${t}` })
 
@@ -60,6 +63,7 @@ async function build() {
     store: mem.store,
     verifyUser,
     now: () => NOW,
+    isAdmin,
     appUrl: () => 'https://huntstack.net',
     verifyKey: vi.fn(async (_p, key: string) => (key.endsWith('good') ? { ok: true as const } : { ok: false as const, message: 'Anthropic rejected your key.' })),
     exchangeOpenRouterCode: vi.fn(async () => 'sk-or-v1-fromoauthgood'),
@@ -69,7 +73,7 @@ async function build() {
   await app.register(rateLimit, { max: 1000, timeWindow: '1 minute' })
   await app.register(buildAccountRoutes(deps), { prefix: '/api/account' })
   await app.register(buildBillingWebhookRoutes({ store: mem.store, stripe, webhookSecret: () => 'whsec_test' }), { prefix: '/api/billing' })
-  await app.register(buildChatRoutes({ store: mem.store, verifyUser, now: () => NOW }), { prefix: '/api/chat' })
+  await app.register(buildChatRoutes({ store: mem.store, verifyUser, now: () => NOW, isAdmin }), { prefix: '/api/chat' })
   return { app, mem, deps, stripe, stripeSubs }
 }
 
@@ -81,6 +85,14 @@ describe('/api/account', () => {
     expect((await ctx.app.inject({ method: 'GET', url: '/api/account' })).statusCode).toBe(401)
     expect((await ctx.app.inject({ method: 'PUT', url: '/api/account/ai-key', payload: { provider: 'openai' } })).statusCode).toBe(401)
     expect((await ctx.app.inject({ method: 'POST', url: '/api/account/billing/checkout' })).statusCode).toBe(401)
+  })
+
+  it('shows an admin as unlimited and refuses to bill them', async () => {
+    const res = await ctx.app.inject({ method: 'GET', url: '/api/account', headers: as('admin') })
+    expect(res.json().usage).toEqual({ plan: 'admin', used: 0, limit: null, resetsAt: null })
+    const checkout = await ctx.app.inject({ method: 'POST', url: '/api/account/billing/checkout', headers: as('admin') })
+    expect(checkout.statusCode).toBe(409)
+    expect(ctx.stripe.createCheckoutSession).not.toHaveBeenCalled()
   })
 
   it('shows a new account on the free plan with 10 questions', async () => {
@@ -252,5 +264,12 @@ describe('/api/chat allowance', () => {
     const res = await ask(as('user'))
     expect(res.statusCode).toBe(503) // past the allowance; no model in tests
     expect(ctx.mem.usage.get(`user:${USER}|2026-11`)).toBe(10)
+  })
+
+  it('never stops or counts an admin', async () => {
+    ctx.mem.usage.set(`user:${ADMIN}|2026-11`, 10)
+    const res = await ask(as('admin'))
+    expect(res.statusCode).toBe(503) // past the allowance; no model in tests
+    expect(ctx.mem.usage.get(`user:${ADMIN}|2026-11`)).toBe(10)
   })
 })

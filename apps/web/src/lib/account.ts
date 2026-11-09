@@ -6,7 +6,7 @@ import { getSession } from './supabase'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
-export type Plan = 'visitor' | 'free' | 'pro' | 'own_key'
+export type Plan = 'visitor' | 'free' | 'pro' | 'own_key' | 'admin'
 export type Provider = 'anthropic' | 'openai' | 'openrouter'
 
 export interface ChatUsage {

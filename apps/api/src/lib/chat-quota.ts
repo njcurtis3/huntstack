@@ -3,13 +3,14 @@
 //   free account             10 questions per calendar month (UTC), then subscribe
 //   subscriber ($5.99/month) no monthly cap (the hourly rate limit still applies)
 //   own AI key               no cap; the user's provider bills them, HuntStack pays nothing
+//   admin (ADMIN_USER_IDS)   no cap, nothing counted, never billed (HuntStack's own accounts)
 // Counts live in chat_usage, keyed by subject ('user:<id>' or 'visitor:<hmac of IP>') and period.
 
 export const VISITOR_CHATS = 3
 export const FREE_MONTHLY_CHATS = 10
 export const VISITOR_PERIOD = 'all'
 
-export type Plan = 'visitor' | 'free' | 'pro' | 'own_key'
+export type Plan = 'visitor' | 'free' | 'pro' | 'own_key' | 'admin'
 
 export interface ChatUsage {
   plan: Plan
@@ -40,6 +41,7 @@ export function isSubscriptionActive(status: string | null | undefined): boolean
 
 export type ChatAccess =
   | { plan: 'own_key' }
+  | { plan: 'admin' }
   | { plan: 'pro' }
   | { plan: 'free' | 'visitor'; subject: string; period: string; limit: number }
 
@@ -48,9 +50,12 @@ export function chatAccessFor(input: {
   visitor: string
   hasOwnKey: boolean
   subscriptionStatus: string | null
+  /** In ADMIN_USER_IDS. An admin's own saved key still wins, since they chose to use it */
+  isAdmin?: boolean
   now: Date
 }): ChatAccess {
   if (input.userId && input.hasOwnKey) return { plan: 'own_key' }
+  if (input.userId && input.isAdmin) return { plan: 'admin' }
   if (input.userId && isSubscriptionActive(input.subscriptionStatus)) return { plan: 'pro' }
   if (input.userId) {
     return { plan: 'free', subject: `user:${input.userId}`, period: usagePeriod(input.now), limit: FREE_MONTHLY_CHATS }
@@ -59,7 +64,7 @@ export function chatAccessFor(input: {
 }
 
 export function usageFor(access: ChatAccess, used: number, now: Date): ChatUsage {
-  if (access.plan === 'own_key' || access.plan === 'pro') {
+  if (access.plan === 'own_key' || access.plan === 'pro' || access.plan === 'admin') {
     return { plan: access.plan, used, limit: null, resetsAt: null }
   }
   return {

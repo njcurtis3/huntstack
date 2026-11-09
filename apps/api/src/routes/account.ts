@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify'
-import { decorateAuthUser, requireUser, type VerifyUser } from '../lib/auth-guard.js'
+import { decorateAuthUser, parseAdminIds, requireUser, type VerifyUser } from '../lib/auth-guard.js'
 import { drizzleAccountStore, type AccountStore, type StoredAiKey } from '../lib/account-store.js'
 import { chatAccessFor, isSubscriptionActive, usageFor } from '../lib/chat-quota.js'
 import { isSecretConfigured, seal } from '../lib/secret-box.js'
@@ -15,6 +15,8 @@ export interface AccountDeps {
   store: AccountStore
   verifyUser: VerifyUser
   now: () => Date
+  /** Admins (ADMIN_USER_IDS) have unlimited questions and are never billed */
+  isAdmin: (userId: string) => boolean
   /** Where Stripe sends people back to, e.g. https://huntstack.net */
   appUrl: () => string
   verifyKey: typeof verifyKey
@@ -44,7 +46,7 @@ export function buildAccountRoutes(deps: AccountDeps): FastifyPluginAsync {
       const { id, email } = request.authUser
       const now = deps.now()
       const [aiKey, sub] = await Promise.all([store.getAiKey(id), store.getSubscription(id)])
-      const access = chatAccessFor({ userId: id, visitor: '', hasOwnKey: !!aiKey, subscriptionStatus: sub?.status ?? null, now })
+      const access = chatAccessFor({ userId: id, visitor: '', hasOwnKey: !!aiKey, subscriptionStatus: sub?.status ?? null, isAdmin: deps.isAdmin(id), now })
       const used = access.plan === 'free' ? await store.usageCount(access.subject, access.period) : 0
       return {
         email,
@@ -159,6 +161,8 @@ export function buildAccountRoutes(deps: AccountDeps): FastifyPluginAsync {
     }, async (request, reply) => {
       if (!deps.stripe.isStripeConfigured()) return reply.status(503).send(errorBody(503, 'Subscriptions are not available yet'))
       const { id, email } = request.authUser
+      // Admin accounts are HuntStack's own: never charged
+      if (deps.isAdmin(id)) return reply.status(409).send(errorBody(409, 'Admin accounts have unlimited questions and are not billed.'))
       const sub = await store.getSubscription(id)
       if (sub && isSubscriptionActive(sub.status)) {
         return reply.status(409).send(errorBody(409, 'You already have a subscription. Use Manage billing to change it.'))
@@ -236,6 +240,7 @@ const liveDeps: AccountDeps = {
   store: drizzleAccountStore(),
   verifyUser: verifyAccessTokenUser,
   now: () => new Date(),
+  isAdmin: (id) => parseAdminIds(process.env.ADMIN_USER_IDS).has(id.toLowerCase()),
   appUrl: defaultAppUrl,
   verifyKey,
   exchangeOpenRouterCode,

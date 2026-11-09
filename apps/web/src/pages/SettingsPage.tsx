@@ -178,7 +178,10 @@ function PlanSection({ account, onChanged }: { account: Account; onChanged: () =
   }
 
   const planName =
-    usage.plan === 'pro' ? 'HuntStack Pro' : usage.plan === 'own_key' ? 'Free, with your own AI key' : 'Free'
+    usage.plan === 'admin' ? 'Admin'
+      : usage.plan === 'pro' ? 'HuntStack Pro'
+        : usage.plan === 'own_key' ? 'Free, with your own AI key'
+          : 'Free'
 
   return (
     <Section icon={<CreditCard className="w-5 h-5 text-accent-500" />} title="Plan and AI questions">
@@ -189,11 +192,13 @@ function PlanSection({ account, onChanged }: { account: Account; onChanged: () =
         {usage.limit === null
           ? usage.plan === 'own_key'
             ? 'Unlimited questions. Your AI provider bills you for each one.'
-            : 'Unlimited questions.'
+            : usage.plan === 'admin'
+              ? 'Unlimited questions, not counted or billed.'
+              : 'Unlimited questions.'
           : `${usage.used} of ${usage.limit} free questions used this month. Resets ${formatDate(usage.resetsAt)}.`}
       </p>
 
-      {subscription?.active ? (
+      {usage.plan === 'admin' ? null : subscription?.active ? (
         <>
           <p className="text-sm mt-3" style={text.secondary}>
             {subscription.cancelAtPeriodEnd

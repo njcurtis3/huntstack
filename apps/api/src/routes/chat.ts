@@ -11,7 +11,7 @@ import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 import { DEFAULT_REPORT_SPECIES, getEBirdSpeciesReports, type EBirdSpeciesReport } from '../lib/ebird.js'
 import { accessLabel, accessOf } from '../lib/access.js'
 import { AuthUnconfiguredError, verifyAccessTokenUser } from '../lib/supabase-auth.js'
-import type { VerifyUser } from '../lib/auth-guard.js'
+import { parseAdminIds, type VerifyUser } from '../lib/auth-guard.js'
 import { drizzleAccountStore, type AccountStore } from '../lib/account-store.js'
 import { chatAccessFor, limitMessage, usageFor, type ChatAccess } from '../lib/chat-quota.js'
 import { open as openSealed, visitorId } from '../lib/secret-box.js'
@@ -125,12 +125,14 @@ export interface ChatDeps {
   store: AccountStore
   verifyUser: VerifyUser
   now: () => Date
+  /** Admins (ADMIN_USER_IDS) ask without limit or count */
+  isAdmin: (userId: string) => boolean
 }
 
 const usageSchema = {
   type: 'object',
   properties: {
-    plan: { type: 'string', enum: ['visitor', 'free', 'pro', 'own_key'] },
+    plan: { type: 'string', enum: ['visitor', 'free', 'pro', 'own_key', 'admin'] },
     used: { type: 'integer' },
     limit: { type: 'integer', nullable: true },
     resetsAt: { type: 'string', nullable: true },
@@ -259,6 +261,7 @@ export function buildChatRoutes(deps: ChatDeps): FastifyPluginAsync {
         visitor: visitorId(request.ip),
         hasOwnKey: !!ownKey,
         subscriptionStatus: sub?.status ?? null,
+        isAdmin: userId ? deps.isAdmin(userId) : false,
         now,
       })
       if (access.plan === 'free' || access.plan === 'visitor') {
@@ -370,6 +373,8 @@ export const chatRoutes = buildChatRoutes({
   store: drizzleAccountStore(),
   verifyUser: verifyAccessTokenUser,
   now: () => new Date(),
+  // Read on each call, not at import time, so ADMIN_USER_IDS from .env (loaded by index.ts) is seen
+  isAdmin: (id) => parseAdminIds(process.env.ADMIN_USER_IDS).has(id.toLowerCase()),
 })
 
 // ─── Entity extraction ───────────────────────────────────────────────────────
