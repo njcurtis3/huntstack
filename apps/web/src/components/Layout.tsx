@@ -411,16 +411,15 @@ export function Layout() {
         )}
       </header>
 
-      {/* Beta notice — the data has legal stakes and testers need a way to report problems; dismissible per browser */}
+      {/* Data notice — the data has legal stakes and people need a way to report problems; dismissible per browser */}
       <DismissibleNotice
-        id="beta-disclaimer"
+        id="data-disclaimer"
         className="border-b bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/50"
         innerClassName="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 text-xs sm:text-sm text-amber-800 dark:text-amber-200"
       >
         <div className="flex items-start gap-2">
           <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
           <p className="flex-1 min-w-0">
-            <span className="font-semibold">Beta.</span>{' '}
             Season dates, bag limits and bird counts are informational and may be out of date or wrong.
             Confirm with the state wildlife agency before you hunt.{' '}
             <a
