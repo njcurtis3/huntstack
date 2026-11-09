@@ -199,8 +199,10 @@ export function startStateActivityRefresh(states: string[]): void {
       const reports = await getEBirdSpeciesReports(states, ALL_REPORT_SPECIES, 14, { fresh })
       if (ebirdRateLimitCount() !== refusals) {
         // Some states came back empty because eBird refused us: don't save that as the day's
-        // snapshot (the first one of the day wins), and refill the cache after the pause
-        setTimeout(() => void run(true), EBIRD_PAUSE_MS + 60_000).unref()
+        // snapshot (the first one of the day wins), and fill in after the pause. Not fresh:
+        // answers saved in this round are kept and only the missing ones are asked for, or each
+        // round re-asks everything and gets refused at the same point again.
+        setTimeout(() => void run(false), EBIRD_PAUSE_MS + 60_000).unref()
         return
       }
       await saveSnapshot(reports)

@@ -35,6 +35,14 @@ export function ebirdPaused(now = Date.now()): boolean {
   return now < pausedUntil
 }
 
+/**
+ * How long to hold a stand-in (saved or empty) answer: until the pause ends, so the retry after
+ * it asks eBird again, but at least 30 seconds so page loads don't repeat the lookup
+ */
+function untilPauseEnds(): number {
+  return Math.max(30_000, pausedUntil - Date.now())
+}
+
 /** How many times eBird has refused us; ebird-activity.ts skips a snapshot made while it did */
 export function ebirdRateLimitCount(): number {
   return rateLimitedCount
@@ -292,10 +300,10 @@ export async function getEBirdCountsForRefuge(
     // memory only for the pause, so eBird is asked again after it.
     const stale = await loadSaved<EBirdCount[]>(cacheKey, STALE_LIMIT_MS)
     if (stale) {
-      obsCache.set(cacheKey, stale.data, EBIRD_PAUSE_MS)
+      obsCache.set(cacheKey, stale.data, untilPauseEnds())
       return stale.data
     }
-    geoMissUntil.set(cacheKey, Date.now() + EBIRD_PAUSE_MS)
+    geoMissUntil.set(cacheKey, Date.now() + untilPauseEnds())
     // Logged and rethrown: one failed location must not blank the dashboard (the caller uses
     // allSettled), and it must not look like a place with no sightings either. Not logged per
     // place while paused: ebirdGet already said so once.
@@ -397,11 +405,11 @@ async function requestSpeciesObs(apiKey: string, state: string, code: string, da
     // The last saved answer (up to a week old) beats none; held in memory only for the pause
     const stale = await loadSaved<EBirdObservation[]>(key, STALE_LIMIT_MS)
     if (stale) {
-      speciesCache.set(key, stale.data, EBIRD_PAUSE_MS)
+      speciesCache.set(key, stale.data, untilPauseEnds())
       return stale.data
     }
     // Nothing saved either: remember that for the pause instead of looking it up on every load
-    speciesCache.set(key, [], EBIRD_PAUSE_MS)
+    speciesCache.set(key, [], untilPauseEnds())
     return []
   }
   // Only the fields used here; personal locations' coordinates are not kept
