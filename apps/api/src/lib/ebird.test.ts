@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { assignSharedReports, EBIRD_SPECIES_CODES, publicPlaceName, summarizeSpeciesReports } from './ebird.js'
+import { describe, expect, it, vi } from 'vitest'
+import { assignSharedReports, EBIRD_PAUSE_MS, EBIRD_SPECIES_CODES, ebirdGet, ebirdPaused, publicPlaceName, resetEBirdPause, summarizeSpeciesReports } from './ebird.js'
 import type { EBirdCount } from './ebird.js'
 
 // Taken from eBird's /ref/taxonomy/ebird on 2026-10-27. Codes that aren't real eBird
@@ -101,5 +101,33 @@ describe('assignSharedReports', () => {
       row('b', 35.3, -101, 'mallard', 'L1', 35, -101),
     ])
     expect(out.map(r => `${r.refugeId}:${r.species}`)).toEqual(['a:canada-goose', 'b:canada-goose', 'b:mallard'])
+  })
+})
+
+describe('ebirdGet', () => {
+  it('pauses every eBird request after eBird keeps refusing, and resumes after the pause', async () => {
+    vi.useFakeTimers()
+    try {
+      resetEBirdPause()
+      const tooMany = vi.fn(async () => new Response('', { status: 429 }))
+      const first = ebirdGet('https://api.ebird.org/v2/x', 'k', tooMany as unknown as typeof fetch)
+      await vi.runAllTimersAsync()
+      expect(await first).toBeNull()
+      expect(tooMany).toHaveBeenCalledTimes(4)
+      expect(ebirdPaused()).toBe(true)
+
+      // While paused nothing is sent
+      const ok = vi.fn(async () => new Response('[]', { status: 200 }))
+      expect(await ebirdGet('https://api.ebird.org/v2/y', 'k', ok as unknown as typeof fetch)).toBeNull()
+      expect(ok).not.toHaveBeenCalled()
+
+      vi.advanceTimersByTime(EBIRD_PAUSE_MS + 1)
+      expect(ebirdPaused()).toBe(false)
+      expect((await ebirdGet('https://api.ebird.org/v2/y', 'k', ok as unknown as typeof fetch))?.status).toBe(200)
+      expect(ok).toHaveBeenCalledTimes(1)
+    } finally {
+      resetEBirdPause()
+      vi.useRealTimers()
+    }
   })
 })

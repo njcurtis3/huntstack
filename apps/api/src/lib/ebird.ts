@@ -6,17 +6,66 @@
 // species: the latest in the whole region or radius (Texas, 30 days: 488 rows, one of them a
 // snow goose). Only the per-species endpoints (/recent/{species}) return every place, and
 // then only each place's latest report. Nothing here can total all reports over a window.
-// Data is live-fetched (no DB writes) with in-memory caches.
-// Gracefully returns [] on any error — dashboard works without eBird data.
+// Answers are cached in memory and saved in the database (ebird-store.ts): a restart reads the
+// saved ones, and when eBird refuses us the last saved numbers are shown instead of none.
+// Gracefully returns [] when there is nothing at all — dashboard works without eBird data.
 //
 // API docs: https://documenter.getpostman.com/view/664302/S1ENwy59
 // Auth: X-eBirdApiToken header (set EBIRD_API_KEY in .env)
 
 import { BoundedCache } from './cache.js'
+import { STALE_LIMIT_MS, loadSaved, save } from './ebird-store.js'
 
 const EBIRD_BASE = 'https://api.ebird.org/v2'
 const GEO_TTL      = 6 * 60 * 60 * 1000  // 6 hours  — per-refuge geo queries
 const SPECIES_TTL  = 7 * 60 * 60 * 1000  // 7 hours  — per-species state queries; refreshed every 6h (ebird-activity.ts), so a page never waits on an expired entry
+
+// ─── Requests, and pausing when eBird says "too many" ─────────────────────────
+// eBird answers bursts with 429 (its limits are unpublished). A request backs off and retries;
+// if eBird still refuses, every eBird request pauses for EBIRD_PAUSE_MS. Without the pause each
+// page load sent hundreds more requests to a key that was already blocked, which kept it
+// blocked and made the Migration page wait on retries until the browser gave up (2026-11-09,
+// after a day of redeploys each refilled the empty caches at once).
+
+export const EBIRD_PAUSE_MS = 10 * 60 * 1000
+let pausedUntil = 0
+let rateLimitedCount = 0
+
+export function ebirdPaused(now = Date.now()): boolean {
+  return now < pausedUntil
+}
+
+/** How many times eBird has refused us; ebird-activity.ts skips a snapshot made while it did */
+export function ebirdRateLimitCount(): number {
+  return rateLimitedCount
+}
+
+/** Milliseconds left of a ttl that started at fetchedAt (at least a minute) */
+function ttlLeft(fetchedAt: Date, ttl: number): number {
+  return Math.max(60_000, ttl - (Date.now() - fetchedAt.getTime()))
+}
+
+/** For tests */
+export function resetEBirdPause(): void {
+  pausedUntil = 0
+}
+
+/** GET with backoff on 429. null = eBird is refusing us (now or earlier): nothing was fetched. */
+export async function ebirdGet(url: string, apiKey: string, fetchImpl: typeof fetch = fetch): Promise<Response | null> {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    if (ebirdPaused()) return null
+    if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * 2 ** (attempt - 1)))
+    if (ebirdPaused()) return null
+    const resp = await fetchImpl(url, { headers: { 'X-eBirdApiToken': apiKey, 'User-Agent': '(HuntStack, huntstack.net)' } })
+    if (resp.status !== 429) return resp
+  }
+  rateLimitedCount++
+  if (!ebirdPaused()) {
+    console.warn(`[eBird] rate limited: pausing eBird requests for ${EBIRD_PAUSE_MS / 60000} minutes`)
+  }
+  pausedUntil = Date.now() + EBIRD_PAUSE_MS
+  return null
+}
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 
@@ -60,6 +109,11 @@ const EBIRD_SPECIES: Record<string, { slug: string; name: string }> = {
 // (ambwig, blwtea, rossgo, mottdu, sxrgoo, teal1), so wigeon, blue-winged teal, Ross's
 // goose and mottled duck sightings were silently dropped. ebird.test.ts pins the list.
 export const EBIRD_SPECIES_CODES = Object.keys(EBIRD_SPECIES)
+
+/** Display name per slug (the first code's name) */
+export const EBIRD_SPECIES_NAMES: Record<string, string> = Object.fromEntries(
+  Object.values(EBIRD_SPECIES).reverse().map(v => [v.slug, v.name]),
+)
 
 // ─── State → flyway mapping (V1 states) ──────────────────────────────────────
 
@@ -148,6 +202,13 @@ export async function getEBirdCountsForRefuge(
   const cached = obsCache.get(cacheKey)
   if (cached) return cached
 
+  // Saved recently (before a restart): use it instead of asking eBird again
+  const recent = await loadSaved<EBirdCount[]>(cacheKey, GEO_TTL)
+  if (recent) {
+    obsCache.set(cacheKey, recent.data, ttlLeft(recent.fetchedAt, GEO_TTL))
+    return recent.data
+  }
+
   try {
     const url = new URL(`${EBIRD_BASE}/data/obs/geo/recent`)
     url.searchParams.set('lat', lat.toFixed(4))
@@ -158,20 +219,9 @@ export async function getEBirdCountsForRefuge(
     // Filter client-side via EBIRD_SPECIES whitelist (only waterfowl slugs).
     url.searchParams.set('maxResults', '2000')
 
-    // eBird answers bursts with 429 (its limits are unpublished): back off and retry
-    // rather than show the location as empty.
-    let resp: Response | null = null
-    for (let attempt = 0; attempt < 4; attempt++) {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * 2 ** (attempt - 1)))
-      resp = await fetch(url.toString(), {
-        headers: {
-          'X-eBirdApiToken': apiKey,
-          'User-Agent': '(HuntStack, huntstack.net)',
-        },
-      })
-      if (resp.status !== 429) break
-    }
-    if (!resp) throw new Error('no response')
+    // Backs off on 429 rather than show the location as empty; null = eBird is refusing us
+    const resp = await ebirdGet(url.toString(), apiKey)
+    if (!resp) throw new Error('eBird rate limit, paused')
 
     if (!resp.ok) {
       // Thrown, so the caller can tell a failed lookup from a place with no sightings (the
@@ -230,12 +280,21 @@ export async function getEBirdCountsForRefuge(
     }
 
     obsCache.set(cacheKey, result, GEO_TTL)
+    save(cacheKey, result)
     return result
 
   } catch (err) {
+    // eBird refused or failed: the last saved numbers (up to a week old) beat none. Held in
+    // memory only for the pause, so eBird is asked again after it.
+    const stale = await loadSaved<EBirdCount[]>(cacheKey, STALE_LIMIT_MS)
+    if (stale) {
+      obsCache.set(cacheKey, stale.data, EBIRD_PAUSE_MS)
+      return stale.data
+    }
     // Logged and rethrown: one failed location must not blank the dashboard (the caller uses
-    // allSettled), and it must not look like a place with no sightings either
-    console.warn(`[eBird] geo query for ${refugeName} failed: ${err instanceof Error ? err.message : String(err)}`)
+    // allSettled), and it must not look like a place with no sightings either. Not logged per
+    // place while paused: ebirdGet already said so once.
+    if (!ebirdPaused()) console.warn(`[eBird] geo query for ${refugeName} failed: ${err instanceof Error ? err.message : String(err)}`)
     throw err
   }
 }
@@ -311,25 +370,46 @@ async function fetchSpeciesObs(apiKey: string, state: string, code: string, days
   }
   const pending = inFlight.get(key)
   if (pending) return pending
-  const request = requestSpeciesObs(apiKey, state, code, daysBack, key).finally(() => inFlight.delete(key))
+  const request = requestSpeciesObs(apiKey, state, code, daysBack, key, fresh).finally(() => inFlight.delete(key))
   inFlight.set(key, request)
   return request
 }
 
-async function requestSpeciesObs(apiKey: string, state: string, code: string, daysBack: number, key: string): Promise<EBirdObservation[]> {
-  const url = `${EBIRD_BASE}/data/obs/US-${state}/recent/${code}?back=${daysBack}`
-  let resp: Response | null = null
-  for (let attempt = 0; attempt < 4; attempt++) {
-    if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * 2 ** (attempt - 1)))
-    resp = await fetch(url, { headers: { 'X-eBirdApiToken': apiKey, 'User-Agent': '(HuntStack, huntstack.net)' } })
-    if (resp.status !== 429) break
+async function requestSpeciesObs(apiKey: string, state: string, code: string, daysBack: number, key: string, fresh: boolean): Promise<EBirdObservation[]> {
+  // Saved recently (before a restart): use it instead of asking eBird again. A scheduled refresh
+  // (fresh) always asks.
+  if (!fresh) {
+    const recent = await loadSaved<EBirdObservation[]>(key, SPECIES_TTL)
+    if (recent) {
+      speciesCache.set(key, recent.data, ttlLeft(recent.fetchedAt, SPECIES_TTL))
+      return recent.data
+    }
   }
+  const url = `${EBIRD_BASE}/data/obs/US-${state}/recent/${code}?back=${daysBack}`
+  const resp = await ebirdGet(url, apiKey)
   if (!resp || !resp.ok) {
-    console.warn(`[eBird] species query US-${state}/${code} failed: HTTP ${resp?.status}`)
+    if (resp) console.warn(`[eBird] species query US-${state}/${code} failed: HTTP ${resp.status}`)
+    // The last saved answer (up to a week old) beats none; held in memory only for the pause
+    const stale = await loadSaved<EBirdObservation[]>(key, STALE_LIMIT_MS)
+    if (stale) {
+      speciesCache.set(key, stale.data, EBIRD_PAUSE_MS)
+      return stale.data
+    }
     return []
   }
-  const obs: EBirdObservation[] = await resp.json()
+  // Only the fields used here; personal locations' coordinates are not kept
+  const obs: EBirdObservation[] = ((await resp.json()) as EBirdObservation[]).map(o => ({
+    speciesCode: o.speciesCode,
+    comName: o.comName,
+    howMany: o.howMany,
+    obsDt: o.obsDt,
+    locId: o.locId,
+    locName: o.locName,
+    obsValid: o.obsValid,
+    locationPrivate: o.locationPrivate,
+  }))
   speciesCache.set(key, obs, SPECIES_TTL)
+  save(key, obs)
   return obs
 }
 

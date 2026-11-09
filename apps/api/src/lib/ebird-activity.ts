@@ -10,9 +10,13 @@ import { sql } from 'drizzle-orm'
 import { getDb } from './db.js'
 import {
   ALL_REPORT_SPECIES,
+  EBIRD_SPECIES_NAMES,
   STATE_FLYWAY,
   computeActivityLevel,
   computeTrend,
+  EBIRD_PAUSE_MS,
+  ebirdPaused,
+  ebirdRateLimitCount,
   getEBirdSpeciesReports,
   type EBirdSpeciesReport,
 } from './ebird.js'
@@ -130,31 +134,80 @@ function noteSnapshotError(error: unknown) {
 }
 
 /**
+ * The newest daily snapshot (up to a week old) per state and species, as reports with no place
+ * list. Used only while eBird is refusing us, so the page keeps the last known numbers.
+ */
+async function loadLatestSnapshots(states: string[]): Promise<EBirdSpeciesReport[]> {
+  if (snapshotTableMissing() || states.length === 0) return []
+  try {
+    const rows = await getDb().execute(sql`
+      SELECT DISTINCT ON (state_code, species_slug) state_code, species_slug, places, birds
+      FROM ebird_activity_snapshots
+      WHERE state_code IN (${sql.join(states.map(s => sql`${s}`), sql`, `)})
+        AND snapshot_date >= current_date - 7
+      ORDER BY state_code, species_slug, snapshot_date DESC
+    `)
+    return (rows as unknown as Array<{ state_code: string; species_slug: string; places: number; birds: number }>).map(r => ({
+      state: r.state_code.trim(),
+      species: r.species_slug,
+      speciesName: EBIRD_SPECIES_NAMES[r.species_slug] ?? r.species_slug,
+      places: Number(r.places),
+      birds: Number(r.birds),
+      topPlaces: [],
+    }))
+  } catch (error) {
+    noteSnapshotError(error)
+    return []
+  }
+}
+
+/** Fill in state and species rows missing from a refused fetch with the latest snapshot */
+export function withSnapshotFallback(reports: EBirdSpeciesReport[], latest: EBirdSpeciesReport[]): EBirdSpeciesReport[] {
+  const have = new Set(reports.map(r => `${r.state}:${r.species}`))
+  return [...reports, ...latest.filter(r => !have.has(`${r.state}:${r.species}`))]
+}
+
+/**
  * Statewide activity for the given states, optionally narrowed to some species. Always fetches
  * the full species set (cached, refreshed in the background) so every view and the snapshots
  * agree on the numbers.
  */
 export async function getStateActivity(states: string[], speciesSlugs?: string[]): Promise<StateSpeciesActivity[]> {
   if (!process.env.EBIRD_API_KEY || states.length === 0) return []
-  const [reports, previous] = await Promise.all([
+  const refusals = ebirdRateLimitCount()
+  const [fetched, previous] = await Promise.all([
     getEBirdSpeciesReports(states, ALL_REPORT_SPECIES),
     loadPreviousSnapshots(states),
   ])
+  // eBird refused some of it and nothing was saved for those: show the last daily numbers
+  const refused = ebirdRateLimitCount() !== refusals || ebirdPaused()
+  const reports = refused ? withSnapshotFallback(fetched, await loadLatestSnapshots(states)) : fetched
   const wanted = speciesSlugs && speciesSlugs.length > 0 ? new Set(speciesSlugs) : null
   return buildStateActivity(wanted ? reports.filter(r => wanted.has(r.species)) : reports, previous, new Date().toISOString())
 }
 
-/** Refresh the cache and save the day's snapshot now and every 6 hours, so pages don't wait. */
+/**
+ * Fill the cache and save the day's snapshot now and every 6 hours, so pages don't wait. At
+ * startup it reads answers saved before the restart (ebird-store.ts) and asks eBird only for
+ * missing or old ones; the 6-hourly runs ask eBird for everything.
+ */
 export function startStateActivityRefresh(states: string[]): void {
   if (!process.env.EBIRD_API_KEY) return
-  const run = async () => {
+  const run = async (fresh: boolean) => {
     try {
-      const reports = await getEBirdSpeciesReports(states, ALL_REPORT_SPECIES, 14, { fresh: true })
+      const refusals = ebirdRateLimitCount()
+      const reports = await getEBirdSpeciesReports(states, ALL_REPORT_SPECIES, 14, { fresh })
+      if (ebirdRateLimitCount() !== refusals) {
+        // Some states came back empty because eBird refused us: don't save that as the day's
+        // snapshot (the first one of the day wins), and refill the cache after the pause
+        setTimeout(() => void run(true), EBIRD_PAUSE_MS + 60_000).unref()
+        return
+      }
       await saveSnapshot(reports)
     } catch (error) {
       console.warn(`[eBird] activity refresh failed: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
-  void run()
-  setInterval(run, REFRESH_EVERY).unref()
+  void run(false)
+  setInterval(() => void run(true), REFRESH_EVERY).unref()
 }

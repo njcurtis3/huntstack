@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildStateActivity } from './ebird-activity.js'
+import { buildStateActivity, withSnapshotFallback } from './ebird-activity.js'
 import { summarizeStateActivity } from '../routes/migration.js'
 
 const report = (state: string, species: string, places: number, birds: number) => ({
@@ -55,5 +55,13 @@ describe('summarizeStateActivity', () => {
     expect(full.totalPreviousCount).toBe(300)
     expect(full.overallDelta).toBe(300)
     expect(full.overallDeltaPercent).toBe(100)
+  })
+})
+
+describe('withSnapshotFallback', () => {
+  it('fills only the rows eBird did not answer with the latest saved numbers', () => {
+    const fetched = [report('TX', 'mallard', 494, 3000)]
+    const latest = [report('TX', 'mallard', 400, 2500), report('TX', 'pintail', 50, 900)]
+    expect(withSnapshotFallback(fetched, latest)).toEqual([report('TX', 'mallard', 494, 3000), report('TX', 'pintail', 50, 900)])
   })
 })
