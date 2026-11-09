@@ -70,6 +70,9 @@ export async function ebirdGet(url: string, apiKey: string, fetchImpl: typeof fe
 // ─── Cache ────────────────────────────────────────────────────────────────────
 
 const obsCache      = new BoundedCache<EBirdCount[]>()
+// Places with nothing from eBird and nothing saved: not looked up again until the pause ends,
+// so a page doesn't wait on a database lookup per place on every load
+const geoMissUntil  = new Map<string, number>()
 
 // ─── eBird species code → HuntStack slug ─────────────────────────────────────
 // eBird uses 6-letter alpha codes. Maps to our species slugs + display names.
@@ -201,6 +204,7 @@ export async function getEBirdCountsForRefuge(
   const cacheKey = `ebird:obs:${lat.toFixed(2)}:${lng.toFixed(2)}:${dist}`
   const cached = obsCache.get(cacheKey)
   if (cached) return cached
+  if ((geoMissUntil.get(cacheKey) ?? 0) > Date.now()) throw new Error('eBird unavailable; asking again later')
 
   // Saved recently (before a restart): use it instead of asking eBird again
   const recent = await loadSaved<EBirdCount[]>(cacheKey, GEO_TTL)
@@ -291,6 +295,7 @@ export async function getEBirdCountsForRefuge(
       obsCache.set(cacheKey, stale.data, EBIRD_PAUSE_MS)
       return stale.data
     }
+    geoMissUntil.set(cacheKey, Date.now() + EBIRD_PAUSE_MS)
     // Logged and rethrown: one failed location must not blank the dashboard (the caller uses
     // allSettled), and it must not look like a place with no sightings either. Not logged per
     // place while paused: ebirdGet already said so once.
@@ -395,6 +400,8 @@ async function requestSpeciesObs(apiKey: string, state: string, code: string, da
       speciesCache.set(key, stale.data, EBIRD_PAUSE_MS)
       return stale.data
     }
+    // Nothing saved either: remember that for the pause instead of looking it up on every load
+    speciesCache.set(key, [], EBIRD_PAUSE_MS)
     return []
   }
   // Only the fields used here; personal locations' coordinates are not kept
