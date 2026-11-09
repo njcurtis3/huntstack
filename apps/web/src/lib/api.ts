@@ -1,3 +1,5 @@
+import { sendChat } from './account'
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 const DEFAULT_TIMEOUT_MS = 30_000
@@ -538,21 +540,13 @@ class ApiClient {
   }
 
   // Chat
+  // Sends the sign-in token when there is one; see lib/account.ts for the allowance errors
   async chat(
     message: string,
     conversationId?: string,
     history?: Array<{ role: 'user' | 'assistant'; content: string }>,
   ) {
-    return this.request<{
-      response: string
-      sources: Array<{ title: string; url?: string; snippet: string; kind?: 'web' | 'database' }>
-      conversationId: string
-      dataFreshnessNote?: string | null
-    }>('/api/chat', {
-      method: 'POST',
-      body: JSON.stringify({ message, conversationId, history }),
-      timeoutMs: 60_000, // RAG retrieval + LLM generation can run longer than the default budget
-    })
+    return sendChat(message, conversationId, history)
   }
 
   // Weather

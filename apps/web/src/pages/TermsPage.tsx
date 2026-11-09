@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 
-const LAST_UPDATED = 'July 20, 2026'
+const LAST_UPDATED = 'November 8, 2026'
 
 export function TermsPage() {
   return (
@@ -14,9 +14,7 @@ export function TermsPage() {
 
       <div className="space-y-6 text-sm leading-relaxed" style={{ color: `rgb(var(--color-text-secondary))` }}>
         <p>
-          HuntStack is currently in private development and has not launched a public beta. These terms
-          cover use of the site during this pre-launch period and will be revisited before any public
-          release.
+          These terms cover your use of HuntStack. By using the site you agree to them.
         </p>
 
         <section>
@@ -51,9 +49,8 @@ export function TermsPage() {
           </h2>
           <p>
             The site and its data are provided "as is," without warranty of any kind, express or implied,
-            including accuracy, completeness, or fitness for a particular purpose. Given the app is in
-            active pre-launch development, features, data, and availability may change or break without
-            notice.
+            including accuracy, completeness, or fitness for a particular purpose. Features, data, and
+            availability may change without notice.
           </p>
         </section>
 
@@ -85,10 +82,30 @@ export function TermsPage() {
             Accounts
           </h2>
           <p>
-            If you create an account, you're responsible for keeping your credentials secure. Accounts
-            currently have no effect on site functionality beyond sign-in — see our{' '}
+            If you create an account, you're responsible for keeping your credentials secure. See our{' '}
             <a href="/privacy" className="text-accent-500 hover:underline">Privacy Policy</a> for what
             account data we hold.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="text-lg font-semibold mb-2" style={{ color: `rgb(var(--color-text-primary))` }}>
+            AI questions and subscriptions
+          </h2>
+          <p className="mb-2">
+            Visitors can ask the AI a few questions without an account, and free accounts get a set number
+            each month. HuntStack Pro costs $5.99 per month, billed by Stripe, renews each month until you
+            cancel, and removes the monthly limit. A fair-use rate limit still applies to stop automated
+            use.
+          </p>
+          <p className="mb-2">
+            You can cancel any time in Settings. Cancelling stops future charges; you keep Pro until the end
+            of the month you've paid for. We may change the price or the free allowance; a price change
+            applies from your next renewal after we tell you about it.
+          </p>
+          <p>
+            If you add your own AI key, your questions run on your account with that provider. You pay the
+            provider for them, under its terms, and you're responsible for the key and its charges.
           </p>
         </section>
 
@@ -97,8 +114,7 @@ export function TermsPage() {
             Changes
           </h2>
           <p>
-            Because the product is still pre-launch and actively changing, these terms will change too.
-            We'll update the date above when it does, and post more formal terms before any public release.
+            We'll update these terms as the product changes, and change the date above when we do.
           </p>
         </section>
 

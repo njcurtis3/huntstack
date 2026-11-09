@@ -10,6 +10,12 @@ import { chatRequestSchema } from '@huntstack/shared'
 import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 import { DEFAULT_REPORT_SPECIES, getEBirdSpeciesReports, type EBirdSpeciesReport } from '../lib/ebird.js'
 import { accessLabel, accessOf } from '../lib/access.js'
+import { AuthUnconfiguredError, verifyAccessTokenUser } from '../lib/supabase-auth.js'
+import type { VerifyUser } from '../lib/auth-guard.js'
+import { drizzleAccountStore, type AccountStore } from '../lib/account-store.js'
+import { chatAccessFor, limitMessage, usageFor, type ChatAccess } from '../lib/chat-quota.js'
+import { open as openSealed, visitorId } from '../lib/secret-box.js'
+import { chatWithUserKey, UserKeyError, type Provider } from '../lib/user-llm.js'
 
 // States HuntStack covers: full seasons for the first six, survey counts for MO and IL.
 // A question that names no place is answered for these.
@@ -115,17 +121,52 @@ interface StructuredContext {
 
 // ─── Route handler ───────────────────────────────────────────────────────────
 
-export const chatRoutes: FastifyPluginAsync = async (app) => {
+export interface ChatDeps {
+  store: AccountStore
+  verifyUser: VerifyUser
+  now: () => Date
+}
+
+const usageSchema = {
+  type: 'object',
+  properties: {
+    plan: { type: 'string', enum: ['visitor', 'free', 'pro', 'own_key'] },
+    used: { type: 'integer' },
+    limit: { type: 'integer', nullable: true },
+    resetsAt: { type: 'string', nullable: true },
+  },
+} as const
+
+/**
+ * Who is asking. No Authorization header = a visitor; a header that does not verify is refused
+ * (401) rather than quietly counted against the visitor allowance.
+ */
+async function chatUser(
+  authorization: string | undefined,
+  verifyUser: VerifyUser,
+): Promise<{ id: string } | null | 'invalid' | 'unavailable'> {
+  if (!authorization) return null
+  const match = /^Bearer\s+(\S+)$/i.exec(authorization)
+  if (!match) return 'invalid'
+  try {
+    return (await verifyUser(match[1])) ?? 'invalid'
+  } catch (err) {
+    if (err instanceof AuthUnconfiguredError) return 'unavailable'
+    throw err
+  }
+}
+
+export function buildChatRoutes(deps: ChatDeps): FastifyPluginAsync {
+  return async (app) => {
   // Chat completion with RAG
   app.post('/', {
-    // Tighter per-IP limit than the global 100/min (index.ts). This endpoint is unauthenticated
-    // and calls Together.ai on every request (real per-call LLM cost), so a script looping it
-    // could run up the bill and starve real users. 20 requests/hour/IP is generous for a person
-    // asking a handful of questions but stops automated abuse. Per-route config overrides the
-    // global rate limit for this route only; keys on the real client IP via trustProxy (index.ts).
+    // Tighter per-IP limit than the global 100/min (index.ts), on top of the per-person allowance
+    // (lib/chat-quota.ts). Each question on HuntStack's key costs real money, so this stops a
+    // script from looping it. Signed-in requests get more room (subscribers have no monthly cap).
+    // Keys on the real client IP via trustProxy (index.ts).
     config: {
       rateLimit: {
-        max: 20,
+        max: (req) => (req.headers.authorization ? 60 : 20),
         timeWindow: '1 hour',
         errorResponseBuilder: (_req, context) => ({
           error: true,
@@ -178,14 +219,72 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
             },
             conversationId: { type: 'string' },
             dataFreshnessNote: { type: 'string', nullable: true },
+            usage: usageSchema,
           },
         },
       },
     },
   }, async (request, reply) => {
     const { message, conversationId, history } = request.body as ChatRequestBody
+    const now = deps.now()
 
-    if (!isConfigured()) {
+    // ─── Who is asking, and may they ask another question? ───
+    const user = await chatUser(request.headers.authorization, deps.verifyUser)
+    if (user === 'invalid') {
+      return reply.status(401).send({ error: true, statusCode: 401, message: 'Your session is not valid. Please sign in again.' })
+    }
+    if (user === 'unavailable') {
+      return reply.status(503).send({ error: true, statusCode: 503, message: 'Accounts are not available right now' })
+    }
+    const userId = user?.id ?? null
+
+    let ownKey: { provider: Provider; apiKey: string; model: string } | null = null
+    let access: ChatAccess
+    let reserved: { subject: string; period: string } | null = null
+    let used = 0
+    try {
+      const [storedKey, sub] = userId
+        ? await Promise.all([deps.store.getAiKey(userId), deps.store.getSubscription(userId)])
+        : [null, null]
+      if (storedKey) {
+        try {
+          ownKey = { provider: storedKey.provider, apiKey: openSealed(storedKey.sealedKey), model: storedKey.model }
+        } catch (err) {
+          // Secret missing or rotated: use HuntStack's key and the normal allowance
+          app.log.error(err, 'could not open a stored AI key')
+        }
+      }
+      access = chatAccessFor({
+        userId,
+        visitor: visitorId(request.ip),
+        hasOwnKey: !!ownKey,
+        subscriptionStatus: sub?.status ?? null,
+        now,
+      })
+      if (access.plan === 'free' || access.plan === 'visitor') {
+        const count = await deps.store.reserveChat(access.subject, access.period, access.limit)
+        if (count === null) {
+          return reply.status(402).send({
+            error: true,
+            statusCode: 402,
+            code: 'chat_limit',
+            message: limitMessage(access.plan, access.limit),
+            usage: usageFor(access, access.limit, now),
+          })
+        }
+        reserved = { subject: access.subject, period: access.period }
+        used = count
+      }
+    } catch (err) {
+      // The allowance tables are unreachable: answer anyway (the hourly rate limit still holds)
+      // rather than take chat down with them
+      app.log.error(err, 'chat allowance check failed; answering without it')
+      ownKey = null
+      access = { plan: 'pro' }
+    }
+
+    if (!ownKey && !isConfigured()) {
+      if (reserved) await deps.store.releaseChat(reserved.subject, reserved.period).catch(() => {})
       return reply.status(503).send({
         error: true,
         message: 'AI service not configured. Please set LLM_API_KEY.',
@@ -205,13 +304,19 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
       ])
 
       // Step 3: Build system prompt with both context types; the model call also searches the web
-      // (OpenRouter's web plugin) and attaches those results after this prompt
-      const now = new Date()
+      // (OpenRouter's web plugin, or Claude's web search on a user's own Claude key)
       const structuredText = formatStructuredContext(structuredCtx)
       const systemPrompt = buildSystemPrompt(vectorContext, structuredText, now)
-      const { text: responseText, citations } = await generateChatWithWebSearch(
-        withAreaHint(message, entities), systemPrompt, truncateHistory(history), webSearchPrompt(now),
-      )
+      const { text: responseText, citations } = ownKey
+        ? await chatWithUserKey(ownKey, {
+            userMessage: withAreaHint(message, entities),
+            systemPrompt,
+            history: truncateHistory(history),
+            searchPrompt: webSearchPrompt(now),
+          })
+        : await generateChatWithWebSearch(
+            withAreaHint(message, entities), systemPrompt, truncateHistory(history), webSearchPrompt(now),
+          )
 
       // Step 4: Sources — web pages first, then HuntStack's database
       const allSources = [
@@ -243,8 +348,14 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
         sources: dedupedSources,
         conversationId: conversationId || generateConversationId(),
         dataFreshnessNote,
+        usage: usageFor(access, used, now),
       }
     } catch (error) {
+      // A failed answer does not use up a question
+      if (reserved) await deps.store.releaseChat(reserved.subject, reserved.period).catch(() => {})
+      if (error instanceof UserKeyError) {
+        return reply.status(502).send({ error: true, statusCode: 502, code: 'own_key_failed', message: error.message })
+      }
       app.log.error(error)
       return reply.status(500).send({
         error: true,
@@ -252,8 +363,14 @@ export const chatRoutes: FastifyPluginAsync = async (app) => {
       })
     }
   })
-
+  }
 }
+
+export const chatRoutes = buildChatRoutes({
+  store: drizzleAccountStore(),
+  verifyUser: verifyAccessTokenUser,
+  now: () => new Date(),
+})
 
 // ─── Entity extraction ───────────────────────────────────────────────────────
 

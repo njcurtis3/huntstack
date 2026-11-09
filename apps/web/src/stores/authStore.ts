@@ -15,8 +15,12 @@ interface AuthState {
   isAuthenticated: boolean
   /** Set when the person arrived from a password-reset email and must choose a new password */
   passwordRecovery: boolean
+  /** A page asked for the sign-in box (e.g. chat when a visitor's free questions run out) */
+  authPrompt: 'signin' | 'signup' | null
 
   // Actions
+  promptAuth: (mode: 'signin' | 'signup') => void
+  clearAuthPrompt: () => void
   initialize: () => Promise<void>
   login: (email: string, password: string) => Promise<void>
   register: (email: string, password: string, userType?: 'hunter' | 'outfitter') => Promise<void>
@@ -33,6 +37,10 @@ export const useAuthStore = create<AuthState>()(
       isLoading: true,
       isAuthenticated: false,
       passwordRecovery: false,
+      authPrompt: null,
+
+      promptAuth: (mode) => set({ authPrompt: mode }),
+      clearAuthPrompt: () => set({ authPrompt: null }),
 
       initialize: async () => {
         try {

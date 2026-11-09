@@ -3,6 +3,8 @@ import { Send, Bot, User, Sparkles, ExternalLink, Search, MapPin, FileText, Bird
 import { Link, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { api } from '../lib/api'
+import { AccountError, getAccount, usageLine, type ChatUsage } from '../lib/account'
+import { useAuthStore } from '../stores/authStore'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -103,6 +105,24 @@ export function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const scrollBoxRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const { isAuthenticated, promptAuth } = useAuthStore()
+  // Free questions left (null = unknown or no cap), and the notice once they run out
+  const [usage, setUsage] = useState<ChatUsage | null>(null)
+  const [limitHit, setLimitHit] = useState<{ plan: 'visitor' | 'free'; message: string } | null>(null)
+
+  // Signed in: show the allowance before the first question. Signing in clears a visitor's limit.
+  useEffect(() => {
+    setLimitHit(null)
+    if (!isAuthenticated) {
+      setUsage(null)
+      return
+    }
+    let cancelled = false
+    getAccount()
+      .then(a => { if (!cancelled) setUsage(a.usage) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [isAuthenticated])
 
   // Persist to localStorage whenever messages/conversationId change
   useEffect(() => {
@@ -213,15 +233,30 @@ export function ChatPage() {
 
     if ('error' in chatData) {
       const err = chatData.error as Error
-      content = err.message.includes('503')
-        ? 'The AI service is not configured yet. Please set the TOGETHER_API_KEY in your .env file to enable the chat assistant.'
-        : 'Sorry, something went wrong. Please try again.'
+      if (err instanceof AccountError && err.code === 'chat_limit') {
+        // Out of free questions: take the question back so it can be sent after signing up
+        setMessages(prev => prev.filter(m => m.id !== userMsg.id))
+        setInput(text.trim())
+        setLimitHit({ plan: err.usage?.plan === 'free' ? 'free' : 'visitor', message: err.message })
+        if (err.usage) setUsage(err.usage)
+        setIsLoading(false)
+        return
+      }
+      if (err instanceof AccountError && err.status === 401) {
+        content = 'Your sign-in has expired. Sign in again and resend your question.'
+        promptAuth('signin')
+      } else if (err instanceof AccountError && (err.code === 'own_key_failed' || err.status === 503)) {
+        content = err.message
+      } else {
+        content = 'Sorry, something went wrong. Please try again.'
+      }
     } else {
-      const cd = chatData as { response: string; sources: Source[]; conversationId: string; dataFreshnessNote?: string | null }
+      const cd = chatData as { response: string; sources: Source[]; conversationId: string; dataFreshnessNote?: string | null; usage?: ChatUsage }
       content = cd.response
       sources = cd.sources
       dataFreshnessNote = cd.dataFreshnessNote ?? null
       if (cd.conversationId) setConversationId(cd.conversationId)
+      if (cd.usage) setUsage(cd.usage)
     }
 
     // "Related records" only when the answer drew on HuntStack data. For a general question
@@ -240,7 +275,7 @@ export function ChatPage() {
     }
     setMessages(prev => [...prev, assistantMsg])
     setIsLoading(false)
-  }, [isLoading, conversationId])
+  }, [isLoading, conversationId, messages, promptAuth])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -465,6 +500,23 @@ export function ChatPage() {
         style={{ backgroundColor: `rgb(var(--color-bg-elevated))`, borderColor: `rgb(var(--color-border-primary))` }}
       >
         <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
+          {limitHit && (
+            <div
+              role="status"
+              className="mb-3 rounded-lg border px-4 py-3 text-sm"
+              style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))`, color: `rgb(var(--color-text-primary))` }}
+            >
+              <p className="mb-2">{limitHit.message}</p>
+              {limitHit.plan === 'visitor' ? (
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => promptAuth('signup')} className="btn-primary text-sm">Create free account</button>
+                  <button type="button" onClick={() => promptAuth('signin')} className="btn-outline text-sm">Sign in</button>
+                </div>
+              ) : (
+                <Link to="/settings" className="btn-primary text-sm inline-block">Subscribe or add your own AI key</Link>
+              )}
+            </div>
+          )}
           <div className="flex gap-3">
             <label htmlFor="chat-input" className="sr-only">Your question</label>
             <input
@@ -483,6 +535,7 @@ export function ChatPage() {
             </button>
           </div>
           <p className="text-xs mt-2 text-center" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+            {usageLine(usage) && !limitHit ? <>{usageLine(usage)} </> : null}
             Always verify regulations with official state sources before hunting.
           </p>
         </form>

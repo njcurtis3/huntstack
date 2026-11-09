@@ -63,7 +63,7 @@ run means known-broken code is live — say so first, before anything else.
 **Question:** is anything broken right now?
 
 1. `GET /api/health/ready` (Railway API + DB in one call).
-2. Frontend: `curl -sI https://huntstack.com` -> expect 200.
+2. Frontend: `curl -sI https://huntstack.net` -> expect 200.
 3. Sentry: unresolved issues, last 24h, both projects.
 4. Supabase: project `status` is `ACTIVE_HEALTHY`, not `INACTIVE` (paused).
 5. Together: model availability probe.

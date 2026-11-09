@@ -104,7 +104,7 @@ async def discover_all():
     results = {}
 
     async with httpx.AsyncClient(
-        headers={"User-Agent": "HuntStack/1.0 (migration audit; contact: huntstack.com)"},
+        headers={"User-Agent": "HuntStack/1.0 (migration audit; contact: huntstack.net)"},
         timeout=15.0,
     ) as client:
 

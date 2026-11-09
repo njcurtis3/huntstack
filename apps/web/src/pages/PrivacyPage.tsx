@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 
-const LAST_UPDATED = 'November 7, 2026'
+const LAST_UPDATED = 'November 8, 2026'
 
 export function PrivacyPage() {
   return (
@@ -14,9 +14,7 @@ export function PrivacyPage() {
 
       <div className="space-y-6 text-sm leading-relaxed" style={{ color: `rgb(var(--color-text-secondary))` }}>
         <p>
-          HuntStack ("we", "us") is currently in private development and has not launched a public beta.
-          This policy describes what happens with your data today, and will be revisited before any public
-          release.
+          This policy describes what HuntStack ("we", "us") does with your data.
         </p>
 
         <section>
@@ -39,6 +37,23 @@ export function PrivacyPage() {
               <strong>Chat history.</strong> Conversations with the AI chat assistant are stored only in
               your browser's local storage, on your device. We do not currently persist chat conversations
               on our servers tied to your identity.
+            </li>
+            <li>
+              <strong>AI question counts.</strong> To apply the free question allowance we count how many
+              questions each account asks per month. For visitors who are not signed in we count by a
+              one-way code made from the IP address; the IP address itself is not stored for this.
+            </li>
+            <li>
+              <strong>Your own AI key, if you add one.</strong> In Settings you can add an API key from
+              Anthropic, OpenAI or OpenRouter. We store it encrypted, use it only to send your questions to
+              that provider, and never show it again. Questions asked this way, with the HuntStack data and
+              instructions that go with them, are sent to that provider under its own terms and privacy
+              policy. Remove the key in Settings at any time and it is deleted.
+            </li>
+            <li>
+              <strong>Payments.</strong> Subscriptions are processed by Stripe. Stripe collects your card
+              details on its own page; we never see or store them. We keep your Stripe customer and
+              subscription ids and the subscription's status and renewal date.
             </li>
             <li>
               <strong>Standard server logs.</strong> Like most web services, our API logs requests (URL,
@@ -70,7 +85,8 @@ export function PrivacyPage() {
             Solely to operate the product: authenticating you, answering location-based queries, and
             maintaining/debugging the service. We do not sell your data. We share it only with the
             infrastructure providers who host the app on our behalf (Supabase for database/auth, and our
-            hosting providers), and with an outfitter when you send them an inquiry, as described above.
+            hosting providers), with Stripe to take payments, with the AI provider you choose if you add your
+            own key, and with an outfitter when you send them an inquiry, as described above.
           </p>
         </section>
 
@@ -94,8 +110,8 @@ export function PrivacyPage() {
           </h2>
           <p>
             You can clear your chat history at any time by clearing your browser's local storage for this
-            site. If you've created an account, you can request deletion of it by contacting us at the
-            email below.
+            site. You can remove your own AI key and cancel a subscription in Settings. If you've created an
+            account, you can request deletion of it by contacting us at the email below.
           </p>
         </section>
 

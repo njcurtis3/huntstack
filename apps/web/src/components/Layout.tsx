@@ -11,6 +11,7 @@ import {
   Moon,
   Crosshair,
   AlertCircle,
+  Settings,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useThemeStore } from '../stores/themeStore'
@@ -63,6 +64,7 @@ const PAGE_TITLES: Array<[RegExp, string]> = [
   [/^\/privacy/, 'Privacy'],
   [/^\/terms/, 'Terms'],
   [/^\/admin/, 'Admin'],
+  [/^\/settings/, 'Settings'],
 ]
 
 function pageTitleFor(pathname: string): string {
@@ -76,7 +78,7 @@ export function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [authModal, setAuthModal] = useState<AuthMode | null>(null)
   const { resolvedTheme, setTheme } = useThemeStore()
-  const { user, isAuthenticated, initialize, logout, passwordRecovery } = useAuthStore()
+  const { user, isAuthenticated, initialize, logout, passwordRecovery, authPrompt, clearAuthPrompt } = useAuthStore()
   const [reportOpen, setReportOpen] = useState(false)
   // Set when a signed-out user taps Report birds: the sheet opens once sign-in lands.
   const [reportPending, setReportPending] = useState(false)
@@ -93,6 +95,13 @@ export function Layout() {
   useEffect(() => {
     if (passwordRecovery) setAuthModal('newpassword')
   }, [passwordRecovery])
+
+  // Another page asked for the sign-in box
+  useEffect(() => {
+    if (!authPrompt) return
+    setAuthModal(authPrompt)
+    clearAuthPrompt()
+  }, [authPrompt, clearAuthPrompt])
 
   // A new page starts at the top (an outfitter opened from halfway down the list used to open at
   // its footer), with its own tab title, and with the phone menu closed. Search-param changes on
@@ -244,9 +253,15 @@ export function Layout() {
               )}
               {isAuthenticated && user ? (
                 <>
-                  <span className="text-sm truncate max-w-[10rem]" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-                    {user.email}
-                  </span>
+                  <Link
+                    to="/settings"
+                    className="inline-flex items-center gap-1.5 text-sm rounded-md px-2 py-1.5 hover:bg-earth-100 dark:hover:bg-earth-800"
+                    style={{ color: 'rgb(var(--color-text-secondary))' }}
+                    title="Settings"
+                  >
+                    <Settings className="w-4 h-4 shrink-0" />
+                    <span className="truncate max-w-[10rem]">{user.email}</span>
+                  </Link>
                   <button onClick={() => logout()} className="btn-outline text-sm">
                     Sign Out
                   </button>
@@ -350,15 +365,25 @@ export function Layout() {
             </nav>
             <div className="px-4 py-3 border-t border-earth-200 dark:border-earth-700 flex gap-3">
               {isAuthenticated && user ? (
-                <button
-                  onClick={() => {
-                    logout()
-                    setMobileMenuOpen(false)
-                  }}
-                  className="btn-outline text-sm flex-1"
-                >
-                  Sign Out ({user.email})
-                </button>
+                <>
+                  <Link
+                    to="/settings"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="btn-outline text-sm flex-1 inline-flex items-center justify-center gap-1.5"
+                  >
+                    <Settings className="w-4 h-4" />
+                    Settings
+                  </Link>
+                  <button
+                    onClick={() => {
+                      logout()
+                      setMobileMenuOpen(false)
+                    }}
+                    className="btn-outline text-sm flex-1"
+                  >
+                    Sign Out
+                  </button>
+                </>
               ) : (
                 <>
                   <button
