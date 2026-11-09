@@ -51,8 +51,11 @@ const app = Fastify({
 
 // Security plugins
 await app.register(helmet)
+// CORS_ORIGIN may list several origins, comma-separated (e.g. https://huntstack.net plus the old
+// pages.dev address while the domain moves)
+const corsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3000').split(',').map(o => o.trim()).filter(Boolean)
 await app.register(cors, {
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins,
   credentials: true,
 })
 await app.register(rateLimit, {
