@@ -12,6 +12,7 @@ import {
 import { ComposableMap, Geographies, Geography, Annotation } from 'react-simple-maps'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, type FieldReportPublic, type SurveyZone } from '../lib/api'
+import { AccountError } from '../lib/account'
 import { isEarlierSeason, oldSurveyLabel, parseCalendarDate } from '../lib/dates'
 import {
   computeMigrationIndex, flywayLabel, formatChange, freshWindowLabel, getAnomaly, getMigrationStatus, headlineStats, staleThresholdFor,
@@ -1037,11 +1038,13 @@ function MigrationChat({ speciesName, selectedStates }: {
         content: data.response,
         sources: data.sources,
       }])
-    } catch {
+    } catch (err) {
+      // Out of free questions, or the user's own AI key failed: the server's message says what to do
+      const known = err instanceof AccountError && (err.code === 'chat_limit' || err.code === 'own_key_failed')
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: 'Something went wrong. Please try again.',
+        content: known ? (err as AccountError).message : 'Something went wrong. Please try again.',
       }])
     } finally {
       setIsLoading(false)

@@ -22,6 +22,7 @@ import { ContactPage } from './pages/ContactPage'
 import { BlogPage } from './pages/BlogPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { AdminPage } from './pages/AdminPage'
+import { SettingsPage } from './pages/SettingsPage'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null }
@@ -85,6 +86,7 @@ function App() {
           <Route path="contact" element={<ContactPage />} />
           <Route path="blog" element={<BlogPage />} />
           <Route path="admin" element={<AdminPage />} />
+          <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

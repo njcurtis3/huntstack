@@ -166,7 +166,7 @@ export async function getEBirdCountsForRefuge(
       resp = await fetch(url.toString(), {
         headers: {
           'X-eBirdApiToken': apiKey,
-          'User-Agent': '(HuntStack, huntstack.com)',
+          'User-Agent': '(HuntStack, huntstack.net)',
         },
       })
       if (resp.status !== 429) break
@@ -321,7 +321,7 @@ async function requestSpeciesObs(apiKey: string, state: string, code: string, da
   let resp: Response | null = null
   for (let attempt = 0; attempt < 4; attempt++) {
     if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * 2 ** (attempt - 1)))
-    resp = await fetch(url, { headers: { 'X-eBirdApiToken': apiKey, 'User-Agent': '(HuntStack, huntstack.com)' } })
+    resp = await fetch(url, { headers: { 'X-eBirdApiToken': apiKey, 'User-Agent': '(HuntStack, huntstack.net)' } })
     if (resp.status !== 429) break
   }
   if (!resp || !resp.ok) {

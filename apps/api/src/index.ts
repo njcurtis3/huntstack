@@ -36,6 +36,7 @@ import { geoRoutes } from './routes/geo.js'
 import { fieldReportsRoutes } from './routes/field-reports.js'
 import { meRoutes } from './routes/me.js'
 import { adminRoutes } from './routes/admin.js'
+import { accountRoutes, billingWebhookRoutes } from './routes/account.js'
 import { startStateActivityRefresh } from './lib/ebird-activity.js'
 import { STATE_FLYWAY } from './lib/ebird.js'
 
@@ -51,8 +52,11 @@ const app = Fastify({
 
 // Security plugins
 await app.register(helmet)
+// CORS_ORIGIN may list several origins, comma-separated (e.g. https://huntstack.net plus the old
+// pages.dev address while the domain moves)
+const corsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3000').split(',').map(o => o.trim()).filter(Boolean)
 await app.register(cors, {
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins,
   credentials: true,
 })
 await app.register(rateLimit, {
@@ -85,6 +89,7 @@ await app.register(swagger, {
       { name: 'field-reports', description: 'Hunter-submitted bird reports (unverified, location rounded)' },
       { name: 'me', description: 'The signed-in user: their outfitter listing, submissions, stats, reviews and inquiries' },
       { name: 'admin', description: 'Moderation of outfitter submissions and listings (admin allow-list only)' },
+      { name: 'account', description: 'The signed-in user: plan, chat usage, own AI key and billing' },
     ],
   },
 })
@@ -111,6 +116,8 @@ await app.register(geoRoutes, { prefix: '/api/geo' })
 await app.register(fieldReportsRoutes, { prefix: '/api/field-reports' })
 await app.register(meRoutes, { prefix: '/api/me' })
 await app.register(adminRoutes, { prefix: '/api/admin' })
+await app.register(accountRoutes, { prefix: '/api/account' })
+await app.register(billingWebhookRoutes, { prefix: '/api/billing' })
 
 // Global error handler
 app.setErrorHandler((error, request, reply) => {

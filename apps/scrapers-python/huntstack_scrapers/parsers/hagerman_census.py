@@ -30,7 +30,7 @@ CENSUS_PAGE_URL = "https://friendsofhagerman.com/Birding-Jack"
 CHECKLIST_URL = "https://ebird.org/checklist/{sub_id}"
 EBIRD_CHECKLIST_API = "https://api.ebird.org/v2/product/checklist/view/{sub_id}"
 HAGERMAN_HOTSPOT = "L815117"
-USER_AGENT = "HuntStack/1.0 (waterfowl migration research; https://huntstack.com)"
+USER_AGENT = "HuntStack/1.0 (waterfowl migration research; https://huntstack.net)"
 REQUEST_DELAY = 2  # seconds between eBird API calls
 RATE_LIMIT_RETRIES = 4  # waits on a 429 before giving up (30s, 60s, 120s, 240s unless eBird says)
 

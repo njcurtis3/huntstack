@@ -312,7 +312,7 @@ export function MigrationReportPage() {
       <div style={{ display: 'none', padding: '20px 32px 0' }} className="print-only">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
           <Bird style={{ width: 20, height: 20, color: '#1f883d' }} />
-          <span style={{ fontWeight: 700, fontSize: 18, color: '#1f2328' }}>huntstack.pages.dev — Migration Conditions Report</span>
+          <span style={{ fontWeight: 700, fontSize: 18, color: '#1f2328' }}>huntstack.net — Migration Conditions Report</span>
         </div>
       </div>
 
@@ -432,7 +432,7 @@ export function MigrationReportPage() {
         {/* Footer */}
         <div style={{ marginTop: 48, paddingTop: 24, borderTop: '1px solid #d0d7de', fontSize: 12, color: '#57606a' }}>
           <p style={{ margin: '0 0 4px' }}>
-            Generated {generatedDate} · Data from USFWS, state wildlife agencies, and NWS · <strong>huntstack.pages.dev</strong>
+            Generated {generatedDate} · Data from USFWS, state wildlife agencies, and NWS · <strong>huntstack.net</strong>
           </p>
           <p style={{ margin: 0 }}>
             Always verify regulations with official sources before hunting.

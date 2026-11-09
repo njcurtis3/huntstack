@@ -11,4 +11,4 @@ Disallow: /
 Disallow: /report          # print-oriented migration report view
 Disallow: /search          # redirects to /chat
 
-Sitemap: https://huntstack.pages.dev/sitemap.xml
+Sitemap: https://huntstack.net/sitemap.xml

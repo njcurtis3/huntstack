@@ -36,7 +36,7 @@ log = logging.getLogger(__name__)
 
 FORBES_INDEX_URL = "https://forbes-bio-station.inhs.illinois.edu/research/waterfowl-aerial-inventories/"
 BOX_STATIC_URL = "https://uofi.box.com/shared/static/{box_id}"
-USER_AGENT = "HuntStack/1.0 (waterfowl migration research; https://huntstack.com)"
+USER_AGENT = "HuntStack/1.0 (waterfowl migration research; https://huntstack.net)"
 REQUEST_DELAY = 2  # seconds between Box downloads
 
 # River key (from the PDF header) -> registry source name, which is also the location name

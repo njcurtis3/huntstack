@@ -19,6 +19,13 @@ function ignoredProviders(): string[] {
 }
 
 type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string }
+
+/** Run a call on a key other than HuntStack's (a user's own OpenRouter key). */
+export interface LlmOverride {
+  apiKey: string
+  baseUrl: string
+  model: string
+}
 type History = Array<{ role: 'user' | 'assistant'; content: string }>
 
 export interface WebCitation {
@@ -35,30 +42,38 @@ function baseUrl(): string {
   return (process.env.LLM_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, '')
 }
 
+/** A failed completion call, with the provider's HTTP status. */
+export class LlmHttpError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message)
+  }
+}
+
 export function isConfigured(): boolean {
   return !!apiKey()
 }
 
 /** Web search runs through OpenRouter's web plugin, so it needs OpenRouter; CHAT_WEB_SEARCH=off turns it off. */
-export function isWebSearchEnabled(): boolean {
-  return baseUrl().includes('openrouter.ai') && process.env.CHAT_WEB_SEARCH !== 'off'
+export function isWebSearchEnabled(override?: LlmOverride): boolean {
+  return (override?.baseUrl ?? baseUrl()).includes('openrouter.ai') && process.env.CHAT_WEB_SEARCH !== 'off'
 }
 
-async function complete(messages: ChatMessage[], plugins?: unknown[]) {
-  const key = apiKey()
+async function complete(messages: ChatMessage[], plugins?: unknown[], override?: LlmOverride) {
+  const key = override?.apiKey ?? apiKey()
   if (!key) {
     throw new Error('LLM_API_KEY (or TOGETHER_API_KEY) environment variable is not set')
   }
+  const base = override?.baseUrl ?? baseUrl()
 
-  const ignore = baseUrl().includes('openrouter.ai') ? ignoredProviders() : []
-  const response = await fetch(`${baseUrl()}/chat/completions`, {
+  const ignore = base.includes('openrouter.ai') ? ignoredProviders() : []
+  const response = await fetch(`${base}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${key}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: process.env.LLM_MODEL || DEFAULT_MODEL,
+      model: override?.model ?? (process.env.LLM_MODEL || DEFAULT_MODEL),
       max_tokens: 1024,
       // Low temperature: answers are mostly dates and bag limits read from the context, where a
       // creative paraphrase is a wrong number.
@@ -71,7 +86,7 @@ async function complete(messages: ChatMessage[], plugins?: unknown[]) {
 
   if (!response.ok) {
     // The body names the problem (bad key, retired model, no credit); the status alone does not.
-    throw new Error(`Chat completion ${response.status}: ${await response.text()}`)
+    throw new LlmHttpError(response.status, `Chat completion ${response.status}: ${await response.text()}`)
   }
 
   return (await response.json()) as {
@@ -111,20 +126,23 @@ export async function generateChatWithWebSearch(
   systemPrompt: string,
   history: History | undefined,
   searchPrompt: string,
+  override?: LlmOverride,
 ): Promise<{ text: string; citations: WebCitation[]; webSearched: boolean }> {
   const messages = buildMessages(userMessage, systemPrompt, history)
-  if (isWebSearchEnabled()) {
+  if (isWebSearchEnabled(override)) {
     try {
       const body = await complete(messages, [
         { id: 'web', engine: 'exa', max_results: WEB_RESULTS, search_prompt: searchPrompt },
-      ])
+      ], override)
       const message = body.choices?.[0]?.message
       return { text: message?.content || '', citations: webCitations(message?.annotations), webSearched: true }
     } catch (error) {
+      // A rejected own key fails the same way without the search; say so instead of retrying
+      if (override && error instanceof LlmHttpError && (error.status === 401 || error.status === 402)) throw error
       console.error('web search chat failed, answering without it:', error)
     }
   }
-  const body = await complete(messages)
+  const body = await complete(messages, undefined, override)
   return { text: body.choices?.[0]?.message?.content || '', citations: [], webSearched: false }
 }
 

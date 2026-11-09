@@ -9,73 +9,73 @@
 -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://huntstack.pages.dev/</loc>
+    <loc>https://huntstack.net/</loc>
     <lastmod>2026-08-18</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://huntstack.pages.dev/migration</loc>
+    <loc>https://huntstack.net/migration</loc>
     <lastmod>2026-08-18</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://huntstack.pages.dev/where-to-hunt</loc>
+    <loc>https://huntstack.net/where-to-hunt</loc>
     <lastmod>2026-08-18</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://huntstack.pages.dev/regulations</loc>
+    <loc>https://huntstack.net/regulations</loc>
     <lastmod>2026-08-18</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
-    <loc>https://huntstack.pages.dev/chat</loc>
+    <loc>https://huntstack.net/chat</loc>
     <lastmod>2026-08-18</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://huntstack.pages.dev/outfitters</loc>
+    <loc>https://huntstack.net/outfitters</loc>
     <lastmod>2026-08-18</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://huntstack.pages.dev/data-sources</loc>
+    <loc>https://huntstack.net/data-sources</loc>
     <lastmod>2026-08-18</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
   <url>
-    <loc>https://huntstack.pages.dev/developers</loc>
+    <loc>https://huntstack.net/developers</loc>
     <lastmod>2026-08-18</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://huntstack.pages.dev/about</loc>
+    <loc>https://huntstack.net/about</loc>
     <lastmod>2026-08-18</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
   </url>
   <url>
-    <loc>https://huntstack.pages.dev/contact</loc>
+    <loc>https://huntstack.net/contact</loc>
     <lastmod>2026-08-18</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>
   </url>
   <url>
-    <loc>https://huntstack.pages.dev/privacy</loc>
+    <loc>https://huntstack.net/privacy</loc>
     <lastmod>2026-08-18</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
   <url>
-    <loc>https://huntstack.pages.dev/terms</loc>
+    <loc>https://huntstack.net/terms</loc>
     <lastmod>2026-08-18</lastmod>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
