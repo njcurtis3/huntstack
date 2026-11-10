@@ -30,12 +30,15 @@ function formatDate(iso: string | null): string {
 
 function Section({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
-    <section className="card p-5 sm:p-6">
-      <h2 className="flex items-center gap-2 text-base font-semibold mb-4" style={text.primary}>
+    <section className="card">
+      <h2
+        className="flex items-center gap-2.5 text-[15px] font-semibold px-5 sm:px-6 py-3.5 border-b"
+        style={{ ...text.primary, borderColor: 'rgb(var(--color-border-primary))' }}
+      >
         {icon}
         {title}
       </h2>
-      {children}
+      <div className="p-5 sm:p-6">{children}</div>
     </section>
   )
 }
@@ -109,7 +112,7 @@ export function SettingsPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-6">
-      <h1 className="text-2xl font-bold" style={text.primary}>Settings</h1>
+      <h1 className="text-3xl font-semibold tracking-tight" style={text.primary}>Settings</h1>
 
       {billing === 'success' && (
         <p role="status" className="card p-4 text-sm text-forest-700 dark:text-forest-300">
@@ -213,7 +216,7 @@ function PlanSection({ account, onChanged }: { account: Account; onChanged: () =
           </button>
         </>
       ) : account.billingAvailable ? (
-        <div className="mt-4 rounded-lg border p-4" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
+        <div className="mt-4 rounded-md border border-t-2 border-t-accent-500 p-4" style={{ borderColor: 'rgb(var(--color-border-primary))', borderTopColor: 'rgb(var(--color-accent))' }}>
           <p className="font-semibold text-sm" style={text.primary}>HuntStack Pro, {PRICE}/month</p>
           <ul className="text-sm mt-2 space-y-1" style={text.secondary}>
             <li className="flex gap-2"><Check className="w-4 h-4 text-forest-500 shrink-0 mt-0.5" />Unlimited AI questions</li>

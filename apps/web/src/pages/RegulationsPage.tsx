@@ -283,7 +283,7 @@ function SeasonGroups({ seasons }: { seasons: Season[] }) {
                 <span className={`font-semibold ${isSpecial ? 'text-amber-600 dark:text-amber-400' : ''}`} style={isSpecial ? undefined : { color: `rgb(var(--color-text-primary))` }}>
                   {label}
                 </span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                <span className="text-xs px-2 py-0.5 rounded-md bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                   {group.length}
                 </span>
               </div>
@@ -619,7 +619,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
 
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8">
         <div>
-          <h1 className="text-3xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>
+          <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight" style={{ color: `rgb(var(--color-text-primary))` }}>
             {stateName} Hunting Regulations
           </h1>
           {stateInfo?.agencyName && (
@@ -658,7 +658,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
         <select
           value={selectedYear}
           onChange={e => { setSelectedYear(Number(e.target.value)); setSelectedCategory('all') }}
-          className="px-3 py-2 rounded-md text-sm font-medium border bg-earth-50 dark:bg-earth-800 text-earth-700 dark:text-earth-200 border-earth-200 dark:border-earth-700"
+          className="input w-auto min-h-10 font-medium"
         >
           {SEASON_YEAR_OPTIONS.map(y => (
             <option key={y} value={y}>{y}–{y + 1}</option>
@@ -671,11 +671,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
-                className={`px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap border transition-colors ${
-                  selectedCategory === cat
-                    ? 'bg-accent-50 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400 border-accent-300 dark:border-accent-700'
-                    : 'bg-earth-50 dark:bg-earth-800 text-earth-600 dark:text-earth-300 border-earth-200 dark:border-earth-700 hover:bg-earth-100 dark:hover:bg-earth-700'
-                }`}
+                className={`chip px-4 min-h-10 ${selectedCategory === cat ? 'chip-on' : ''}`}
               >
                 {cat === 'all' ? 'All' : cat.split('-').map(w => w[0].toUpperCase() + w.slice(1)).join(' ')}
               </button>
@@ -701,7 +697,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
                   <div className="flex items-center gap-3">
                     <ChevronDown className={`w-4 h-4 transition-transform flex-shrink-0 ${isOpen ? '' : '-rotate-90'}`} style={{ color: `rgb(var(--color-text-tertiary))` }} />
                     <span className="font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>{formatCategory(cat)}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                    <span className="text-xs px-2 py-0.5 rounded-md bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                       {catRegs.length}
                     </span>
                   </div>
@@ -762,7 +758,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
                   <div className="flex items-center gap-3">
                     <ChevronDown className={`w-4 h-4 transition-transform flex-shrink-0 ${isOpen ? '' : '-rotate-90'}`} style={{ color: `rgb(var(--color-text-tertiary))` }} />
                     <span className="font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>{label}</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                    <span className="text-xs px-2 py-0.5 rounded-md bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                       {typeLicenses.length}
                     </span>
                   </div>
@@ -929,13 +925,12 @@ export function RegulationsPage() {
   return (
     <div>
       {/* Header */}
-      <div className="bg-earth-900 dark:bg-[#0d1117] text-white py-12">
+      <div className="bg-earth-900 dark:bg-[#121416] border-b border-earth-800 dark:border-[#24272b] text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 mb-3">
-            <FileText className="w-8 h-8" />
-            <h1 className="text-3xl font-bold">Hunting Regulations by State</h1>
+            <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">Hunting Regulations by State</h1>
           </div>
-          <p className="text-earth-300 max-w-2xl">
+          <p className="text-[#a7adb4] max-w-2xl leading-relaxed">
             Select a state to view current hunting regulations, seasons, and license requirements.
           </p>
         </div>
@@ -948,33 +943,20 @@ export function RegulationsPage() {
         </DismissibleNotice>
 
         {/* Mode toggle */}
-        <div
-          className="flex gap-1 p-1 rounded-lg mb-6 w-fit"
-          style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}
-        >
+        <div className="flex gap-1.5 mb-6 w-fit">
           <button
             onClick={() => toggleCompareMode(false)}
-            className={`py-2 px-5 rounded-md text-sm font-medium transition-colors ${
-              !compareMode
-                ? 'bg-white dark:bg-earth-900 shadow-sm'
-                : 'hover:bg-earth-100 dark:hover:bg-earth-700'
-            }`}
-            style={{ color: `rgb(var(--color-text-primary))` }}
+            className={`chip px-5 min-h-10 ${!compareMode ? 'chip-on' : ''}`}
           >
             All States
           </button>
           <button
             onClick={() => toggleCompareMode(true)}
-            className={`py-2 px-5 rounded-md text-sm font-medium transition-colors flex items-center gap-2 ${
-              compareMode
-                ? 'bg-white dark:bg-earth-900 shadow-sm'
-                : 'hover:bg-earth-100 dark:hover:bg-earth-700'
-            }`}
-            style={{ color: `rgb(var(--color-text-primary))` }}
+            className={`chip px-5 min-h-10 gap-2 ${compareMode ? 'chip-on' : ''}`}
           >
             Compare States
             {compareMode && compareStates.size > 0 && (
-              <span className="bg-accent-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center leading-none">
+              <span className="bg-accent-500 text-white text-xs rounded-md w-5 h-5 flex items-center justify-center leading-none">
                 {compareStates.size}
               </span>
             )}
@@ -1000,7 +982,7 @@ export function RegulationsPage() {
             </h2>
             <div className="flex items-center gap-4 text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
               <span className="flex items-center gap-1">
-                <span className="w-3 h-3 rounded-sm bg-forest-200 dark:bg-forest-800 inline-block" /> {seasonLabel} seasons
+                <span className="w-3 h-3 rounded-sm bg-[#f4cdb1] dark:bg-[#5b3018] inline-block" /> {seasonLabel} seasons
               </span>
               <span className="flex items-center gap-1">
                 <span className="w-3 h-3 rounded-sm bg-accent-500 inline-block" /> {compareMode ? 'Selected' : 'Selected'}
@@ -1108,7 +1090,7 @@ export function RegulationsPage() {
                   return (
                     <span
                       key={code}
-                      className="flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium border bg-accent-50 dark:bg-accent-900/30 text-accent-700 dark:text-accent-300 border-accent-200 dark:border-accent-700"
+                      className="flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium border bg-accent-50 dark:bg-accent-900/30 text-accent-700 dark:text-accent-300 border-accent-200 dark:border-accent-700"
                     >
                       {info?.name || code}
                       <button
@@ -1217,9 +1199,6 @@ export function RegulationsPage() {
                   >
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-accent-50 dark:bg-accent-900/30 rounded-md flex items-center justify-center">
-                          <FileText className="w-5 h-5 text-accent-500" />
-                        </div>
                         <div>
                           <h3 className="font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>{s.name}</h3>
                           <p className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>{s.agencyName || 'Wildlife Agency'}</p>

@@ -525,8 +525,8 @@ function MigrationIndexPanel({ index, selectedFlyway, selectedSpecies }: {
         </div>
         <div className="flex items-center gap-3">
           {/* Score bar preview */}
-          <div className="w-16 h-1.5 rounded-full bg-earth-200 dark:bg-earth-700 overflow-hidden">
-            <div className={`h-full rounded-full ${barColor}`} style={{ width: `${index.score}%` }} />
+          <div className="w-16 h-1.5 rounded-sm bg-earth-200 dark:bg-earth-700 overflow-hidden">
+            <div className={`h-full rounded-sm ${barColor}`} style={{ width: `${index.score}%` }} />
           </div>
           {expanded
             ? <ChevronUp className="w-4 h-4" style={{ color: `rgb(var(--color-text-tertiary))` }} />
@@ -551,9 +551,9 @@ function MigrationIndexPanel({ index, selectedFlyway, selectedSpecies }: {
             {components.map(c => (
               <div key={c.label} className="flex items-center gap-3">
                 <span className="text-xs w-36 shrink-0" style={{ color: `rgb(var(--color-text-secondary))` }}>{c.label}</span>
-                <div className="flex-1 h-2 rounded-full bg-earth-200 dark:bg-earth-700 overflow-hidden">
+                <div className="flex-1 h-2 rounded-sm bg-earth-200 dark:bg-earth-700 overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all ${barColor}`}
+                    className={`h-full rounded-sm transition-all ${barColor}`}
                     style={{ width: `${(c.value / c.max) * 100}%` }}
                   />
                 </div>
@@ -887,7 +887,7 @@ function FlowVisualization({ stateGroups, pushFactorsData, selectedFlyway }: {
                           {sg.totalBirds.toLocaleString()}
                         </span>
                         {statusCfg && (
-                          <span className={`text-xs rounded-full px-2 py-0.5 font-medium flex-shrink-0 ${statusCfg.className}`}>
+                          <span className={`text-xs rounded-md px-2 py-0.5 font-medium flex-shrink-0 ${statusCfg.className}`}>
                             {statusCfg.label}
                           </span>
                         )}
@@ -1057,8 +1057,8 @@ function MigrationChat({ speciesName, selectedStates }: {
         onClick={() => setIsOpen(true)}
         // Desktop only: on a phone it stacked on the Report birds button and covered the page. Phones
         // reach the AI from the menu and the Ask AI button at the top of this page.
-        className="hidden md:flex fixed bottom-6 right-6 z-50 items-center gap-2 px-4 py-3 rounded-full shadow-lg text-white text-sm font-medium transition-all hover:scale-105"
-        style={{ backgroundColor: 'rgb(var(--color-accent-500, 6 95 70))' }}
+        className="hidden md:flex fixed bottom-6 right-6 z-50 items-center gap-2 px-4 py-3 rounded-md shadow-lg text-white text-sm font-semibold transition-colors hover:brightness-110"
+        style={{ backgroundColor: 'rgb(var(--color-accent))' }}
       >
         <MessageSquare className="w-4 h-4" />
         Ask HuntStack AI
@@ -1080,7 +1080,7 @@ function MigrationChat({ speciesName, selectedStates }: {
         style={{ backgroundColor: `rgb(var(--color-bg-secondary))`, borderBottom: `1px solid rgb(var(--color-border-primary))` }}
       >
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 bg-accent-100 dark:bg-accent-900/40 rounded-full flex items-center justify-center">
+          <div className="w-7 h-7 bg-accent-100 dark:bg-accent-900/40 rounded-md flex items-center justify-center">
             <Bot className="w-4 h-4 text-accent-600 dark:text-accent-400" />
           </div>
           <div>
@@ -1128,7 +1128,7 @@ function MigrationChat({ speciesName, selectedStates }: {
             {messages.map(msg => (
               <div key={msg.id} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : ''}`}>
                 {msg.role === 'assistant' && (
-                  <div className="w-6 h-6 bg-accent-100 dark:bg-accent-900/40 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <div className="w-6 h-6 bg-accent-100 dark:bg-accent-900/40 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5">
                     <Bot className="w-3.5 h-3.5 text-accent-600 dark:text-accent-400" />
                   </div>
                 )}
@@ -1159,7 +1159,7 @@ function MigrationChat({ speciesName, selectedStates }: {
                   )}
                 </div>
                 {msg.role === 'user' && (
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 bg-earth-200 dark:bg-earth-700">
+                  <div className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 bg-earth-200 dark:bg-earth-700">
                     <User className="w-3.5 h-3.5 text-earth-600 dark:text-earth-300" />
                   </div>
                 )}
@@ -1167,7 +1167,7 @@ function MigrationChat({ speciesName, selectedStates }: {
             ))}
             {isLoading && (
               <div className="flex gap-2">
-                <div className="w-6 h-6 bg-accent-100 dark:bg-accent-900/40 rounded-full flex items-center justify-center flex-shrink-0">
+                <div className="w-6 h-6 bg-accent-100 dark:bg-accent-900/40 rounded-md flex items-center justify-center flex-shrink-0">
                   <Bot className="w-3.5 h-3.5 text-accent-600 dark:text-accent-400" />
                 </div>
                 <div
@@ -2034,16 +2034,15 @@ export function MigrationPage() {
   return (
     <div>
       {/* Header */}
-      <div className="bg-earth-900 dark:bg-[#0d1117] text-white py-12">
+      <div className="bg-earth-900 dark:bg-[#121416] border-b border-earth-800 dark:border-[#24272b] text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
               <div className="flex items-center gap-3 mb-3">
-                <Bird className="w-8 h-8" />
-                <h1 className="text-3xl font-bold">Migration</h1>
-                <span className="text-xs bg-accent-600 dark:bg-accent-700 rounded-full px-3 py-1 font-medium">Beta</span>
+                <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">Migration</h1>
+                <span className="font-mono text-[11px] uppercase tracking-wider px-1.5 py-0.5 rounded-md border border-accent-400 text-accent-400">Beta</span>
               </div>
-              <p className="text-earth-300 max-w-2xl">
+              <p className="text-[#a7adb4] max-w-2xl leading-relaxed">
                 Track waterfowl movement across refuges and flyways. See the latest survey counts,
                 spot migration trends, and plan your hunts around real bird activity.
               </p>
@@ -2055,14 +2054,14 @@ export function MigrationPage() {
                   const speciesPart = selectedSpecies ? ` for ${selectedSpecies}` : ' for waterfowl'
                   navigate(`/chat?q=${encodeURIComponent(`What's the current migration status${speciesPart}${flywayPart}? Where are the best hunting opportunities right now?`)}`)
                 }}
-                className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-accent-600 hover:bg-accent-700 text-white border border-accent-500"
+                className="btn-primary flex-shrink-0 gap-2"
               >
                 <MessageSquare className="w-4 h-4" />
                 Ask AI
               </button>
               <button
                 onClick={handleShare}
-                className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors bg-white/10 hover:bg-white/20 text-white border border-white/20"
+                className="btn-ghost-dark flex-shrink-0 gap-2"
               >
                 <Share2 className="w-4 h-4" />
                 {shareCopied ? 'Link copied!' : 'Share Report'}
@@ -2465,9 +2464,9 @@ export function MigrationPage() {
                     {migrationIndex.label}
                   </p>
                 </div>
-                <div className="mt-2 h-1.5 rounded-full bg-earth-200 dark:bg-earth-700 overflow-hidden">
+                <div className="mt-2 h-1.5 rounded-sm bg-earth-200 dark:bg-earth-700 overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all ${
+                    className={`h-full rounded-sm transition-all ${
                       migrationIndex.score >= 76 ? 'bg-red-500' :
                       migrationIndex.score >= 51 ? 'bg-orange-400' :
                       migrationIndex.score >= 26 ? 'bg-amber-400' : 'bg-earth-400'
@@ -2765,7 +2764,7 @@ export function MigrationPage() {
                     <span className="text-sm font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>
                       {myLocation.city}{myLocation.city && myLocation.state ? ', ' : ''}{myLocation.state}
                     </span>
-                    <span className={`text-xs font-semibold rounded-full px-3 py-1 ${
+                    <span className={`text-xs font-semibold rounded-md px-3 py-1 ${
                       localActivityLevel === 'High'     ? 'bg-forest-100 dark:bg-forest-900/30 text-forest-700 dark:text-forest-300' :
                       localActivityLevel === 'Moderate' ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300' :
                       localActivityLevel === 'Low'      ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300' :
@@ -2805,7 +2804,7 @@ export function MigrationPage() {
                                 {r.totalBirds.toLocaleString()}
                               </span>
                               {statusCfg && (
-                                <span className={`text-xs rounded-full px-2 py-0.5 ${statusCfg.className}`}>
+                                <span className={`text-xs rounded-md px-2 py-0.5 ${statusCfg.className}`}>
                                   {statusCfg.label}
                                 </span>
                               )}
@@ -2895,7 +2894,7 @@ export function MigrationPage() {
                                   {sg.state}
                                 </span>
                                 {stateStatusCfg && (
-                                  <span className={`text-xs rounded-full px-2 py-0.5 font-medium flex-shrink-0 ${stateStatusCfg.className}`}>
+                                  <span className={`text-xs rounded-md px-2 py-0.5 font-medium flex-shrink-0 ${stateStatusCfg.className}`}>
                                     {stateStatusCfg.label}
                                   </span>
                                 )}
@@ -2994,7 +2993,7 @@ export function MigrationPage() {
                                             {group.state}
                                           </span>
                                           {groupStatusCfg && (
-                                            <span className={`text-xs rounded-full px-2 py-0.5 font-medium flex-shrink-0 ${groupStatusCfg.className}`}>
+                                            <span className={`text-xs rounded-md px-2 py-0.5 font-medium flex-shrink-0 ${groupStatusCfg.className}`}>
                                               {groupStatusCfg.label}
                                             </span>
                                           )}
@@ -3080,7 +3079,7 @@ export function MigrationPage() {
                                                   {item.speciesName}
                                                 </p>
                                                 {statusCfg && (
-                                                  <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${statusCfg.className}`}>
+                                                  <span className={`text-xs rounded-md px-2 py-0.5 font-medium ${statusCfg.className}`}>
                                                     {statusCfg.label}
                                                   </span>
                                                 )}
@@ -3230,7 +3229,7 @@ export function MigrationPage() {
                                 </td>
                                 <td className="p-3">
                                   {statusCfg ? (
-                                    <span className={`text-xs rounded-full px-2 py-0.5 font-medium ${statusCfg.className}`}>
+                                    <span className={`text-xs rounded-md px-2 py-0.5 font-medium ${statusCfg.className}`}>
                                       {statusCfg.label}
                                     </span>
                                   ) : (
@@ -3264,7 +3263,7 @@ export function MigrationPage() {
                       Weekly counts by state — ordered north to south. Southward migration shows earlier peaks in northern states.
                     </p>
                   </div>
-                  <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                  <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                     {currentProgression.seasonYear - 1}–{currentProgression.seasonYear} season
                   </span>
                 </div>

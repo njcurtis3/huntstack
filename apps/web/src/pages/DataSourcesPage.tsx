@@ -127,7 +127,7 @@ function SourceCard({ group, summary }: { group: SourceGroup; summary?: string |
           {group.title}
         </h2>
         <span
-          className="text-xs px-2 py-0.5 rounded-full"
+          className="text-xs px-2 py-0.5 rounded-md"
           style={{
             backgroundColor: `rgb(var(--color-bg-secondary))`,
             color: `rgb(var(--color-text-tertiary))`,

@@ -63,8 +63,8 @@ export function SurveyZoneBreakdown({ zones, isStale }: { zones: SurveyZone[]; i
                   <VsAverage value={z.totalDucks ?? z.mallards} average={z.totalDucks != null ? z.avgTotalDucks : z.avgMallards} />
                 </span>
               </div>
-              <div className="mt-1 h-1.5 rounded-full overflow-hidden" style={{ background: `rgb(var(--color-bg-tertiary))` }}>
-                <div className="h-full rounded-full bg-forest-500" style={{ width: `${(ducks / max) * 100}%` }} />
+              <div className="mt-1 h-1.5 rounded-sm overflow-hidden" style={{ background: `rgb(var(--color-bg-tertiary))` }}>
+                <div className="h-full rounded-sm bg-forest-500" style={{ width: `${(ducks / max) * 100}%` }} />
               </div>
               {z.totalDucks != null && (
                 <p className="text-xs mt-0.5" style={{ color: `rgb(var(--color-text-tertiary))` }}>

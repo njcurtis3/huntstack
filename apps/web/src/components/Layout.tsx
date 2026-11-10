@@ -164,26 +164,26 @@ export function Layout() {
 
   return (
     <div className={fullHeight ? 'h-[100dvh] flex flex-col' : 'min-h-screen flex flex-col'}>
-      {/* Header — GitHub-style */}
+      {/* Header: graphite bar in both themes */}
       <header
         className="sticky top-0 z-50 border-b"
         style={{
           backgroundColor: `rgb(var(--color-header-bg))`,
-          borderColor: `rgb(var(--color-border-primary))`,
+          borderColor: `rgb(var(--color-header-border))`,
         }}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
+          <div className="flex justify-between items-center gap-6 h-14">
             {/* Logo */}
-            <Link to="/" className="flex items-center gap-2">
-              <img src="/duck-image-1.png" alt="HuntStack" className="w-8 h-8 dark:invert" />
-              <span className="font-semibold text-xl" style={{ color: `rgb(var(--color-text-primary))` }}>
+            <Link to="/" className="flex items-center gap-2 shrink-0">
+              <img src="/duck-image-1.png" alt="HuntStack" className="w-6 h-6 invert" />
+              <span className="font-semibold text-[17px] tracking-tight text-white">
                 huntstack
               </span>
             </Link>
 
             {/* Desktop Navigation */}
-            <nav className="hidden md:flex items-center gap-1">
+            <nav className="hidden md:flex items-center gap-6 flex-1 self-stretch">
               {/* Primary nav — the planning tools */}
               {primaryNav.map((item) => {
                 const isActive = location.pathname === item.href ||
@@ -192,20 +192,20 @@ export function Layout() {
                   <Link
                     key={item.name}
                     to={item.href}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-semibold transition-colors ${
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`flex items-center h-full text-sm font-medium border-b-2 pt-0.5 transition-colors ${
                       isActive
-                        ? 'bg-accent-100 dark:bg-accent-900/40 text-accent-700 dark:text-accent-300'
-                        : 'text-earth-800 dark:text-earth-200 hover:bg-accent-50 dark:hover:bg-accent-900/20 hover:text-accent-700 dark:hover:text-accent-300'
+                        ? 'text-white border-accent-500'
+                        : 'text-[#a7adb4] border-transparent hover:text-white'
                     }`}
                   >
-                    <item.icon className="w-4 h-4" />
                     {item.name}
                   </Link>
                 )
               })}
 
               {/* Divider */}
-              <div className="h-5 w-px mx-1" style={{ backgroundColor: `rgb(var(--color-border-primary))` }} />
+              <div className="h-[18px] w-px" style={{ backgroundColor: `rgb(var(--color-header-border))` }} />
 
               {/* Secondary nav */}
               {secondaryNav.map((item) => {
@@ -215,13 +215,13 @@ export function Layout() {
                   <Link
                     key={item.name}
                     to={item.href}
-                    className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`flex items-center h-full text-sm font-medium border-b-2 pt-0.5 transition-colors ${
                       isActive
-                        ? 'bg-accent-50 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400'
-                        : 'text-earth-500 dark:text-earth-400 hover:bg-earth-100 dark:hover:bg-earth-800 hover:text-earth-900 dark:hover:text-earth-100'
+                        ? 'text-white border-accent-500'
+                        : 'text-[#80878f] border-transparent hover:text-white'
                     }`}
                   >
-                    <item.icon className="w-4 h-4" />
                     {item.name}
                   </Link>
                 )
@@ -232,22 +232,22 @@ export function Layout() {
             <div className="hidden md:flex items-center gap-2">
               <button
                 onClick={toggleTheme}
-                className="p-2 rounded-md text-earth-500 dark:text-earth-400 hover:bg-earth-100 dark:hover:bg-earth-800 transition-colors"
+                className="w-9 h-9 grid place-items-center rounded-md border border-[#26292d] dark:border-[#24272b] text-[#a7adb4] hover:text-white hover:border-[#4a4f55] transition-colors"
                 aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
               >
                 {resolvedTheme === 'dark' ? (
-                  <Sun className="w-5 h-5 text-yellow-400" />
+                  <Sun className="w-[17px] h-[17px]" />
                 ) : (
-                  <Moon className="w-5 h-5" />
+                  <Moon className="w-[17px] h-[17px]" />
                 )}
               </button>
               {showReport && (
                 <button
                   onClick={openReport}
                   data-report-trigger
-                  className="btn-primary text-sm min-h-11 inline-flex items-center gap-1.5"
+                  className="btn-ghost-dark text-sm h-9 gap-1.5"
                 >
-                  <Bird className="w-4 h-4" />
+                  <Bird className="w-4 h-4 text-accent-400" />
                   Report birds
                 </button>
               )}
@@ -255,21 +255,20 @@ export function Layout() {
                 <>
                   <Link
                     to="/settings"
-                    className="inline-flex items-center gap-1.5 text-sm rounded-md px-2 py-1.5 hover:bg-earth-100 dark:hover:bg-earth-800"
-                    style={{ color: 'rgb(var(--color-text-secondary))' }}
+                    className="inline-flex items-center gap-1.5 text-sm rounded-md px-2 py-1.5 text-[#a7adb4] hover:text-white"
                     title="Settings"
                   >
                     <Settings className="w-4 h-4 shrink-0" />
                     <span className="truncate max-w-[10rem]">{user.email}</span>
                   </Link>
-                  <button onClick={() => logout()} className="btn-outline text-sm">
+                  <button onClick={() => logout()} className="btn-ghost-dark text-sm h-9">
                     Sign Out
                   </button>
                 </>
               ) : (
                 <>
-                  <button onClick={() => setAuthModal('signin')} className="btn-outline text-sm">Sign In</button>
-                  <button onClick={() => setAuthModal('signup')} className="btn-primary text-sm">Sign Up</button>
+                  <button onClick={() => setAuthModal('signin')} className="btn-ghost-dark text-sm h-9">Sign In</button>
+                  <button onClick={() => setAuthModal('signup')} className="btn-primary text-sm h-9">Sign Up</button>
                 </>
               )}
             </div>
@@ -278,17 +277,17 @@ export function Layout() {
             <div className="md:hidden flex items-center gap-2">
               <button
                 onClick={toggleTheme}
-                className="p-2 rounded-md text-earth-500 dark:text-earth-400 hover:bg-earth-100 dark:hover:bg-earth-800 transition-colors"
+                className="w-10 h-10 grid place-items-center rounded-md border border-[#26292d] dark:border-[#24272b] text-[#a7adb4] hover:text-white transition-colors"
                 aria-label={`Switch to ${resolvedTheme === 'dark' ? 'light' : 'dark'} mode`}
               >
                 {resolvedTheme === 'dark' ? (
-                  <Sun className="w-5 h-5 text-yellow-400" />
+                  <Sun className="w-5 h-5" />
                 ) : (
                   <Moon className="w-5 h-5" />
                 )}
               </button>
               <button
-                className="p-2.5 rounded-md hover:bg-earth-100 dark:hover:bg-earth-800"
+                className="w-10 h-10 grid place-items-center rounded-md text-white hover:bg-white/5"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
                 aria-expanded={mobileMenuOpen}
@@ -310,28 +309,26 @@ export function Layout() {
             id="mobile-menu"
             className="md:hidden border-t"
             style={{
-              backgroundColor: `rgb(var(--color-bg-elevated))`,
-              borderColor: `rgb(var(--color-border-primary))`,
+              backgroundColor: `rgb(var(--color-header-bg))`,
+              borderColor: `rgb(var(--color-header-border))`,
             }}
           >
-            <nav className="px-4 py-3 space-y-1">
+            <nav className="px-4 py-3 space-y-0.5">
               {/* Primary items */}
               {mobileNav.slice(0, 3).map((item) => {
                 const isActive = location.pathname === item.href ||
                   (item.href !== '/' && location.pathname.startsWith(item.href))
-                const isPrimary = item.href === '/migration' || item.href === '/where-to-hunt'
                 return (
                   <Link
                     key={item.name}
                     to={item.href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`flex items-center gap-3 px-3 min-h-11 border-l-2 text-[15px] font-medium ${
                       isActive
-                        ? 'bg-accent-100 dark:bg-accent-900/40 text-accent-700 dark:text-accent-300'
-                        : isPrimary
-                          ? 'text-earth-800 dark:text-earth-200 hover:bg-accent-50 dark:hover:bg-accent-900/20'
-                          : 'text-earth-600 dark:text-earth-400 hover:bg-earth-100 dark:hover:bg-earth-800'
-                    } ${isPrimary ? 'font-semibold' : ''}`}
+                        ? 'border-accent-500 text-white bg-white/5'
+                        : 'border-transparent text-[#a7adb4] hover:text-white hover:bg-white/5'
+                    }`}
                   >
                     <item.icon className="w-5 h-5" />
                     {item.name}
@@ -340,7 +337,7 @@ export function Layout() {
               })}
 
               {/* Divider before secondary */}
-              <div className="my-1 border-t" style={{ borderColor: `rgb(var(--color-border-primary))` }} />
+              <div className="my-1 border-t" style={{ borderColor: `rgb(var(--color-header-border))` }} />
 
               {/* Secondary items */}
               {mobileNav.slice(3).map((item) => {
@@ -351,10 +348,11 @@ export function Layout() {
                     key={item.name}
                     to={item.href}
                     onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium ${
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`flex items-center gap-3 px-3 min-h-11 border-l-2 text-[15px] font-medium ${
                       isActive
-                        ? 'bg-accent-50 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400'
-                        : 'text-earth-500 dark:text-earth-400 hover:bg-earth-100 dark:hover:bg-earth-800'
+                        ? 'border-accent-500 text-white bg-white/5'
+                        : 'border-transparent text-[#a7adb4] hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <item.icon className="w-5 h-5" />
@@ -363,13 +361,13 @@ export function Layout() {
                 )
               })}
             </nav>
-            <div className="px-4 py-3 border-t border-earth-200 dark:border-earth-700 flex gap-3">
+            <div className="px-4 py-3 border-t flex gap-3" style={{ borderColor: `rgb(var(--color-header-border))` }}>
               {isAuthenticated && user ? (
                 <>
                   <Link
                     to="/settings"
                     onClick={() => setMobileMenuOpen(false)}
-                    className="btn-outline text-sm flex-1 inline-flex items-center justify-center gap-1.5"
+                    className="btn-ghost-dark text-sm flex-1 min-h-11 gap-1.5"
                   >
                     <Settings className="w-4 h-4" />
                     Settings
@@ -379,7 +377,7 @@ export function Layout() {
                       logout()
                       setMobileMenuOpen(false)
                     }}
-                    className="btn-outline text-sm flex-1"
+                    className="btn-ghost-dark text-sm flex-1 min-h-11"
                   >
                     Sign Out
                   </button>
@@ -391,7 +389,7 @@ export function Layout() {
                       setAuthModal('signin')
                       setMobileMenuOpen(false)
                     }}
-                    className="btn-outline text-sm flex-1"
+                    className="btn-ghost-dark text-sm flex-1 min-h-11"
                   >
                     Sign In
                   </button>
@@ -400,7 +398,7 @@ export function Layout() {
                       setAuthModal('signup')
                       setMobileMenuOpen(false)
                     }}
-                    className="btn-primary text-sm flex-1"
+                    className="btn-primary text-sm flex-1 min-h-11"
                   >
                     Sign Up
                   </button>
@@ -414,8 +412,8 @@ export function Layout() {
       {/* Data notice — the data has legal stakes and people need a way to report problems; dismissible per browser */}
       <DismissibleNotice
         id="data-disclaimer"
-        className="border-b bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800/50"
-        innerClassName="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 text-xs sm:text-sm text-amber-800 dark:text-amber-200"
+        className="border-b bg-[#fff4ec] dark:bg-[#1c140e] border-[#f3d7c2] dark:border-[#3a2618]"
+        innerClassName="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 text-xs sm:text-[13px] leading-relaxed text-[#6b2a07] dark:text-[#f2c7a8]"
       >
         <div className="flex items-start gap-2">
           <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -438,47 +436,47 @@ export function Layout() {
         <Outlet />
       </main>
 
-      {/* Footer — GitHub-style */}
+      {/* Footer */}
       {!fullHeight && <footer className="border-t" style={{ backgroundColor: `rgb(var(--color-bg-secondary))`, borderColor: `rgb(var(--color-border-primary))` }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             <div>
-              <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Hunters</h3>
+              <h3 className="eyebrow font-sans font-semibold tracking-wider mb-3">Hunters</h3>
               <ul className="space-y-1 text-sm">
-                <li><Link to="/where-to-hunt" className="inline-block py-1.5 text-accent-500 hover:underline">Where to Hunt</Link></li>
-                <li><Link to="/migration" className="inline-block py-1.5 text-accent-500 hover:underline">Migration</Link></li>
-                <li><Link to="/regulations" className="inline-block py-1.5 text-accent-500 hover:underline">Regulations</Link></li>
-                <li><Link to="/chat" className="inline-block py-1.5 text-accent-500 hover:underline">Ask AI</Link></li>
+                <li><Link to="/where-to-hunt" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Where to Hunt</Link></li>
+                <li><Link to="/migration" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Migration</Link></li>
+                <li><Link to="/regulations" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Regulations</Link></li>
+                <li><Link to="/chat" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Ask AI</Link></li>
               </ul>
             </div>
             <div>
-              <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Outfitters</h3>
+              <h3 className="eyebrow font-sans font-semibold tracking-wider mb-3">Outfitters</h3>
               <ul className="space-y-1 text-sm">
-                <li><Link to="/outfitters/list-your-business" className="inline-block py-1.5 text-accent-500 hover:underline">List Your Business</Link></li>
-                <li><Link to="/outfitters/dashboard" className="inline-block py-1.5 text-accent-500 hover:underline">Dashboard</Link></li>
+                <li><Link to="/outfitters/list-your-business" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">List Your Business</Link></li>
+                <li><Link to="/outfitters/dashboard" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Dashboard</Link></li>
               </ul>
             </div>
             <div>
-              <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Resources</h3>
+              <h3 className="eyebrow font-sans font-semibold tracking-wider mb-3">Resources</h3>
               <ul className="space-y-1 text-sm">
-                <li><Link to="/data-sources" className="inline-block py-1.5 text-accent-500 hover:underline">Data Sources</Link></li>
-                <li><Link to="/developers" className="inline-block py-1.5 text-accent-500 hover:underline">API</Link></li>
+                <li><Link to="/data-sources" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Data Sources</Link></li>
+                <li><Link to="/developers" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">API</Link></li>
               </ul>
             </div>
             <div>
-              <h3 className="text-sm font-semibold mb-3" style={{ color: `rgb(var(--color-text-primary))` }}>Company</h3>
+              <h3 className="eyebrow font-sans font-semibold tracking-wider mb-3">Company</h3>
               <ul className="space-y-1 text-sm">
-                <li><Link to="/about" className="inline-block py-1.5 text-accent-500 hover:underline">About</Link></li>
-                <li><Link to="/contact" className="inline-block py-1.5 text-accent-500 hover:underline">Contact</Link></li>
-                <li><a href={feedbackMailto(typeof window !== 'undefined' ? window.location.href : location.pathname)} className="inline-block py-1.5 text-accent-500 hover:underline">Send Feedback</a></li>
-                <li><Link to="/privacy" className="inline-block py-1.5 text-accent-500 hover:underline">Privacy</Link></li>
-                <li><Link to="/terms" className="inline-block py-1.5 text-accent-500 hover:underline">Terms</Link></li>
+                <li><Link to="/about" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">About</Link></li>
+                <li><Link to="/contact" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Contact</Link></li>
+                <li><a href={feedbackMailto(typeof window !== 'undefined' ? window.location.href : location.pathname)} className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Send Feedback</a></li>
+                <li><Link to="/privacy" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Privacy</Link></li>
+                <li><Link to="/terms" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Terms</Link></li>
               </ul>
             </div>
           </div>
-          <div className="mt-8 pt-6 border-t text-sm text-center" style={{ borderColor: `rgb(var(--color-border-primary))`, color: `rgb(var(--color-text-tertiary))` }}>
+          <div className="mt-8 pt-5 border-t text-[13px] flex flex-col md:flex-row md:justify-between gap-2" style={{ borderColor: `rgb(var(--color-border-primary))`, color: `rgb(var(--color-text-tertiary))` }}>
             <p>&copy; {new Date().getFullYear()} HuntStack. All rights reserved.</p>
-            <p className="mt-2 text-xs">
+            <p>
               Data sourced from USFWS, state wildlife agencies, and other public sources.
               Always verify regulations with official sources before hunting.
             </p>
@@ -491,9 +489,9 @@ export function Layout() {
         <button
           onClick={openReport}
           data-report-trigger
-          className="md:hidden fixed right-4 z-40 flex items-center gap-2 px-4 min-h-12 rounded-full shadow-lg text-white text-base font-medium"
+          className="md:hidden fixed right-4 z-40 flex items-center gap-2 px-4 min-h-12 rounded-md shadow-lg text-white text-base font-semibold"
           style={{
-            backgroundColor: 'rgb(var(--color-accent-600, 5 150 105))',
+            backgroundColor: 'rgb(var(--color-accent))',
             bottom: 'calc(1rem + env(safe-area-inset-bottom))',
           }}
         >

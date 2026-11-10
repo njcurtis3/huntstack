@@ -30,7 +30,7 @@ export function DashboardInbox() {
       <div role="group" aria-label="Inquiry filter" className="flex gap-2">
         {FILTERS.map((f) => (
           <button key={f.value} type="button" aria-pressed={filter === f.value} onClick={() => setFilter(f.value)}
-            className={`flex-1 md:flex-none min-h-11 px-5 rounded-full border text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 ${
+            className={`flex-1 md:flex-none min-h-11 px-5 rounded-md border text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 ${
               filter === f.value ? 'bg-accent-500 text-white border-accent-500' : ''
             }`}
             style={filter === f.value ? undefined : { ...panelStyle, color: 'rgb(var(--color-text-primary))' }}>

@@ -5,86 +5,94 @@
 @tailwind components;
 @tailwind utilities;
 
-/* GitHub Primer design tokens */
+/* Design tokens: graphite + blaze orange. Values are "R G B" so rgb(var(--x) / alpha) works. */
 @layer base {
   :root {
-    /* Canvas (backgrounds) */
-    --color-bg-primary: 255 255 255;        /* #ffffff - canvas-default */
-    --color-bg-secondary: 246 248 250;      /* #f6f8fa - canvas-subtle */
-    --color-bg-tertiary: 246 248 250;       /* #f6f8fa - canvas-inset */
-    --color-bg-elevated: 255 255 255;       /* #ffffff - cards/overlays */
+    /* Surfaces */
+    --color-bg-primary: 255 255 255;        /* #ffffff page */
+    --color-bg-secondary: 247 247 248;      /* #f7f7f8 subtle panel */
+    --color-bg-tertiary: 239 240 242;       /* #eff0f2 inset */
+    --color-bg-elevated: 255 255 255;       /* #ffffff cards, dialogs */
 
-    /* Foreground (text) */
-    --color-text-primary: 31 35 40;         /* #1f2328 - fg-default */
-    --color-text-secondary: 101 109 118;    /* #656d76 - fg-muted */
-    --color-text-tertiary: 110 119 129;     /* #6e7781 - fg-subtle */
+    /* Text */
+    --color-text-primary: 17 19 21;         /* #111315 */
+    --color-text-secondary: 80 86 93;       /* #50565d */
+    --color-text-tertiary: 107 113 120;     /* #6b7178 */
 
     /* Borders */
-    --color-border-primary: 208 215 222;    /* #d0d7de - border-default */
-    --color-border-input: 208 215 222;      /* #d0d7de */
+    --color-border-primary: 230 232 235;    /* #e6e8eb */
+    --color-border-input: 212 215 219;      /* #d4d7db */
 
     /* Interactive */
-    --color-hover-bg: 208 215 222;          /* #d0d7de - subtle hover */
+    --color-hover-bg: 239 240 242;          /* #eff0f2 */
 
-    /* Accent (blue) */
-    --color-accent: 9 105 218;              /* #0969da */
+    /* Accent: blaze orange */
+    --color-accent: 194 65 12;              /* #c2410c */
+    --color-accent-hover: 154 52 18;        /* #9a3412 */
+    --color-link: 178 59 11;                /* #b23b0b */
 
-    /* Success (green) */
-    --color-success: 31 136 61;             /* #1f883d */
-    --color-success-hover: 26 127 55;       /* #1a7f37 */
+    /* Primary button (was green; now the accent) */
+    --color-success: 194 65 12;             /* #c2410c */
+    --color-success-hover: 154 52 18;       /* #9a3412 */
 
     /* Danger */
-    --color-danger: 209 36 47;              /* #d1242f */
+    --color-danger: 163 50 31;              /* #a3321f */
 
     /* Default button */
-    --color-btn-bg: 246 248 250;            /* #f6f8fa */
-    --color-btn-text: 36 41 47;             /* #24292f */
-    --color-btn-hover-bg: 234 238 242;      /* #eaeef2 */
-    --color-btn-border: 208 215 222;        /* #d0d7de */
+    --color-btn-bg: 255 255 255;
+    --color-btn-text: 17 19 21;
+    --color-btn-hover-bg: 247 247 248;
+    --color-btn-border: 212 215 219;
 
-    /* Header */
-    --color-header-bg: 246 248 250;         /* #f6f8fa */
-    --color-header-text: 31 35 40;          /* #1f2328 */
+    /* Header: graphite in both themes */
+    --color-header-bg: 17 19 21;            /* #111315 */
+    --color-header-border: 38 41 45;        /* #26292d */
+    --color-header-text: 255 255 255;
+    --color-header-muted: 167 173 180;      /* #a7adb4 */
   }
 
   .dark {
-    /* Canvas */
-    --color-bg-primary: 13 17 23;           /* #0d1117 - canvas-default */
-    --color-bg-secondary: 22 27 34;         /* #161b22 - canvas-subtle */
-    --color-bg-tertiary: 33 38 45;          /* #21262d */
-    --color-bg-elevated: 22 27 34;          /* #161b22 - canvas-overlay */
+    /* Surfaces */
+    --color-bg-primary: 11 12 13;           /* #0b0c0d */
+    --color-bg-secondary: 18 20 22;         /* #121416 */
+    --color-bg-tertiary: 26 29 32;          /* #1a1d20 */
+    --color-bg-elevated: 18 20 22;          /* #121416 */
 
-    /* Foreground */
-    --color-text-primary: 230 237 243;      /* #e6edf3 - fg-default */
-    --color-text-secondary: 125 133 144;    /* #7d8590 - fg-muted */
-    --color-text-tertiary: 110 118 129;     /* #6e7681 - fg-subtle */
+    /* Text */
+    --color-text-primary: 236 237 238;      /* #ecedee */
+    --color-text-secondary: 167 173 180;    /* #a7adb4 */
+    --color-text-tertiary: 138 144 152;     /* #8a9098 */
 
     /* Borders */
-    --color-border-primary: 48 54 61;       /* #30363d - border-default */
-    --color-border-input: 48 54 61;         /* #30363d */
+    --color-border-primary: 36 39 43;       /* #24272b */
+    --color-border-input: 51 55 60;         /* #33373c */
 
     /* Interactive */
-    --color-hover-bg: 48 54 61;             /* #30363d */
+    --color-hover-bg: 26 29 32;             /* #1a1d20 */
 
-    /* Accent (blue) */
-    --color-accent: 47 129 247;             /* #2f81f7 */
+    /* Accent */
+    --color-accent: 194 65 12;              /* #c2410c (white text stays readable on it) */
+    --color-accent-hover: 217 83 26;        /* #d9531a */
+    --color-link: 242 138 78;               /* #f28a4e */
 
-    /* Success (green) */
-    --color-success: 35 134 54;             /* #238636 */
-    --color-success-hover: 46 160 67;       /* #2ea043 */
+    /* Primary button */
+    --color-success: 194 65 12;
+    --color-success-hover: 217 83 26;
 
     /* Danger */
-    --color-danger: 248 81 73;              /* #f85149 */
+    --color-danger: 240 123 107;            /* #f07b6b */
 
     /* Default button */
-    --color-btn-bg: 33 38 45;              /* #21262d */
-    --color-btn-text: 201 209 217;          /* #c9d1d9 */
-    --color-btn-hover-bg: 48 54 61;         /* #30363d */
-    --color-btn-border: 48 54 61;           /* #30363d */
+    --color-btn-bg: 18 20 22;
+    --color-btn-text: 236 237 238;
+    --color-btn-hover-bg: 26 29 32;
+    --color-btn-border: 51 55 60;
 
     /* Header */
-    --color-header-bg: 22 27 34;            /* #161b22 */
-    --color-header-text: 230 237 243;       /* #e6edf3 */
+    --color-header-bg: 11 12 13;            /* #0b0c0d */
+    --color-header-border: 36 39 43;        /* #24272b */
+    --color-header-text: 255 255 255;
+    --color-header-muted: 167 173 180;
   }
 
   html {
@@ -96,6 +104,16 @@
     color: rgb(var(--color-text-primary));
   }
 
+  /* Counts, dates and prices line up in columns */
+  body {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Native controls (date pickers, selects) follow the theme */
+  .dark {
+    color-scheme: dark;
+  }
+
   /* Smooth theme transition */
   html.theme-transition,
   html.theme-transition *,
@@ -105,59 +123,113 @@
   }
 }
 
-/* GitHub-style component classes */
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center px-4 py-2 rounded-md font-medium text-sm transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-md font-medium text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed;
     --tw-ring-offset-color: rgb(var(--color-bg-primary));
+    --tw-ring-color: rgb(var(--color-accent));
   }
 
   .btn-primary {
-    @apply btn text-white focus:ring-forest-500;
+    @apply btn text-white font-semibold;
     background-color: rgb(var(--color-success));
-    border: 1px solid rgba(27, 31, 36, 0.15);
+    border: 1px solid rgb(var(--color-success));
   }
-  .btn-primary:hover {
+  .btn-primary:hover:not(:disabled) {
     background-color: rgb(var(--color-success-hover));
+    border-color: rgb(var(--color-success-hover));
   }
 
   .btn-secondary {
-    @apply btn focus:ring-earth-400;
+    @apply btn;
     background-color: rgb(var(--color-btn-bg));
     color: rgb(var(--color-btn-text));
     border: 1px solid rgb(var(--color-btn-border));
   }
-  .btn-secondary:hover {
+  .btn-secondary:hover:not(:disabled) {
     background-color: rgb(var(--color-btn-hover-bg));
   }
 
   .btn-outline {
-    @apply btn focus:ring-earth-400;
+    @apply btn;
     background-color: transparent;
     border: 1px solid rgb(var(--color-btn-border));
-    color: rgb(var(--color-text-secondary));
+    color: rgb(var(--color-text-primary));
   }
-  .btn-outline:hover {
-    background-color: rgb(var(--color-hover-bg) / 0.3);
+  .btn-outline:hover:not(:disabled) {
+    background-color: rgb(var(--color-hover-bg));
+  }
+
+  /* Outline button on the dark header and heroes */
+  .btn-ghost-dark {
+    @apply btn;
+    background-color: transparent;
+    border: 1px solid #3a3e44;
+    color: #ffffff;
+  }
+  .btn-ghost-dark:hover:not(:disabled) {
+    border-color: #5a5f66;
+    background-color: rgb(255 255 255 / 0.04);
   }
 
   .input {
-    @apply block w-full px-3 py-1.5 rounded-md text-sm shadow-sm focus:ring-2 focus:ring-accent-500 focus:border-accent-500;
-    background-color: rgb(var(--color-bg-primary));
+    @apply block w-full px-3 py-2 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-offset-0;
+    --tw-ring-color: rgb(var(--color-accent) / 0.35);
+    background-color: rgb(var(--color-bg-elevated));
     border: 1px solid rgb(var(--color-border-input));
     color: rgb(var(--color-text-primary));
   }
+  .input:focus {
+    border-color: rgb(var(--color-accent));
+  }
+  .input::placeholder {
+    color: rgb(var(--color-text-tertiary));
+  }
 
   .card {
-    @apply rounded-md overflow-hidden;
+    @apply rounded-lg overflow-hidden;
     background-color: rgb(var(--color-bg-elevated));
     border: 1px solid rgb(var(--color-border-primary));
   }
+
+  /* Small uppercase label over a section or a number */
+  .eyebrow {
+    @apply font-mono text-xs uppercase tracking-wide;
+    color: rgb(var(--color-text-tertiary));
+  }
+
+  /* A toggle button in a row of filters (states, sort, mode) */
+  .chip {
+    @apply inline-flex items-center justify-center gap-1 px-3 min-h-9 rounded-md text-sm font-medium border transition-colors whitespace-nowrap;
+    background-color: rgb(var(--color-bg-elevated));
+    border-color: rgb(var(--color-border-input));
+    color: rgb(var(--color-text-secondary));
+  }
+  .chip:hover:not(:disabled) {
+    color: rgb(var(--color-text-primary));
+    border-color: rgb(var(--color-text-tertiary));
+  }
+  .chip-on,
+  .chip-on:hover:not(:disabled) {
+    background-color: rgb(var(--color-text-primary));
+    border-color: rgb(var(--color-text-primary));
+    color: rgb(var(--color-bg-primary));
+  }
 }
 
-/* Utility classes */
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+
+  /* The accent's darker shades are hard to read on the dark background: lift them there */
+  .dark .text-accent-500,
+  .dark .text-accent-600,
+  .dark .text-accent-700 {
+    color: rgb(var(--color-link));
+  }
+  .dark .hover\:text-accent-600:hover,
+  .dark .hover\:text-accent-700:hover {
+    color: #f4a06b;
   }
 }

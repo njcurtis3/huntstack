@@ -33,7 +33,7 @@ export function DashboardStats() {
       <div role="group" aria-label="Time range" className="flex gap-2">
         {RANGES.map((d) => (
           <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d)}
-            className={`flex-1 md:flex-none min-h-11 px-5 rounded-full border text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 ${
+            className={`flex-1 md:flex-none min-h-11 px-5 rounded-md border text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 ${
               days === d ? 'bg-accent-500 text-white border-accent-500' : ''
             }`}
             style={days === d ? undefined : { ...panelStyle, color: 'rgb(var(--color-text-primary))' }}>

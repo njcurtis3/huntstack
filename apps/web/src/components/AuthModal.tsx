@@ -16,12 +16,6 @@ const TITLES: Record<AuthMode, string> = {
   newpassword: 'Choose a New Password',
 }
 
-const inputStyle = {
-  backgroundColor: 'rgb(var(--color-bg-primary))',
-  borderColor: 'rgb(var(--color-border-primary))',
-  color: 'rgb(var(--color-text-primary))',
-}
-
 export function AuthModal({ mode: initialMode, onClose }: AuthModalProps) {
   const [mode, setMode] = useState<AuthMode>(initialMode)
   const [email, setEmail] = useState('')
@@ -88,7 +82,7 @@ export function AuthModal({ mode: initialMode, onClose }: AuthModalProps) {
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-      style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)' }}
+      style={{ backgroundColor: 'rgba(11, 12, 13, 0.6)' }}
       onClick={onClose}
     >
       <div
@@ -96,11 +90,11 @@ export function AuthModal({ mode: initialMode, onClose }: AuthModalProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="auth-title"
-        className="w-full max-w-sm rounded-lg shadow-xl p-6"
-        style={{ backgroundColor: 'rgb(var(--color-bg-elevated))' }}
+        className="w-full max-w-sm rounded-lg shadow-2xl border"
+        style={{ backgroundColor: 'rgb(var(--color-bg-elevated))', borderColor: 'rgb(var(--color-border-primary))' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
           <h2 id="auth-title" className="text-lg font-semibold" style={{ color: 'rgb(var(--color-text-primary))' }}>
             {TITLES[mode]}
           </h2>
@@ -114,14 +108,14 @@ export function AuthModal({ mode: initialMode, onClose }: AuthModalProps) {
         </div>
 
         {doneMessage ? (
-          <div className="text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
+          <div className="text-sm p-5" style={{ color: 'rgb(var(--color-text-secondary))' }}>
             <p role="status">{doneMessage}</p>
             <button onClick={onClose} className="btn-primary text-sm mt-4 w-full">
               Done
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-3">
+          <form onSubmit={handleSubmit} className="space-y-3.5 p-5">
             {mode === 'reset' && (
               <p className="text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
                 Enter your account email and we'll send a link to choose a new password.
@@ -139,8 +133,7 @@ export function AuthModal({ mode: initialMode, onClose }: AuthModalProps) {
                   autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-3 py-2 rounded-md text-sm border"
-                  style={inputStyle}
+                  className="input"
                 />
               </div>
             )}
@@ -164,8 +157,7 @@ export function AuthModal({ mode: initialMode, onClose }: AuthModalProps) {
                   autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-3 py-2 rounded-md text-sm border"
-                  style={inputStyle}
+                  className="input"
                 />
               </div>
             )}

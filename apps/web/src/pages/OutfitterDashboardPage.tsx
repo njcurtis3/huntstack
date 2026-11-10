@@ -37,7 +37,7 @@ export function OutfitterDashboardPage() {
   const heading = (
     <div className="flex items-center gap-3 mb-6">
       <div
-        className="w-12 h-12 rounded-full flex items-center justify-center shrink-0"
+        className="w-12 h-12 rounded-md flex items-center justify-center shrink-0"
         style={{ backgroundColor: 'rgb(var(--color-bg-elevated))' }}
       >
         <LayoutDashboard className="w-6 h-6 text-accent-500" />
@@ -91,13 +91,13 @@ export function OutfitterDashboardPage() {
           {tabs.map((t) => (
             <button key={t.id} type="button" role="tab" id={`tab-${t.id}`} aria-selected={tab === t.id}
               aria-controls={`panel-${t.id}`} onClick={() => setTab(t.id)}
-              className={`shrink-0 inline-flex items-center justify-center md:justify-start gap-2 min-h-11 px-5 rounded-full md:rounded-md border text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 ${
+              className={`shrink-0 inline-flex items-center justify-center md:justify-start gap-2 min-h-11 px-5 rounded-md border text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 ${
                 tab === t.id ? 'bg-accent-500 text-white border-accent-500' : ''
               }`}
               style={tab === t.id ? undefined : { ...panelStyle, color: 'rgb(var(--color-text-primary))' }}>
               {t.label}
               {t.badge ? (
-                <span className="inline-flex items-center justify-center min-w-6 h-6 px-1.5 rounded-full bg-red-600 text-white text-sm"
+                <span className="inline-flex items-center justify-center min-w-6 h-6 px-1.5 rounded-md bg-red-600 text-white text-sm"
                   aria-label={`${t.badge} unread`}>
                   {t.badge}
                 </span>

@@ -146,7 +146,7 @@ export function FieldReportForm({ onClose }: FieldReportFormProps) {
   if (submit.isSuccess) {
     return (
       <div className="flex flex-col items-center text-center gap-4 px-4 py-10">
-        <div className="w-12 h-12 rounded-full bg-accent-600 text-white flex items-center justify-center">
+        <div className="w-12 h-12 rounded-md bg-accent-600 text-white flex items-center justify-center">
           <Check className="w-6 h-6" />
         </div>
         <h3 className="text-lg font-semibold" style={{ color: 'rgb(var(--color-text-primary))' }}>

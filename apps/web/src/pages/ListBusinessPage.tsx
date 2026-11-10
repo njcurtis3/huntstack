@@ -33,7 +33,7 @@ export function ListBusinessPage() {
   const header = (
     <div className="mb-6">
       <div
-        className="w-14 h-14 rounded-full flex items-center justify-center mb-4"
+        className="w-14 h-14 rounded-md flex items-center justify-center mb-4"
         style={{ backgroundColor: 'rgb(var(--color-bg-elevated))' }}
       >
         <Store className="w-6 h-6 text-accent-500" />

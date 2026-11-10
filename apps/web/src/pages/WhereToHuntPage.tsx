@@ -118,7 +118,7 @@ function ScoreBar({ score }: { score: number }) {
     <div className="flex items-center gap-2">
       <div className="flex-1 h-1.5 rounded-full" style={{ backgroundColor: 'rgb(var(--color-border-primary))' }}>
         <div
-          className="h-1.5 rounded-full transition-all"
+          className="h-1.5 rounded-sm transition-all"
           style={{ width: `${score}%`, backgroundColor: color }}
         />
       </div>
@@ -176,23 +176,11 @@ function TrendBadge({ trend, delta, deltaPercent }: {
 }
 
 function RankBadge({ rank }: { rank: number }) {
-  if (rank === 1) return (
-    <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold bg-yellow-400 text-yellow-900">
-      1
-    </span>
-  )
-  if (rank === 2) return (
-    <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold bg-earth-300 dark:bg-earth-600 text-earth-800 dark:text-earth-100">
-      2
-    </span>
-  )
-  if (rank === 3) return (
-    <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-bold bg-amber-700 text-amber-50">
-      3
-    </span>
-  )
   return (
-    <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-sm font-medium border" style={{ color: 'rgb(var(--color-text-tertiary))', borderColor: 'rgb(var(--color-border-primary))' }}>
+    <span
+      className={`inline-flex items-center justify-start w-7 pt-0.5 font-mono text-sm font-medium ${rank <= 3 ? 'text-accent-600 dark:text-accent-400' : ''}`}
+      style={rank <= 3 ? undefined : { color: 'rgb(var(--color-text-tertiary))' }}
+    >
       {rank}
     </span>
   )
@@ -396,13 +384,12 @@ export function WhereToHuntPage() {
   return (
     <div>
       {/* Hero */}
-      <div className="bg-earth-900 dark:bg-[#0d1117] text-white py-12">
+      <div className="bg-earth-900 dark:bg-[#121416] border-b border-earth-800 dark:border-[#24272b] text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3 mb-3">
-            <Crosshair className="w-8 h-8" />
-            <h1 className="text-3xl font-bold">Where to Hunt</h1>
+            <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">Where to Hunt</h1>
           </div>
-          <p className="text-earth-300 max-w-2xl">
+          <p className="text-[#a7adb4] max-w-2xl leading-relaxed">
             Find the best spots based on real bird activity, open seasons, and current weather conditions.
             Ranked by opportunity score — no guesswork.
           </p>
@@ -533,11 +520,7 @@ export function WhereToHuntPage() {
                     key={code}
                     onClick={() => toggleState(code)}
                     aria-pressed={active}
-                    className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${
-                      active
-                        ? 'bg-accent-600 dark:bg-accent-700 text-white border-accent-600 dark:border-accent-700'
-                        : 'border-earth-300 dark:border-earth-600 text-earth-600 dark:text-earth-400 hover:border-accent-400'
-                    }`}
+                    className={`chip font-mono min-w-12 ${active ? 'chip-on' : ''}`}
                   >
                     {code}
                   </button>
@@ -545,7 +528,7 @@ export function WhereToHuntPage() {
               })}
               <button
                 onClick={() => setSelectedStates(new Set(V1_STATES))}
-                className="px-3 py-1.5 rounded-full text-xs border border-dashed text-earth-500 dark:text-earth-400 border-earth-300 dark:border-earth-600 hover:border-accent-400 transition-colors"
+                className="chip border-dashed"
               >
                 All
               </button>
@@ -644,24 +627,22 @@ export function WhereToHuntPage() {
         {/* Results */}
         {!loading && !error && displayResults && displayResults.length > 0 && (
           <>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold" style={{ color: 'rgb(var(--color-text-primary))' }}>
+            <div className="flex items-center justify-between pb-3 border-b-2 border-earth-900 dark:border-earth-200">
+              <h2 className="text-xl font-semibold tracking-tight" style={{ color: 'rgb(var(--color-text-primary))' }}>
                 Top Locations
               </h2>
               <div className="flex items-center gap-3">
                 {userLocation && (
-                  <div className="flex items-center gap-1 rounded-lg border p-0.5 text-xs" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
+                  <div className="flex items-center gap-1 text-xs">
                     <button
                       onClick={() => setSortByDistance(false)}
-                      className={`px-2.5 py-1 rounded-md transition-colors ${!sortByDistance ? 'bg-accent-600 text-white' : ''}`}
-                      style={!sortByDistance ? undefined : { color: 'rgb(var(--color-text-secondary))' }}
+                      className={`chip min-h-8 text-xs ${!sortByDistance ? 'chip-on' : ''}`}
                     >
                       Score
                     </button>
                     <button
                       onClick={() => setSortByDistance(true)}
-                      className={`px-2.5 py-1 rounded-md transition-colors flex items-center gap-1 ${sortByDistance ? 'bg-accent-600 text-white' : ''}`}
-                      style={sortByDistance ? undefined : { color: 'rgb(var(--color-text-secondary))' }}
+                      className={`chip min-h-8 text-xs ${sortByDistance ? 'chip-on' : ''}`}
                     >
                       <ArrowUpDown className="w-3 h-3" />
                       Distance
@@ -674,11 +655,12 @@ export function WhereToHuntPage() {
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div>
               {displayResults.map(rec => (
                 <div
                   key={rec.locationId}
-                  className={`card p-5 ${rec.isAnomaly ? 'ring-1 ring-amber-400 dark:ring-amber-500' : ''}`}
+                  className="py-6 border-b"
+                  style={{ borderColor: 'rgb(var(--color-border-primary))' }}
                 >
                   {/* Anomaly banner */}
                   {rec.isAnomaly && (
@@ -693,7 +675,7 @@ export function WhereToHuntPage() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <h3 className="font-semibold text-base" style={{ color: 'rgb(var(--color-text-primary))' }}>
+                          <h3 className="font-semibold text-lg tracking-tight" style={{ color: 'rgb(var(--color-text-primary))' }}>
                             {rec.locationName}
                           </h3>
                           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -770,7 +752,7 @@ export function WhereToHuntPage() {
                       <p className="text-xs mb-1" style={{ color: 'rgb(var(--color-text-tertiary))' }}>Birds Counted</p>
                       {rec.latestCount !== null ? (
                         <>
-                          <p className="text-xl font-bold text-forest-600 dark:text-forest-400">
+                          <p className="font-mono text-xl font-medium" style={{ color: 'rgb(var(--color-text-primary))' }}>
                             {rec.latestCount.toLocaleString()}
                           </p>
                           <TrendBadge trend={rec.trend} delta={rec.delta} deltaPercent={rec.deltaPercent} />

@@ -5,7 +5,7 @@ export function RegAlertsPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
       <div
-        className="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-5"
+        className="w-14 h-14 rounded-md flex items-center justify-center mx-auto mb-5"
         style={{ backgroundColor: `rgb(var(--color-bg-elevated))` }}
       >
         <BellRing className="w-6 h-6 text-accent-500" />

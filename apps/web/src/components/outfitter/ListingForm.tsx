@@ -139,7 +139,7 @@ export function ListingForm({ kind, initial, onCancel, onSubmitted }: ListingFor
   }
 
   const chip = (active: boolean) =>
-    `inline-flex items-center justify-center min-h-11 px-4 rounded-full border text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 ${
+    `inline-flex items-center justify-center min-h-11 px-4 rounded-md border text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500 ${
       active ? 'bg-accent-500 text-white border-accent-500' : ''
     }`
   const chipStyle = (active: boolean) => (active ? undefined : { ...fieldStyle })
@@ -206,7 +206,7 @@ export function ListingForm({ kind, initial, onCancel, onSubmitted }: ListingFor
               <li key={s}>
                 <button type="button" onClick={() => setSpecies(species.filter((x) => x !== s))}
                   aria-label={`Remove ${s}`}
-                  className="inline-flex items-center gap-2 min-h-11 px-4 rounded-full border text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
+                  className="inline-flex items-center gap-2 min-h-11 px-4 rounded-md border text-base focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
                   style={fieldStyle}>
                   {s}
                   <X className="w-4 h-4" aria-hidden="true" />

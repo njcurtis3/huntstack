@@ -81,7 +81,7 @@ function OutfitterCard({ outfitter }: { outfitter: Outfitter }) {
           </div>
           {/* Price badge */}
           <div className="flex-shrink-0 text-right">
-            <span className="text-sm font-bold text-forest-500 dark:text-forest-400">{outfitter.priceRange}</span>
+            <span className="font-mono text-sm font-semibold text-forest-600 dark:text-forest-400">{outfitter.priceRange}</span>
             <div className="text-xs mt-0.5" style={{ color: `rgb(var(--color-text-tertiary))` }}>
               {PRICE_LABELS[outfitter.priceRange] ?? ''}
             </div>
@@ -268,7 +268,7 @@ function OutfitterDirectory() {
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>
+        <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight" style={{ color: `rgb(var(--color-text-primary))` }}>
           Outfitter Directory
         </h1>
         <p className="mt-1.5 text-sm" style={{ color: `rgb(var(--color-text-secondary))` }}>
@@ -349,12 +349,7 @@ function OutfitterDirectory() {
       <div className="mb-6 flex flex-wrap gap-2">
         <button
           onClick={() => setSelectedState('')}
-          className={`px-4 min-h-11 rounded-full text-sm font-medium border transition-colors ${
-            !selectedState
-              ? 'bg-forest-600 dark:bg-forest-700 text-white border-transparent'
-              : 'border-earth-300 dark:border-earth-600 hover:border-forest-400 dark:hover:border-forest-600'
-          }`}
-          style={!selectedState ? {} : { color: `rgb(var(--color-text-secondary))` }}
+          className={`chip px-4 min-h-11 ${!selectedState ? 'chip-on' : ''}`}
         >
           All States
         </button>
@@ -365,14 +360,7 @@ function OutfitterDirectory() {
             <button
               key={s}
               onClick={() => setSelectedState(isSelected ? '' : s)}
-              className={`px-4 min-h-11 rounded-full text-sm font-medium border transition-colors ${
-                isSelected
-                  ? 'bg-forest-600 dark:bg-forest-700 text-white border-transparent'
-                  : hasListings
-                    ? 'border-earth-300 dark:border-earth-600 hover:border-forest-400 dark:hover:border-forest-600'
-                    : 'border-earth-200 dark:border-earth-700 opacity-50 cursor-default'
-              }`}
-              style={!isSelected ? { color: `rgb(var(--color-text-secondary))` } : {}}
+              className={`chip font-mono px-4 min-h-11 ${isSelected ? 'chip-on' : hasListings ? '' : 'opacity-50 cursor-default'}`}
               title={hasListings ? undefined : 'No listings yet'}
             >
               {s}

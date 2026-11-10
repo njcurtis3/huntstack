@@ -299,7 +299,7 @@ export function ChatPage() {
       <div className="border-b px-4 py-3" style={{ backgroundColor: `rgb(var(--color-bg-elevated))`, borderColor: `rgb(var(--color-border-primary))` }}>
         <div className="max-w-3xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-accent-50 dark:bg-accent-900/30 rounded-full flex items-center justify-center">
+            <div className="w-9 h-9 border border-earth-300 dark:border-earth-700 rounded-md flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-accent-500" />
             </div>
             <div>
@@ -327,24 +327,21 @@ export function ChatPage() {
       <div ref={scrollBoxRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
         <div className="max-w-3xl mx-auto px-4 py-6">
           {isEmpty ? (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 bg-accent-50 dark:bg-accent-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Bot className="w-8 h-8 text-accent-500" />
-              </div>
-              <h2 className="text-xl font-semibold mb-2" style={{ color: `rgb(var(--color-text-primary))` }}>
+            <div className="py-10 sm:py-14">
+              <h2 className="text-2xl sm:text-[32px] font-semibold tracking-tight mb-2.5" style={{ color: `rgb(var(--color-text-primary))` }}>
                 How can I help you today?
               </h2>
-              <p className="mb-8 max-w-md mx-auto" style={{ color: `rgb(var(--color-text-secondary))` }}>
+              <p className="mb-8 max-w-xl text-base leading-relaxed" style={{ color: `rgb(var(--color-text-secondary))` }}>
                 Ask about regulations, seasons, licenses, or where birds are moving — I pull live data to answer.
               </p>
               <div>
-                <p className="text-xs font-medium mb-3" style={{ color: `rgb(var(--color-text-tertiary))` }}>Try asking:</p>
-                <div className="flex flex-wrap justify-center gap-2">
+                <p className="text-xs font-medium mb-2.5" style={{ color: `rgb(var(--color-text-tertiary))` }}>Try asking:</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {suggestions.map((q) => (
                     <button
                       key={q}
                       onClick={() => sendMessage(q)}
-                      className="card px-3 py-1.5 text-sm hover:border-accent-400 dark:hover:border-accent-500 transition-colors text-left"
+                      className="card px-3.5 py-3 text-sm hover:border-accent-500 dark:hover:border-accent-400 transition-colors text-left"
                       style={{ color: `rgb(var(--color-text-secondary))` }}
                     >
                       {q}
@@ -358,7 +355,7 @@ export function ChatPage() {
               {messages.map((message) => (
                 <div key={message.id} className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : ''}`}>
                   {message.role === 'assistant' && (
-                    <div className="w-8 h-8 bg-accent-50 dark:bg-accent-900/30 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                    <div className="w-8 h-8 border border-earth-300 dark:border-earth-700 rounded-md flex items-center justify-center flex-shrink-0 mt-1">
                       <Bot className="w-4 h-4 text-accent-500" />
                     </div>
                   )}
@@ -366,7 +363,7 @@ export function ChatPage() {
                   <div className="max-w-[85%] space-y-3">
                     {/* Message bubble */}
                     <div
-                      className={`rounded-lg px-4 py-3 break-words ${message.role === 'user' ? 'bg-accent-500 text-white' : ''}`}
+                      className={`rounded-lg px-4 py-3 break-words ${message.role === 'user' ? 'bg-earth-900 dark:bg-earth-700 text-white' : ''}`}
                       style={message.role === 'assistant' ? {
                         backgroundColor: `rgb(var(--color-bg-secondary))`,
                         color: `rgb(var(--color-text-primary))`,
@@ -416,11 +413,11 @@ export function ChatPage() {
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-xs font-medium" style={{ color: `rgb(var(--color-text-primary))` }}>{result.title}</span>
-                                <span className="text-xs rounded-full px-1.5 py-0.5 capitalize bg-earth-100 dark:bg-earth-800 text-earth-500 dark:text-earth-400">
+                                <span className="text-xs rounded-md px-1.5 py-0.5 capitalize bg-earth-100 dark:bg-earth-800 text-earth-500 dark:text-earth-400">
                                   {result.type}
                                 </span>
                                 {result.stateCode && (
-                                  <span className="text-xs rounded-full px-1.5 py-0.5 bg-accent-50 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400">
+                                  <span className="text-xs rounded-md px-1.5 py-0.5 bg-accent-50 dark:bg-accent-900/30 text-accent-600 dark:text-accent-400">
                                     {result.stateCode}
                                   </span>
                                 )}
@@ -467,7 +464,7 @@ export function ChatPage() {
                   </div>
 
                   {message.role === 'user' && (
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1 bg-earth-200 dark:bg-earth-700">
+                    <div className="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0 mt-1 bg-earth-200 dark:bg-earth-700">
                       <User className="w-4 h-4 text-earth-600 dark:text-earth-300" />
                     </div>
                   )}
@@ -477,7 +474,7 @@ export function ChatPage() {
               {/* Typing indicator */}
               {isLoading && (
                 <div className="flex gap-3">
-                  <div className="w-8 h-8 bg-accent-50 dark:bg-accent-900/30 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                  <div className="w-8 h-8 border border-earth-300 dark:border-earth-700 rounded-md flex items-center justify-center flex-shrink-0 mt-1">
                     <Bot className="w-4 h-4 text-accent-500" />
                   </div>
                   <div className="rounded-lg px-4 py-3 flex items-center gap-1" style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}>
