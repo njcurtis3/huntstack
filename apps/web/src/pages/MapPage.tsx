@@ -7,7 +7,13 @@ import { ChevronLeft, ChevronRight, Layers, X, ExternalLink } from 'lucide-react
 import { api, safeHttpUrl } from '../lib/api'
 import { useThemeStore } from '../stores/themeStore'
 import { oldSurveyLabel, parseCalendarDate } from '../lib/dates'
-import { staleThresholdFor } from '../lib/migrationStats'
+import { computeMigrationIndex, formatChange, getAnomaly, headlineStats, staleThresholdFor } from '../lib/migrationStats'
+import type { AnomalyType, MigrationIndexResult } from '../lib/migrationStats'
+import {
+  PUSH_SCORE_LABELS, STATE_CENTROIDS, STATUS_HEX, STATUS_LABELS, enrichCounts, flowLegs, groupRefuges, groupStates,
+  overallPushScoreOf, sortCounts,
+} from '../lib/migrationGroups'
+import type { FlowLeg, StateGroup } from '../lib/migrationGroups'
 import type { FieldReportPublic } from '../lib/fieldReports'
 import { ACTIVITIES, COUNT_BUCKETS } from '../lib/fieldReports'
 import {
@@ -16,10 +22,11 @@ import {
 } from '../lib/zoneSeasons'
 import type { BirdGroup, MapSeason, ZoneProperties, ZoneStatus } from '../lib/zoneSeasons'
 
-// The planning map: season zones shaded open or closed for a chosen day, with survey sites,
-// eBird (every hotspot with a duck or goose report in 14 days, the areas HuntStack watches, and
-// statewide activity in a zone's details) and hunter reports on top. Pre-hunt only: no GPS
-// tracks, saved spots or offline.
+// The planning map: season zones shaded open or closed for a chosen day, with the Migration
+// page's picture (each state's status, flyway flow arrows, weather-push badges, count spikes and
+// drops, the Migration Index), survey sites, eBird (every hotspot with a duck or goose report in
+// 14 days, the areas HuntStack watches, and statewide activity in a zone's details) and hunter
+// reports on top. Pre-hunt only: no GPS tracks, saved spots or offline.
 
 const ZONE_URL = '/data/waterfowl-zones-2026.json'
 const ZONE_STATES = ['TX', 'KS', 'OK', 'NM', 'LA', 'AR', 'MO', 'IL', 'IA']
@@ -46,8 +53,17 @@ const FILL = {
 }
 const EBIRD_COLOR = '#8250df'
 const REPORT_COLOR = '#d97706'
+// Flyway flow arrows (the Migration page's colors)
+const FLOW_COLOR = { south: '#1f883d', north: '#0969da', both: '#bf8700' } as const
+// Migration pressure 0–3: calm, moderate, high, extreme
+const PUSH_COLOR = ['#8c959f', '#d4a72c', '#f97316', '#ef4444']
+const SPIKE_COLOR = '#cf222e'
+const DROP_COLOR = '#0969da'
+// The Texas High Plains duck zone is scored on its own weather; its badge sits near Amarillo
+const REGION_POINTS: Record<string, [number, number]> = { 'TX-HP': [-101.8, 34.9] }
 
 type Point = { type: 'Point'; coordinates: [number, number] }
+type Line = { type: 'LineString'; coordinates: [number, number][] }
 type Area = { type: 'Polygon'; coordinates: number[][][] } | { type: 'MultiPolygon'; coordinates: number[][][][] }
 type FeatureCollection<G, P = Record<string, unknown>> = {
   type: 'FeatureCollection'
@@ -55,9 +71,10 @@ type FeatureCollection<G, P = Record<string, unknown>> = {
 }
 
 type Base = 'map' | 'satellite'
-type LayerKey = 'zones' | 'sites' | 'hotspots' | 'ebird' | 'reports'
+type LayerKey = 'zones' | 'flow' | 'pressure' | 'spikes' | 'sites' | 'hotspots' | 'ebird' | 'reports'
 type Selection =
   | { kind: 'zone'; id: string }
+  | { kind: 'state'; id: string }
   | { kind: 'site'; id: string }
   | { kind: 'hotspot'; id: string }
   | { kind: 'ebird'; id: string }
@@ -65,6 +82,19 @@ type Selection =
 
 type EbirdMap = Awaited<ReturnType<typeof api.getEbirdMap>>
 type StateSpecies = EbirdMap['stateSpecies'][number]
+type PushFactor = Awaited<ReturnType<typeof api.getMigrationPushFactors>>['pushFactors'][number]
+type DashCount = Awaited<ReturnType<typeof api.getMigrationDashboard>>['currentCounts'][number]
+type MigrationCount = ReturnType<typeof enrichCounts<DashCount & { source?: string }>>[number]
+
+/** What the Migration page says about one state, for its marker and a zone's details. */
+type StateMigrationInfo = {
+  state: string
+  group: StateGroup<MigrationCount> | null
+  index: MigrationIndexResult | null
+  push: PushFactor | null
+  regions: PushFactor[]
+  legs: FlowLeg[]
+}
 
 /** A public eBird hotspot: the latest report of each species there in the last 14 days. */
 type Hotspot = {
@@ -93,6 +123,8 @@ type CountRow = {
 }
 
 type Site = {
+  /** A count spike (or, failing that, a drop) at this site's current survey */
+  anomaly: AnomalyType
   id: string
   name: string
   state: string
@@ -180,7 +212,10 @@ function buildSites(counts: CountRow[]): Site[] {
     const withPrev = rows.filter(c => c.previousCount != null)
     const prevTotal = withPrev.reduce((s, c) => s + (c.previousCount ?? 0), 0)
     const nowTotal = withPrev.reduce((s, c) => s + c.count, 0)
+    // Same rule as the Migration page: only a current survey can spike or drop
+    const kinds = isStale ? [] : rows.map(c => getAnomaly(c.count, c.deltaPercent, c.previousCount))
     return {
+      anomaly: kinds.includes('spike') ? 'spike' as const : kinds.includes('drop') ? 'drop' as const : null,
       id,
       name: rows[0].refugeName,
       state: rows[0].state,
@@ -232,7 +267,9 @@ export default function MapPage() {
 
   const { resolvedTheme } = useThemeStore()
   const [base, setBase] = useState<Base>('map')
-  const [layers, setLayers] = useState<Record<LayerKey, boolean>>({ zones: true, sites: true, hotspots: true, ebird: true, reports: true })
+  const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
+    zones: true, flow: true, pressure: true, spikes: true, sites: true, hotspots: true, ebird: true, reports: true,
+  })
   const [selection, setSelection] = useState<Selection | null>(null)
   const [panelOpen, setPanelOpen] = useState(false) // phone: layers and legend
 
@@ -254,6 +291,26 @@ export default function MapPage() {
   const ebirdQ = useQuery({
     queryKey: ['map-ebird'],
     queryFn: () => api.getEbirdMap(),
+    staleTime: 10 * 60_000,
+    retry: false,
+  })
+
+  // Migration pressure for the states with survey counts, asked the same way the Migration page asks
+  const pushStates = useMemo(() => {
+    const s = [...new Set((dashQ.data?.currentCounts ?? []).map(c => c.state))].sort()
+    return s.length > 0 ? s.join(',') : 'TX,NM,AR,LA,KS,OK,MO'
+  }, [dashQ.data])
+  const pushQ = useQuery({
+    queryKey: ['map-push', pushStates],
+    queryFn: () => api.getMigrationPushFactors(pushStates),
+    enabled: dashQ.isSuccess,
+    staleTime: 10 * 60_000,
+    retry: false,
+  })
+  // Statewide eBird activity levels, one part of the Migration Index
+  const activityQ = useQuery({
+    queryKey: ['map-regional-activity'],
+    queryFn: () => api.getMigrationRegionalActivity(),
     staleTime: 10 * 60_000,
     retry: false,
   })
@@ -283,6 +340,41 @@ export default function MapPage() {
   const stateSpecies = useMemo(() => ebirdQ.data?.stateSpecies ?? [], [ebirdQ.data])
   const ebirdStates = useMemo(() => ebirdQ.data?.states ?? [], [ebirdQ.data])
   const reports = useMemo(() => reportsQ.data?.reports ?? [], [reportsQ.data])
+
+  // ---------- migration: the Migration page's numbers, all flyways and species ----------
+
+  // Agency surveys and eBird rows together, as the Migration page groups them
+  const migrationCounts = useMemo((): MigrationCount[] => enrichCounts([
+    ...(dashQ.data?.currentCounts ?? []).map(c => ({ ...c, source: 'official' })),
+    ...(dashQ.data?.ebirdCounts ?? []),
+  ]), [dashQ.data])
+  const stateGroups = useMemo(
+    () => groupStates(groupRefuges(sortCounts(migrationCounts)), code => STATE_NAMES[code] ?? code),
+    [migrationCounts],
+  )
+  const legs = useMemo(() => flowLegs(stateGroups), [stateGroups])
+  const pushFactors = useMemo(() => pushQ.data?.pushFactors ?? [], [pushQ.data])
+  const regionalPush = useMemo(() => pushQ.data?.regionalPushFactors ?? [], [pushQ.data])
+  const overallPush = useMemo(() => overallPushScoreOf([...pushFactors, ...regionalPush]), [pushFactors, regionalPush])
+  const stateActivity = activityQ.data?.stateActivity
+  const migrationReady = dashQ.isSuccess && !pushQ.isLoading && !activityQ.isLoading
+  const migrationIndex = useMemo(
+    () => computeMigrationIndex(headlineStats(migrationCounts).fresh, overallPush, stateActivity),
+    [migrationCounts, overallPush, stateActivity],
+  )
+  /** One state's migration, the way the Migration page shows it with that state picked. */
+  const stateMigration = (state: string): StateMigrationInfo => {
+    const group = stateGroups.find(g => g.state === state) ?? null
+    const mine = migrationCounts.filter(c => c.state === state)
+    return {
+      state,
+      group,
+      index: mine.length > 0 ? computeMigrationIndex(headlineStats(mine).fresh, overallPush, stateActivity) : null,
+      push: pushFactors.find(p => p.stateCode === state) ?? null,
+      regions: regionalPush.filter(p => p.stateCode === state),
+      legs: legs.filter(l => l.from === state || l.to === state),
+    }
+  }
 
   const statusById = useMemo(() => {
     const m = new Map<string, ZoneStatus>()
@@ -430,6 +522,58 @@ export default function MapPage() {
       filter: ['==', ['get', 'id'], ''],
       paint: { 'circle-radius': 12, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#e2561b', 'circle-stroke-width': 3 },
     })
+
+    // Migration: arrows between states down each flyway, a marker per state colored by its
+    // migration status, and a weather-push badge beside it
+    addMigrationImages(map, paper)
+    map.addSource('flow', { type: 'geojson', data: emptyFc() })
+    map.addLayer({
+      id: 'flow-line', type: 'line', source: 'flow',
+      layout: { 'line-cap': 'round' },
+      paint: {
+        'line-color': ['match', ['get', 'flow'], 'south', FLOW_COLOR.south, 'north', FLOW_COLOR.north, FLOW_COLOR.both],
+        'line-width': 3.5,
+        'line-opacity': 0.85,
+      },
+    })
+    map.addLayer({
+      id: 'flow-arrow', type: 'symbol', source: 'flow',
+      layout: {
+        'symbol-placement': 'line-center',
+        'icon-image': ['concat', 'hs-flow-', ['get', 'flow']],
+        'icon-size': 1.25,
+        'icon-rotation-alignment': 'map',
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+    })
+    map.addSource('states', { type: 'geojson', data: emptyFc() })
+    map.addLayer({
+      id: 'states', type: 'circle', source: 'states',
+      paint: {
+        'circle-radius': 8,
+        'circle-color': ['get', 'color'],
+        'circle-stroke-color': paper,
+        'circle-stroke-width': 2.5,
+      },
+    })
+    map.addLayer({
+      id: 'states-selected', type: 'circle', source: 'states',
+      filter: ['==', ['get', 'id'], ''],
+      paint: { 'circle-radius': 12, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#e2561b', 'circle-stroke-width': 3 },
+    })
+    map.addSource('pressure', { type: 'geojson', data: emptyFc() })
+    map.addLayer({
+      id: 'pressure', type: 'symbol', source: 'pressure',
+      layout: {
+        'icon-image': ['concat', 'hs-push-', ['to-string', ['get', 'level']]],
+        // Beside the state marker, up and to the right
+        'icon-offset': ['case', ['get', 'region'], ['literal', [0, 0]], ['literal', [17, -15]]],
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+    })
+
     map.addSource('sites', { type: 'geojson', data: emptyFc() })
     map.addLayer({
       id: 'sites', type: 'circle', source: 'sites',
@@ -440,6 +584,18 @@ export default function MapPage() {
         'circle-stroke-color': ['case', ['get', 'stale'], ink, paper],
         'circle-stroke-width': ['case', ['get', 'stale'], 1.5, 1.5],
         'circle-stroke-opacity': ['case', ['get', 'stale'], 0.6, 1],
+      },
+    })
+    // Count spikes and drops: a small badge on the upper right of the site's dot
+    map.addSource('spikes', { type: 'geojson', data: emptyFc() })
+    map.addLayer({
+      id: 'spikes', type: 'symbol', source: 'spikes',
+      layout: {
+        'icon-image': ['concat', 'hs-anom-', ['get', 'kind']],
+        'icon-offset': ['step', ['get', 'r'],
+          ['literal', [5, -5]], 7, ['literal', [7, -7]], 11, ['literal', [10, -10]], 15, ['literal', [13, -13]], 19, ['literal', [16, -16]], 23, ['literal', [19, -19]]],
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
       },
     })
     map.addSource('reports', { type: 'geojson', data: emptyFc() })
@@ -494,7 +650,25 @@ export default function MapPage() {
     ;(map.getSource('reports') as maplibregl.GeoJSONSource).setData(pointFc(reportCells(reports).map(c => ({
       lng: c.lng, lat: c.lat, props: { id: c.id },
     }))))
+    ;(map.getSource('spikes') as maplibregl.GeoJSONSource).setData(pointFc(sites.filter(s => s.anomaly).map(s => ({
+      lng: s.lng, lat: s.lat, props: { id: s.id, kind: s.anomaly, r: siteRadius(s.total) },
+    }))))
   }, [sites, ebirdAreas, hotspots, reports, installed])
+
+  // Migration layers.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.getSource('flow')) return
+    ;(map.getSource('flow') as maplibregl.GeoJSONSource).setData(flowLines(legs))
+    ;(map.getSource('states') as maplibregl.GeoJSONSource).setData(pointFc(stateGroups.flatMap(g => {
+      const at = STATE_CENTROIDS[g.state]
+      return at ? [{ lng: at[0], lat: at[1], props: { id: g.state, color: STATUS_HEX[g.dominantStatus ?? 'none'] } }] : []
+    })))
+    ;(map.getSource('pressure') as maplibregl.GeoJSONSource).setData(pointFc([...pushFactors, ...regionalPush].flatMap(f => {
+      const at = f.regionId ? REGION_POINTS[f.regionId] : STATE_CENTROIDS[f.stateCode]
+      return at ? [{ lng: at[0], lat: at[1], props: { id: f.stateCode, level: pushLevel(f.pushScore), region: !!f.regionId } }] : []
+    })))
+  }, [legs, stateGroups, pushFactors, regionalPush, installed])
 
   // Hotspots show the chosen birds: only places that reported them, sized by how many.
   useEffect(() => {
@@ -517,6 +691,10 @@ export default function MapPage() {
     map.setLayoutProperty('hotspots', 'visibility', vis(layers.hotspots))
     map.setLayoutProperty('hotspots-selected', 'visibility', vis(layers.hotspots))
     map.setLayoutProperty('reports', 'visibility', vis(layers.reports))
+    for (const id of ['flow-line', 'flow-arrow', 'states', 'states-selected']) map.setLayoutProperty(id, 'visibility', vis(layers.flow))
+    map.setLayoutProperty('pressure', 'visibility', vis(layers.pressure))
+    // A spike badge belongs to its site's dot
+    map.setLayoutProperty('spikes', 'visibility', vis(layers.spikes && layers.sites))
   }, [layers, installed])
 
   // Selection outline.
@@ -528,14 +706,19 @@ export default function MapPage() {
     map.setFilter('points-selected', sel('site'))
     map.setFilter('ebird-selected', sel('ebird'))
     map.setFilter('hotspots-selected', sel('hotspot'))
+    map.setFilter('states-selected', sel('state'))
   }, [selection, installed])
 
-  // Taps: the topmost thing under the finger wins: a report, a site, an eBird area, an eBird
-  // hotspot, then a zone (the order they're drawn in, top first).
+  // Taps: the topmost thing under the finger wins: a report, a site (or its spike badge), a
+  // state's pressure badge or marker, an eBird area, an eBird hotspot, then a zone (the order
+  // they're drawn in, top first).
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
-    const order: Array<[string, Selection['kind']]> = [['reports', 'report'], ['sites', 'site'], ['ebird', 'ebird'], ['hotspots', 'hotspot'], ['zones-fill', 'zone']]
+    const order: Array<[string, Selection['kind']]> = [
+      ['reports', 'report'], ['spikes', 'site'], ['sites', 'site'], ['pressure', 'state'], ['states', 'state'],
+      ['ebird', 'ebird'], ['hotspots', 'hotspot'], ['zones-fill', 'zone'],
+    ]
     const onClick = (e: maplibregl.MapMouseEvent) => {
       // Hotspot dots are small and close together, so they get only a little slack: with the
       // full 6px, a tap on a zone almost always landed on some dot instead
@@ -552,7 +735,7 @@ export default function MapPage() {
       setSelection(null)
     }
     const onMove = (e: maplibregl.MapMouseEvent) => {
-      const layersHere = ['reports', 'sites', 'ebird', 'hotspots', 'zones-fill'].filter(l => map.getLayer(l))
+      const layersHere = ['reports', 'spikes', 'sites', 'pressure', 'states', 'ebird', 'hotspots', 'zones-fill'].filter(l => map.getLayer(l))
       const hit = layersHere.length > 0 && map.queryRenderedFeatures(e.point, { layers: layersHere }).length > 0
       map.getCanvas().style.cursor = hit ? 'pointer' : ''
     }
@@ -580,10 +763,13 @@ export default function MapPage() {
       if (!f) return null
       return (
         <ZoneDetails zone={f.properties} seasons={seasons} group={group} day={day}>
+          {migrationReady && <StateMigration info={stateMigration(f.properties.state)} compact />}
           <StateEbird state={f.properties.state} group={group} rows={stateSpecies} covered={ebirdStates.includes(f.properties.state)} loaded={ebirdQ.isSuccess} />
         </ZoneDetails>
       )
     }
+    if (selection.kind === 'state') return <StateMigration info={stateMigration(selection.id)} />
+
     if (selection.kind === 'site') {
       const s = sites.find(x => x.id === selection.id)
       return s ? <SiteDetails site={s} day={day} ebird={ebirdById.get(s.id) ?? []} /> : null
@@ -602,6 +788,16 @@ export default function MapPage() {
 
   const loadError = zonesQ.isError || seasonsQ.isError
 
+  const summaryProps = {
+    ready: migrationReady,
+    index: migrationIndex,
+    pushLevel: overallPush,
+    pushKnown: pushQ.isSuccess,
+    legs,
+    spikes: stateGroups.flatMap(g => g.refuges).filter(r => r.topAnomaly === 'spike').length,
+    drops: stateGroups.flatMap(g => g.refuges).filter(r => r.topAnomaly === 'drop').length,
+  }
+
   return (
     <div className="flex-1 min-h-0 flex flex-col md:flex-row">
       {/* Desktop sidebar */}
@@ -613,7 +809,7 @@ export default function MapPage() {
           <p className="eyebrow mb-1.5">Season map</p>
           <h1 className="text-xl font-semibold tracking-tight" style={{ color: 'rgb(var(--color-text-primary))' }}>Map</h1>
           <p className="mt-1.5 text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-            Which zones are open on a given day, with survey counts, eBird sightings and hunter reports on top.
+            Which zones are open on a given day, with migration, survey counts, eBird sightings and hunter reports on top.
           </p>
         </div>
         <div className="p-5 space-y-6 border-b" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
@@ -626,6 +822,9 @@ export default function MapPage() {
             <DetailsFrame onClose={() => setSelection(null)}>{details}</DetailsFrame>
           </div>
         )}
+        <div className="p-5 border-b" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
+          <MigrationSummary {...summaryProps} />
+        </div>
         <div className="p-5 space-y-6">
           <LayerToggles layers={layers} onChange={setLayers} base={base} onBase={setBase} />
           <Legend />
@@ -661,6 +860,7 @@ export default function MapPage() {
               style={{ backgroundColor: 'rgb(var(--color-bg-primary))', borderColor: 'rgb(var(--color-border-primary))' }}
             >
               <SeasonScrubber day={day} onChange={setDay} />
+              <MigrationSummary {...summaryProps} />
               <LayerToggles layers={layers} onChange={setLayers} base={base} onBase={setBase} />
               <Legend />
               <Note />
@@ -716,6 +916,121 @@ function pointFc(points: Array<{ lng: number; lat: number; props: Record<string,
     type: 'FeatureCollection',
     features: points.map(p => ({ type: 'Feature', properties: p.props, geometry: { type: 'Point', coordinates: [p.lng, p.lat] } })),
   }
+}
+
+/** The survey-site dot's radius in pixels (the 'sites' layer's circle-radius, worked out in JS). */
+function siteRadius(total: number): number {
+  const stops: Array<[number, number]> = [[0, 4], [100, 9], [400, 18], [800, 26]]
+  const x = Math.sqrt(Math.max(0, total))
+  for (let i = 1; i < stops.length; i++) {
+    const [x0, y0] = stops[i - 1]
+    const [x1, y1] = stops[i]
+    if (x <= x1) return y0 + ((x - x0) / (x1 - x0)) * (y1 - y0)
+  }
+  return stops[stops.length - 1][1]
+}
+
+/** A push score (0–3 in half steps) as a whole level, like the Migration page's headline. */
+const pushLevel = (score: number) => Math.min(3, Math.max(0, Math.floor(score)))
+
+/** One line per flow arrow, drawn in the direction the birds are going and kept clear of the state markers. */
+function flowLines(legs: FlowLeg[]): FeatureCollection<Line> {
+  return {
+    type: 'FeatureCollection',
+    features: legs.flatMap(l => {
+      const a = STATE_CENTROIDS[l.from]
+      const b = STATE_CENTROIDS[l.to]
+      if (!a || !b) return []
+      const at = (t: number): [number, number] => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+      const coords = [at(0.2), at(0.8)]
+      return [{
+        type: 'Feature' as const,
+        properties: { flow: l.flow, from: l.from, to: l.to },
+        geometry: { type: 'LineString' as const, coordinates: l.flow === 'north' ? coords.reverse() : coords },
+      }]
+    }),
+  }
+}
+
+/** Draw an icon on a canvas at 2x and hand it to the map. Icons are lost with the style, so this runs after every style load. */
+function addIcon(map: maplibregl.Map, id: string, size: number, draw: (ctx: CanvasRenderingContext2D) => void) {
+  if (map.hasImage(id)) return
+  const ratio = 2
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size * ratio
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  ctx.scale(ratio, ratio)
+  draw(ctx)
+  map.addImage(id, ctx.getImageData(0, 0, size * ratio, size * ratio), { pixelRatio: ratio })
+}
+
+function addMigrationImages(map: maplibregl.Map, paper: string) {
+  // Flow arrows point right (+x); the map turns them along the line, in the birds' direction
+  const arrow = (ctx: CanvasRenderingContext2D, color: string, both: boolean) => {
+    ctx.fillStyle = color
+    ctx.strokeStyle = paper
+    ctx.lineWidth = 2
+    ctx.lineJoin = 'round'
+    const head = (tip: number, back: number) => {
+      ctx.beginPath()
+      ctx.moveTo(tip, 12)
+      ctx.lineTo(back, 4)
+      ctx.lineTo(back, 20)
+      ctx.closePath()
+      ctx.stroke()
+      ctx.fill()
+    }
+    if (both) { head(22, 14); head(2, 10) } else head(20, 6)
+  }
+  addIcon(map, 'hs-flow-south', 24, ctx => arrow(ctx, FLOW_COLOR.south, false))
+  addIcon(map, 'hs-flow-north', 24, ctx => arrow(ctx, FLOW_COLOR.north, false))
+  addIcon(map, 'hs-flow-both', 24, ctx => arrow(ctx, FLOW_COLOR.both, true))
+
+  // Pressure badges: a round badge with three wind lines, colored by level
+  PUSH_COLOR.forEach((color, level) => addIcon(map, `hs-push-${level}`, 24, ctx => {
+    ctx.beginPath()
+    ctx.arc(12, 12, 10, 0, Math.PI * 2)
+    ctx.fillStyle = color
+    ctx.fill()
+    ctx.lineWidth = 2
+    ctx.strokeStyle = paper
+    ctx.stroke()
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 1.8
+    ctx.lineCap = 'round'
+    for (const [y, x0, x1] of [[8, 6, 15], [12, 5, 18], [16, 7, 14]]) {
+      ctx.beginPath()
+      ctx.moveTo(x0, y)
+      ctx.lineTo(x1, y)
+      ctx.stroke()
+    }
+  }))
+
+  // Spike and drop badges: an up or down arrow in a circle
+  const badge = (ctx: CanvasRenderingContext2D, color: string, up: boolean) => {
+    ctx.beginPath()
+    ctx.arc(9, 9, 7.5, 0, Math.PI * 2)
+    ctx.fillStyle = color
+    ctx.fill()
+    ctx.lineWidth = 1.5
+    ctx.strokeStyle = paper
+    ctx.stroke()
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 1.8
+    ctx.lineCap = 'round'
+    ctx.lineJoin = 'round'
+    const [tip, tail] = up ? [5, 13] : [13, 5]
+    ctx.beginPath()
+    ctx.moveTo(9, tail)
+    ctx.lineTo(9, tip)
+    ctx.moveTo(6, up ? 8 : 10)
+    ctx.lineTo(9, tip)
+    ctx.lineTo(12, up ? 8 : 10)
+    ctx.stroke()
+  }
+  addIcon(map, 'hs-anom-spike', 18, ctx => badge(ctx, SPIKE_COLOR, true))
+  addIcon(map, 'hs-anom-drop', 18, ctx => badge(ctx, DROP_COLOR, false))
 }
 
 /** Reports arrive already rounded to a map cell, so reports in one cell share a point. */
@@ -840,6 +1155,9 @@ function LayerToggles({ layers, onChange, base, onBase }: {
 }) {
   const rows: Array<[LayerKey, string]> = [
     ['zones', 'Season zones'],
+    ['flow', 'Migration status and flyway flow'],
+    ['pressure', 'Migration pressure (weather push)'],
+    ['spikes', 'Count spikes and drops'],
     ['sites', 'Survey sites'],
     ['hotspots', 'eBird hotspots (last 14 days)'],
     ['ebird', 'eBird areas HuntStack watches'],
@@ -889,6 +1207,40 @@ function Legend() {
         {row(swatch(t.special, 0.6), 'Special season only (teal, youth, veterans, falconry)')}
         {row(swatch(t.closed, 0.35), 'Closed')}
         {row(<span className="inline-block w-4 h-4 rounded-sm border-2 border-dashed shrink-0" style={{ borderColor: 'rgb(var(--color-text-tertiary))' }} />, 'Zone outline only: no season dates in HuntStack yet')}
+        <li className="text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
+          <span className="flex items-center gap-2.5">
+            <span className="flex gap-0.5 shrink-0">
+              {(['arriving', 'building', 'peak', 'declining', 'departing'] as const).map(s => (
+                <span key={s} className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: STATUS_HEX[s] }} />
+              ))}
+            </span>
+            State's migration status
+          </span>
+          <span className="block mt-0.5 ml-0.5 text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
+            Arriving, building, peak, declining, departing (gray: no current survey)
+          </span>
+        </li>
+        {row(
+          <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0" aria-hidden="true">
+            <line x1="1" y1="8" x2="10" y2="8" stroke={FLOW_COLOR.south} strokeWidth="2.5" strokeLinecap="round" />
+            <path d="M15 8 L9 3.5 L9 12.5 Z" fill={FLOW_COLOR.south} />
+          </svg>,
+          'Flyway flow: green south, blue north, gold both ways',
+        )}
+        {row(
+          <svg width="16" height="16" viewBox="0 0 24 24" className="shrink-0" aria-hidden="true">
+            <circle cx="12" cy="12" r="11" fill={PUSH_COLOR[2]} />
+            <path d="M6 8 H15 M5 12 H18 M7 16 H14" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+          </svg>,
+          'Migration pressure: gray calm, then gold, orange, red',
+        )}
+        {row(
+          <span className="flex gap-0.5 shrink-0">
+            <svg width="14" height="14" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="8.5" fill={SPIKE_COLOR} /><path d="M9 13 V5 M6 8 L9 5 L12 8" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <svg width="14" height="14" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="8.5" fill={DROP_COLOR} /><path d="M9 5 V13 M6 10 L9 13 L12 10" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </span>,
+          'Count spike (up 30%+) or drop (down 40%+) at a survey site',
+        )}
         {row(<span className="inline-block w-4 h-4 rounded-full shrink-0 bg-earth-900 dark:bg-earth-100" />, 'Survey site, sized by latest count')}
         {row(<span className="inline-block w-4 h-4 rounded-full shrink-0 border-2 border-earth-500" />, 'Survey site, older survey')}
         {row(<span className="inline-block w-3 h-3 mx-0.5 rounded-full shrink-0" style={{ backgroundColor: EBIRD_COLOR, opacity: 0.75 }} />, 'eBird hotspot, sized by birds reported (birder sightings, not a survey)')}
@@ -1008,6 +1360,195 @@ function ZoneDetails({ zone, seasons, group, day, children }: { zone: ZoneProper
   )
 }
 
+const INDEX_BAR = (score: number) => score >= 76 ? 'bg-red-500' : score >= 51 ? 'bg-orange-400' : score >= 26 ? 'bg-amber-400' : 'bg-earth-400'
+const PUSH_TEXT = [
+  'text-earth-500 dark:text-earth-400',
+  'text-amber-600 dark:text-amber-400',
+  'text-orange-600 dark:text-orange-400',
+  'text-red-600 dark:text-red-400',
+]
+
+/** Which way the arrows mostly point, in the Migration page's words. */
+function flowSummary(legs: FlowLeg[]): { label: string; arrow: string; color: string } {
+  const south = legs.filter(l => l.flow === 'south').length
+  const north = legs.filter(l => l.flow === 'north').length
+  if (south >= 2) return { label: 'Southward movement', arrow: '↓', color: FLOW_COLOR.south }
+  if (north >= 2) return { label: 'Northward movement', arrow: '↑', color: FLOW_COLOR.north }
+  return { label: 'Mixed / stalled', arrow: '↔', color: 'rgb(var(--color-text-tertiary))' }
+}
+
+/** The Migration page's headline numbers (all flyways and species), for the sidebar and the phone panel. */
+function MigrationSummary({ ready, index, pushLevel, pushKnown, legs, spikes, drops }: {
+  ready: boolean
+  index: MigrationIndexResult
+  pushLevel: number
+  pushKnown: boolean
+  legs: FlowLeg[]
+  spikes: number
+  drops: number
+}) {
+  const flow = flowSummary(legs)
+  const label = 'text-xs' as const
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <p className="eyebrow">Migration now</p>
+        <Link to="/migration" className="text-sm font-semibold text-accent-600 dark:text-accent-400 hover:underline underline-offset-4">Details →</Link>
+      </div>
+      {!ready ? (
+        <p className="text-sm" style={{ color: 'rgb(var(--color-text-tertiary))' }}>Loading migration…</p>
+      ) : (
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
+          <div className="col-span-2">
+            <dt className={label} style={{ color: 'rgb(var(--color-text-tertiary))' }}>Migration Index</dt>
+            <dd className="flex items-center gap-3">
+              <span className={`font-mono text-2xl font-medium ${index.labelColor}`}>{index.score}</span>
+              <span className={`text-sm font-semibold ${index.labelColor}`}>{index.label}</span>
+              <span className="flex-1 h-1.5 rounded-sm bg-earth-200 dark:bg-earth-700 overflow-hidden" aria-hidden="true">
+                <span className={`block h-full rounded-sm ${INDEX_BAR(index.score)}`} style={{ width: `${index.score}%` }} />
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt className={label} style={{ color: 'rgb(var(--color-text-tertiary))' }}>Pressure</dt>
+            <dd className={`text-sm font-semibold ${PUSH_TEXT[pushLevel]}`}>
+              {pushKnown ? `${PUSH_SCORE_LABELS[pushLevel]}${pushLevel === 0 ? ', calm' : ''}` : 'Not available'}
+            </dd>
+          </div>
+          <div>
+            <dt className={label} style={{ color: 'rgb(var(--color-text-tertiary))' }}>Flyway flow</dt>
+            <dd className="text-sm font-semibold" style={{ color: 'rgb(var(--color-text-primary))' }}>
+              <span className="mr-1" style={{ color: flow.color }} aria-hidden="true">{flow.arrow}</span>{flow.label}
+            </dd>
+          </div>
+          <div className="col-span-2">
+            <dt className={label} style={{ color: 'rgb(var(--color-text-tertiary))' }}>Survey sites with a spike or drop</dt>
+            <dd className="text-sm" style={{ color: 'rgb(var(--color-text-primary))' }}>
+              <span className="font-semibold" style={{ color: SPIKE_COLOR }}>{spikes} spike{spikes === 1 ? '' : 's'}</span>
+              {' · '}
+              <span className="font-semibold" style={{ color: DROP_COLOR }}>{drops} drop{drops === 1 ? '' : 's'}</span>
+            </dd>
+          </div>
+        </dl>
+      )}
+    </div>
+  )
+}
+
+function pushSignals(f: PushFactor): string[] {
+  return [
+    f.coldFrontPresent && 'Cold front present',
+    f.coldFrontIncoming && 'Front incoming (48h)',
+    f.windIsFromNorth && `North winds${f.windDirection ? ` (${f.windDirection})` : ''}`,
+    f.temperature !== null && f.temperature < 32 && 'Sub-freezing',
+  ].filter((s): s is string => !!s)
+}
+
+/** One state's migration: status, index, pressure, flow arrows and spikes, as on the Migration page with that state picked. */
+function StateMigration({ info, compact }: { info: StateMigrationInfo; compact?: boolean }) {
+  const { state, group: g, index, push, regions, legs } = info
+  const name = STATE_NAMES[state] ?? state
+  const nameOf = (code: string) => STATE_NAMES[code] ?? code
+  const status = g && !g.allStale ? g.dominantStatus : null
+  const anomalies = (g?.refuges ?? []).filter(r => r.topAnomaly)
+  const muted = { color: 'rgb(var(--color-text-tertiary))' }
+  const body = { color: 'rgb(var(--color-text-secondary))' }
+  const pushRow = (f: PushFactor, label: string) => {
+    const level = pushLevel(f.pushScore)
+    const signals = pushSignals(f)
+    return (
+      <li key={f.regionId ?? f.stateCode} className="py-2 border-b text-sm" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
+        <div className="flex items-center justify-between gap-3">
+          <span style={{ color: 'rgb(var(--color-text-primary))' }}>{label}</span>
+          <span className={`font-semibold ${PUSH_TEXT[level]}`}>{PUSH_SCORE_LABELS[level]}</span>
+        </div>
+        <div className="mt-0.5 text-xs" style={muted}>
+          {signals.length > 0 ? signals.join(' · ') : 'No push signals'}
+          {f.temperature !== null ? ` · ${f.temperature}°${f.temperatureUnit ?? 'F'}` : ''}
+        </div>
+      </li>
+    )
+  }
+  return (
+    <div className={compact ? 'mt-5 pt-4 border-t' : ''} style={compact ? { borderColor: 'rgb(var(--color-border-primary))' } : undefined}>
+      {compact ? <p className="eyebrow mb-2">Migration in {name}</p> : <Heading eyebrow={`${name} · Migration`} title={name} />}
+      {!g ? (
+        <p className="text-sm mb-3" style={body}>No survey counts or eBird areas for {name} yet.</p>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-sm border text-xs font-semibold uppercase tracking-wide" style={{ borderColor: 'rgb(var(--color-border-primary))', color: 'rgb(var(--color-text-primary))' }}>
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STATUS_HEX[status ?? 'none'] }} />
+              {status ? STATUS_LABELS[status] : 'No current survey'}
+            </span>
+            {index && (
+              <span className={`text-sm font-semibold ${index.labelColor}`}>Index {index.score}/100 · {index.label}</span>
+            )}
+          </div>
+          <p className="text-sm mb-3" style={body}>
+            {g.allStale
+              ? `Newest count: ${oldSurveyLabel(g.latestDate)}. Not current.`
+              : (() => {
+                const places = g.refuges.filter(r => !r.isStale).length
+                return `${fmtNum(g.freshTotalBirds)} birds at ${places} place${places === 1 ? '' : 's'} with current counts (surveys and eBird areas).`
+              })()}
+          </p>
+        </>
+      )}
+
+      {legs.length > 0 && (
+        <>
+          <p className="text-xs font-medium mb-1" style={muted}>Flyway flow</p>
+          <ul className="mb-3 space-y-1 text-sm" style={body}>
+            {legs.map(l => (
+              <li key={`${l.from}-${l.to}`} className="flex items-center gap-2">
+                <span className="font-bold" style={{ color: FLOW_COLOR[l.flow] }} aria-hidden="true">{l.flow === 'south' ? '↓' : l.flow === 'north' ? '↑' : '↕'}</span>
+                {l.flow === 'south' ? `Southward, ${nameOf(l.from)} to ${nameOf(l.to)}`
+                  : l.flow === 'north' ? `Northward, ${nameOf(l.to)} to ${nameOf(l.from)}`
+                    : `Active in both ${nameOf(l.from)} and ${nameOf(l.to)}`}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {(push || regions.length > 0) && (
+        <>
+          <p className="text-xs font-medium mb-1" style={muted}>Migration pressure</p>
+          <ul className="border-t mb-3" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
+            {push && pushRow(push, compact ? 'Statewide' : name)}
+            {regions.map(r => pushRow(r, r.regionName ?? r.regionId ?? name))}
+          </ul>
+        </>
+      )}
+
+      {anomalies.length > 0 && (
+        <>
+          <p className="text-xs font-medium mb-1" style={muted}>Spikes and drops</p>
+          <ul className="border-t mb-3" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
+            {anomalies.slice(0, 6).map(r => {
+              const item = r.items.find(i => i.anomaly === r.topAnomaly)
+              return (
+                <li key={r.refugeId} className="py-2 border-b text-sm flex items-center justify-between gap-3" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
+                  <span style={{ color: 'rgb(var(--color-text-primary))' }}>{r.refugeName}</span>
+                  <span className="font-mono text-xs text-right" style={{ color: r.topAnomaly === 'spike' ? SPIKE_COLOR : DROP_COLOR }}>
+                    {item ? `${item.speciesName} ${item.deltaPercent != null ? formatChange(item.deltaPercent, 0) : ''}` : r.topAnomaly}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+          {anomalies.length > 6 && <p className="text-xs mb-3" style={muted}>And {anomalies.length - 6} more.</p>}
+        </>
+      )}
+
+      <div className="text-sm font-semibold">
+        <Link to={`/migration?state=${state}`} className="text-accent-600 dark:text-accent-400 hover:underline underline-offset-4">Migration in {name} →</Link>
+      </div>
+    </div>
+  )
+}
+
 /** Statewide eBird activity for the chosen birds: places reporting each species and birds reported. */
 function StateEbird({ state, group, rows, covered, loaded }: { state: string; group: BirdGroup; rows: StateSpecies[]; covered: boolean; loaded: boolean }) {
   if (!loaded) return null
@@ -1082,6 +1623,19 @@ function SiteDetails({ site, day, ebird }: { site: Site; day: string; ebird: Cou
       <p className="text-sm mb-4" style={{ color: 'rgb(var(--color-text-secondary))' }}>
         {surveyed}{site.isStale ? ' · not in current totals' : site.changePercent != null ? ' · change since the previous survey' : ''}
       </p>
+      {site.anomaly && (() => {
+        const hits = site.species.filter(c => getAnomaly(c.count, c.deltaPercent, c.previousCount) === site.anomaly)
+        const spike = site.anomaly === 'spike'
+        return (
+          <p className="text-sm mb-4 flex items-start gap-2" style={{ color: 'rgb(var(--color-text-primary))' }}>
+            <span className="mt-0.5 shrink-0 font-bold" style={{ color: spike ? SPIKE_COLOR : DROP_COLOR }} aria-hidden="true">{spike ? '▲' : '▼'}</span>
+            <span>
+              <span className="font-semibold">{spike ? 'Count spike' : 'Count drop'}:</span>{' '}
+              {hits.map(c => `${c.speciesName} ${c.deltaPercent != null ? formatChange(c.deltaPercent, 0) : ''}`).join(', ')}
+            </span>
+          </p>
+        )
+      })()}
       <ul className="border-t" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
         {site.species.slice(0, 8).map(c => (
           <li key={`${c.species}|${c.surveyDate}`} className="py-2 border-b flex items-center justify-between gap-3 text-sm" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
