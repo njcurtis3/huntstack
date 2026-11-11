@@ -117,7 +117,7 @@ export function SettingsPage() {
       {billing === 'success' && (
         <p role="status" className="card p-4 text-sm text-forest-700 dark:text-forest-300">
           {account?.subscription?.active
-            ? 'Thanks for subscribing. You have unlimited AI questions.'
+            ? 'Thanks for subscribing. You have unlimited AI questions and the full map.'
             : 'Thanks for subscribing. Your plan will show as active in a moment.'}
         </p>
       )}
@@ -220,6 +220,7 @@ function PlanSection({ account, onChanged }: { account: Account; onChanged: () =
           <p className="font-semibold text-sm" style={text.primary}>HuntStack Pro, {PRICE}/month</p>
           <ul className="text-sm mt-2 space-y-1" style={text.secondary}>
             <li className="flex gap-2"><Check className="w-4 h-4 text-forest-500 shrink-0 mt-0.5" />Unlimited AI questions</li>
+            <li className="flex gap-2"><Check className="w-4 h-4 text-forest-500 shrink-0 mt-0.5" />The full map, with no daily tap limit</li>
             <li className="flex gap-2"><Check className="w-4 h-4 text-forest-500 shrink-0 mt-0.5" />Cancel any time from this page</li>
           </ul>
           <button onClick={() => go(startCheckout)} disabled={busy} className="btn-primary text-sm mt-4 disabled:opacity-60">

@@ -3,8 +3,11 @@ import type { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
-import { ChevronLeft, ChevronRight, Layers, X, ExternalLink } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Layers, Lock, X, ExternalLink } from 'lucide-react'
 import { api, safeHttpUrl } from '../lib/api'
+import { getAccount, startCheckout } from '../lib/account'
+import { MAP_FREE_TAPS, mapTapsUsed, spendMapTap } from '../lib/mapAllowance'
+import { useAuthStore } from '../stores/authStore'
 import { useThemeStore } from '../stores/themeStore'
 import { oldSurveyLabel, parseCalendarDate } from '../lib/dates'
 import { computeMigrationIndex, formatChange, getAnomaly, headlineStats, staleThresholdFor } from '../lib/migrationStats'
@@ -272,6 +275,33 @@ export default function MapPage() {
   })
   const [selection, setSelection] = useState<Selection | null>(null)
   const [panelOpen, setPanelOpen] = useState(false) // phone: layers and legend
+
+  // Paywall: Pro (and admin) see everything; everyone else gets MAP_FREE_TAPS details a day,
+  // then the map blurs behind the Subscribe card. A signed-in user's plan is unknown until their
+  // account loads, and until then taps are let through uncounted rather than walling a subscriber.
+  const authLoading = useAuthStore(s => s.isLoading)
+  const isAuthenticated = useAuthStore(s => s.isAuthenticated)
+  const userId = useAuthStore(s => s.user?.id ?? null)
+  const accountQ = useQuery({
+    queryKey: ['account', userId],
+    queryFn: getAccount,
+    enabled: isAuthenticated,
+    staleTime: 5 * 60_000,
+    retry: 1,
+  })
+  const account = accountQ.data
+  const unlimited = !!account && (account.usage.plan === 'pro' || account.usage.plan === 'admin' || !!account.subscription?.active)
+  const planKnown = !authLoading && (!isAuthenticated || accountQ.isSuccess || accountQ.isError)
+  const metered = planKnown && !unlimited
+  const [tapsUsed, setTapsUsed] = useState(mapTapsUsed)
+  const [wallHit, setWallHit] = useState(() => mapTapsUsed() >= MAP_FREE_TAPS)
+  const walled = metered && wallHit
+  const gateRef = useRef({ metered, walled, selectionId: '' })
+  gateRef.current = { metered, walled, selectionId: selection ? `${selection.kind}:${selection.id}` : '' }
+  useEffect(() => { if (walled) { setSelection(null); setPanelOpen(false) } }, [walled])
+  const pageRef = useRef<HTMLDivElement>(null)
+  // Nothing behind the wall can be reached by keyboard or a screen reader either
+  useEffect(() => { pageRef.current?.toggleAttribute('inert', walled) }, [walled])
 
   const zonesQ = useZones()
   const year = seasonYearOf(day)
@@ -727,7 +757,19 @@ export default function MapPage() {
         if (!map.getLayer(layer) || map.getLayoutProperty(layer, 'visibility') === 'none') continue
         const hit = map.queryRenderedFeatures(kind === 'zone' ? e.point : box(kind === 'hotspot' ? 2 : 6), { layers: [layer] })[0]
         if (hit) {
-          setSelection({ kind, id: String(hit.properties?.id) } as Selection)
+          const id = String(hit.properties?.id)
+          const gate = gateRef.current
+          if (gate.walled) return
+          // Tapping the thing already open is not a new tap
+          if (gate.metered && gate.selectionId !== `${kind}:${id}`) {
+            const spent = spendMapTap()
+            setTapsUsed(spent.used)
+            if (!spent.allowed) {
+              setWallHit(true)
+              return
+            }
+          }
+          setSelection({ kind, id } as Selection)
           setPanelOpen(false)
           return
         }
@@ -798,8 +840,16 @@ export default function MapPage() {
     drops: stateGroups.flatMap(g => g.refuges).filter(r => r.topAnomaly === 'drop').length,
   }
 
+  const tapsLeft = metered ? <TapsLeft used={tapsUsed} signedIn={isAuthenticated} /> : null
+
   return (
-    <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+    <div className="relative flex-1 min-h-0 flex flex-col">
+    <div
+      ref={pageRef}
+      className={`flex-1 min-h-0 flex flex-col md:flex-row ${walled ? 'pointer-events-none select-none' : ''}`}
+      style={walled ? { filter: 'blur(6px)' } : undefined}
+      aria-hidden={walled || undefined}
+    >
       {/* Desktop sidebar */}
       <aside
         className="hidden md:flex md:w-80 lg:w-[22rem] shrink-0 flex-col border-r overflow-y-auto"
@@ -819,7 +869,7 @@ export default function MapPage() {
         </div>
         {details && (
           <div className="border-b" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
-            <DetailsFrame onClose={() => setSelection(null)}>{details}</DetailsFrame>
+            <DetailsFrame onClose={() => setSelection(null)} footer={tapsLeft}>{details}</DetailsFrame>
           </div>
         )}
         <div className="p-5 border-b" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
@@ -889,10 +939,12 @@ export default function MapPage() {
             className="md:hidden absolute inset-x-0 bottom-0 z-20 max-h-[55%] overflow-y-auto border-t rounded-t-md shadow-2xl"
             style={{ backgroundColor: 'rgb(var(--color-bg-primary))', borderColor: 'rgb(var(--color-border-primary))', paddingBottom: 'env(safe-area-inset-bottom)' }}
           >
-            <DetailsFrame onClose={() => setSelection(null)}>{details}</DetailsFrame>
+            <DetailsFrame onClose={() => setSelection(null)} footer={tapsLeft}>{details}</DetailsFrame>
           </div>
         )}
       </div>
+    </div>
+    {walled && <MapPaywall signedIn={isAuthenticated} billingAvailable={account?.billingAvailable ?? true} />}
     </div>
   )
 }
@@ -1263,7 +1315,7 @@ function Note() {
 
 // ---------- details ----------
 
-function DetailsFrame({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+function DetailsFrame({ children, onClose, footer }: { children: ReactNode; onClose: () => void; footer?: ReactNode }) {
   return (
     <div className="relative p-5">
       <button
@@ -1276,6 +1328,71 @@ function DetailsFrame({ children, onClose }: { children: ReactNode; onClose: () 
         <X className="w-5 h-5" />
       </button>
       {children}
+      {footer}
+    </div>
+  )
+}
+
+/** Under a detail, for visitors and free accounts: how many free taps are left today */
+function TapsLeft({ used, signedIn }: { used: number; signedIn: boolean }) {
+  const left = Math.max(0, MAP_FREE_TAPS - used)
+  return (
+    <p className="mt-4 pt-3 border-t text-xs" style={{ borderColor: 'rgb(var(--color-border-primary))', color: 'rgb(var(--color-text-tertiary))' }}>
+      {left} of {MAP_FREE_TAPS} free map taps left today.{' '}
+      <Link to="/settings" className="font-semibold text-accent-600 dark:text-accent-400 hover:underline underline-offset-4">
+        {signedIn ? 'Go Pro' : 'Sign up for Pro'}
+      </Link>{' '}
+      for the full map.
+    </p>
+  )
+}
+
+/** Over the blurred map once today's free taps are used */
+function MapPaywall({ signedIn, billingAvailable }: { signedIn: boolean; billingAvailable: boolean }) {
+  const promptAuth = useAuthStore(s => s.promptAuth)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const subscribe = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const { url } = await startCheckout()
+      window.location.assign(url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center p-4" style={{ backgroundColor: 'rgb(var(--color-bg-primary) / 0.35)' }}>
+      <div role="dialog" aria-modal="true" aria-labelledby="map-wall-title" className="card w-full max-w-sm p-6 shadow-2xl text-center">
+        <Lock className="w-8 h-8 mx-auto mb-3 text-accent-500" />
+        <h2 id="map-wall-title" className="text-lg font-semibold tracking-tight" style={{ color: 'rgb(var(--color-text-primary))' }}>
+          You've used today's free map taps
+        </h2>
+        <p className="mt-2 text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
+          The map opens {MAP_FREE_TAPS} details a day for free. HuntStack Pro unlocks the full map, plus unlimited AI questions, for $5.99/month.
+        </p>
+        {signedIn ? (
+          billingAvailable ? (
+            <button type="button" onClick={subscribe} disabled={busy} className="btn-primary w-full mt-5 disabled:opacity-60">
+              {busy ? 'Opening checkout…' : 'Subscribe for $5.99/month'}
+            </button>
+          ) : (
+            <p className="mt-5 text-sm" style={{ color: 'rgb(var(--color-text-tertiary))' }}>Subscriptions are coming soon.</p>
+          )
+        ) : (
+          <div className="mt-5 space-y-2">
+            <button type="button" onClick={() => promptAuth('signup')} className="btn-primary w-full">Create free account to subscribe</button>
+            <button type="button" onClick={() => promptAuth('signin')} className="btn-outline w-full">Sign in</button>
+          </div>
+        )}
+        {error && <p role="alert" className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>}
+        <p className="mt-4 text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
+          Free taps come back tomorrow. Migration counts stay free on the{' '}
+          <Link to="/migration" className="text-accent-600 dark:text-accent-400 hover:underline underline-offset-4">Migration page</Link>.
+        </p>
+      </div>
     </div>
   )
 }
