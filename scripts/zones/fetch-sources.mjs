@@ -83,7 +83,23 @@ const legs = [
   ['ia-i29', I('29'), [-96.7, 40.5, -95.7, 42.6]],
   ['ia-us20', U('20'), [-96.6, 42.2, -90.5, 42.6]],
   ['ia-92', S('92'), [-96.1, 41.0, -90.9, 41.5]],
+  // Oklahoma Low Plains Zone 1/2 line: Texas border east to the Kansas border
+  ['ok-33w', S('33'), [-100.1, 35.5, -99.2, 36.0]],
+  ['ok-47', S('47'), [-100.1, 35.5, -98.8, 36.0]],
+  ['ok-us183', U('183'), [-99.3, 35.4, -98.8, 36.0]],
+  ['ok-i40', I('40'), [-99.1, 35.2, -96.8, 35.7]],
+  ['ok-us177', U('177'), [-97.1, 35.3, -96.8, 36.1]],
+  ['ok-33e', S('33'), [-97.2, 35.85, -96.6, 36.1]],
+  ['ok-18', S('18'), [-96.9, 35.9, -96.6, 36.3]],
+  ['ok-51', S('51'), [-97.5, 36.0, -96.6, 36.3]],
+  ['ok-i35', I('35'), [-97.5, 36.0, -97.1, 36.5]],
+  ['ok-us412', U('412'), [-98.3, 36.2, -97.2, 36.5]],
+  ['ok-132', S('132'), [-98.3, 36.2, -97.7, 37.05]],
 ]
+
+// ONLY=<prefix> fetches just the road legs whose key starts with it (e.g. ONLY=ok-), so adding one
+// state's line doesn't re-download, and possibly change, every other state's sources.
+const ONLY = process.env.ONLY
 
 async function query(url, where, bbox, offset = '0.002') {
   const p = new URLSearchParams({
@@ -104,12 +120,14 @@ async function query(url, where, bbox, offset = '0.002') {
 }
 
 for (const [name, url, where, bbox, offset] of layers) {
+  if (ONLY) continue
   const j = await query(url, where, bbox, offset)
   fs.writeFileSync(path.join(CACHE, `${name}.json`), JSON.stringify(j))
   console.log(name.padEnd(10), j.features.length, 'features')
 }
 
 for (const [key, rttyp, base, bbox] of routes) {
+  if (ONLY && !key.startsWith(ONLY)) continue
   const features = []
   for (const layer of [2, 6]) { // primary roads, and secondary roads at the most detailed scale
     const j = await query(`${TIGER}/Transportation/MapServer/${layer}`, `RTTYP='${rttyp}' AND BASENAME='${base}'`, bbox, '')
@@ -120,6 +138,7 @@ for (const [key, rttyp, base, bbox] of routes) {
 }
 
 for (const [key, where, bbox] of legs) {
+  if (ONLY && !key.startsWith(ONLY)) continue
   const features = []
   for (const layer of [2, 6, 8]) {
     const j = await query(`${TIGER}/Transportation/MapServer/${layer}`, where, bbox, '')

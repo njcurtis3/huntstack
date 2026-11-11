@@ -183,9 +183,13 @@ const lines = {} // for the preview: every line drawn by route()
   }
 }
 
-// Oklahoma: High Plains = Beaver, Cimarron and Texas counties (MGBH memo 2026-01).
+// Oklahoma (MGBH memo 2026-01). High Plains = Beaver, Cimarron and Texas counties. Low Plains
+// Zone 1 is north of a line from the Texas border along OK 33, OK 47, US 183, I-40, US 177, OK 33,
+// OK 18, OK 51, I-35, US 412 and OK 132 to Kansas; Zone 2 is the rest. Geese are statewide. ODWC
+// gave Zones 1 and 2 the same dates for 2026-27, so their season rows say "Zones 1 and 2" and
+// both pieces carry that name as well as their own.
 {
-  // Built from counties on both sides, so the shared line is the same line in both pieces.
+  // Built from counties on both sides, so the Panhandle line is the same line in both pieces.
   const names = ['Beaver County', 'Cimarron County', 'Texas County']
   const okCounties = counties.features.filter((c) => c.properties.STATE === '40')
   const panhandle = union(okCounties.filter((c) => names.includes(c.properties.NAME)))
@@ -193,8 +197,37 @@ const lines = {} // for the preview: every line drawn by route()
   add('OK', 'OK-Panhandle', panhandle, {
     duckZone: 'Panhandle Counties', gooseZone: 'Statewide', units: ['Panhandle Counties'], source: 'Census counties',
   })
-  add('OK', 'OK-Zones1and2', rest, {
-    duckZone: 'Zones 1 and 2', gooseZone: 'Statewide', units: ['Zones 1 and 2'], source: 'Census counties',
+
+  // Main routes only: the Census layers also return OK 47 Alt and the OK 33 Cushing bypass
+  const main = (key) => {
+    const fc = read(`roads-${key}.json`)
+    return fc.features
+      .filter((f) => !/Alt|Byp|Bus|Old/.test(f.properties.NAME))
+      .flatMap((f) => (f.geometry.type === 'LineString' ? [f.geometry.coordinates] : f.geometry.coordinates))
+      .filter((l) => l.length > 1)
+  }
+  const keys = ['ok-33w', 'ok-47', 'ok-us183', 'ok-i40', 'ok-us177', 'ok-33e', 'ok-18', 'ok-51', 'ok-i35', 'ok-us412', 'ok-132']
+  const sets = keys.map(main)
+  // OK 33 where it crosses the Texas border (100th meridian), and OK 132 at the Kansas border
+  const start = sets[0].flat().reduce((a, b) => (Math.abs(b[0] + 100) < Math.abs(a[0] + 100) ? b : a))
+  const end = extreme(sets[sets.length - 1], (p) => p[1])
+  const stops = [start]
+  for (let i = 0; i < sets.length - 1; i++) stops.push(junction(sets[i], sets[i + 1]))
+  stops.push(end)
+  const line = [
+    [start[0] - 0.3, start[1]],
+    ...sets.flatMap((s, i) => walk(s, stops[i], stops[i + 1])),
+    [end[0], end[1] + 0.3],
+  ]
+  lines.ok = line
+  const north = sidePolygon(line, [[end[0], 37.4], [start[0] - 0.3, 37.4]])
+  const zone1 = intersect(rest, north)
+  const src = 'Census roads (OK 33, OK 47, US 183, I-40, US 177, OK 18, OK 51, I-35, US 412, OK 132)'
+  add('OK', 'OK-Zone1', zone1, {
+    duckZone: 'Low Plains Zone 1', gooseZone: 'Statewide', units: ['Zones 1 and 2', 'Zone 1', 'Low Plains Zone 1'], source: src,
+  })
+  add('OK', 'OK-Zone2', minus(rest, zone1), {
+    duckZone: 'Low Plains Zone 2', gooseZone: 'Statewide', units: ['Zones 1 and 2', 'Zone 2', 'Low Plains Zone 2'], source: src,
   })
 }
 

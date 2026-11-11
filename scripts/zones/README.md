@@ -10,7 +10,7 @@ the list for the birds being shown.
 ```bash
 cd scripts/zones
 npm install              # @turf/turf only; this folder is not in the pnpm workspace
-node fetch-sources.mjs   # downloads into .cache/ (gitignored)
+node fetch-sources.mjs   # downloads into .cache/ (gitignored); ONLY=ok- fetches just the road legs starting "ok-"
 node build-zones.mjs     # writes apps/web/public/data/waterfowl-zones-2026.json
 ```
 
@@ -20,10 +20,10 @@ node build-zones.mjs     # writes apps/web/public/data/waterfowl-zones-2026.json
 |---|---|---|
 | TX | Duck: HPMMU, North, South. Goose: Eastern, Western | TPWD's own `Duck_Zones` and `Goose_Zones` ArcGIS layers, intersected |
 | KS | High Plains, Low Plains Early, Late, Southeast (geese statewide) | KDWP's `Waterfowl_Zones` ArcGIS layer (updated Sept 2026) |
-| OK | Panhandle (Beaver, Cimarron, Texas counties), Zones 1 and 2 | Census counties |
+| OK | High Plains (Beaver, Cimarron, Texas counties), Low Plains Zone 1, Low Plains Zone 2 (geese statewide) | Census counties; the Zone 1/2 line is Census roads: OK 33, OK 47, US 183, I-40, US 177, OK 33, OK 18, OK 51, I-35, US 412, OK 132. Zones 1 and 2 share dates in 2026-27, so both pieces also carry "Zones 1 and 2" |
 | NM | Central and Pacific Flyway portions, North and South zones, MRGV | USFWS flyway boundary layer (Continental Divide); I-40 from Arizona to Tucumcari, then US 54 to Texas (Census roads); MRGV = Valencia, Socorro and Sierra counties |
 | LA | East and West | US 79 from Arkansas to LA 9, LA 9 to LA 147, LA 147 to US 167, US 167 to US 90 (on I-49 from Opelousas to Lafayette), US 90 to Mississippi (Census roads) |
-| AR | Statewide | Census state outline |
+| AR | Statewide | Census state outline. The 2026 memo allows a Northwest goose zone (22 counties), but AGFC's 2026-27 seasons are all statewide, so it isn't drawn |
 | MO | North, Middle, South (geese the same) | MDC's `Hunting_Zones` layer. Its description still says 2021-25, but its North line is the 2026 one; the build also draws that line from Census roads and stops if the two differ by more than 200 km² |
 | IL | Duck: North, Central, South. Goose: North (I-80 line), Central, South | Census roads, including the local roads the memo names (Peotone-Beecher, Wilmington-Peotone, New River, Pine Bluff-Lorenzo, St. Leo's, Modoc, Modoc Ferry, Levee roads, County Route 12) |
 | IA | North, Central, South (geese the same) | Census I-29, US 20 and IA 92. South is everything west of I-29 below Sioux City plus everything south of IA 92 (Iowa DNR map book: "all areas west of I-29 and south of Highway 92") |
