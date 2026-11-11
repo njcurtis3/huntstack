@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { assignSharedReports, EBIRD_PAUSE_MS, EBIRD_SPECIES_CODES, ebirdGet, ebirdPaused, publicPlaceName, resetEBirdPause, summarizeSpeciesReports } from './ebird.js'
+import { assignSharedReports, EBIRD_PAUSE_MS, EBIRD_SPECIES_CODES, ebirdGet, ebirdPaused, packHotspots, publicPlaceName, resetEBirdPause, summarizeHotspots, summarizeSpeciesReports } from './ebird.js'
 import type { EBirdCount } from './ebird.js'
 
 // Taken from eBird's /ref/taxonomy/ebird on 2026-10-27. Codes that aren't real eBird
@@ -43,6 +43,38 @@ describe('summarizeSpeciesReports', () => {
 
   it('skips species outside the waterfowl list', () => {
     expect(summarizeSpeciesReports([{ state: 'TX', obs: [obs('amerob', 'Park', 3)] }])).toEqual([])
+  })
+})
+
+describe('summarizeHotspots', () => {
+  const obs = (speciesCode: string, locId: string, howMany: number | null, extra: Record<string, unknown> = {}) =>
+    ({ speciesCode, comName: '', howMany, obsDt: '2026-11-08 07:30', locId, locName: `Place ${locId}`, obsValid: true, locationPrivate: false, lat: 34.123456, lng: -91.654321, ...extra })
+
+  it('groups species by place, largest report first, and keeps uncounted sightings last', () => {
+    const [p] = summarizeHotspots([
+      { state: 'AR', obs: [obs('mallar3', 'L1', 40), obs('snogoo', 'L1', 200), obs('y00469', 'L1', 350), obs('gadwal', 'L1', null)] },
+    ])
+    expect(p).toMatchObject({ id: 'L1', state: 'AR', lat: 34.1235, lng: -91.6543 })
+    expect(p.species.map(s => [s.slug, s.count])).toEqual([['snow-goose', 350], ['mallard', 40], ['gadwall', null]])
+  })
+
+  it('packs species as indexes and dates as days after the first', () => {
+    const packed = packHotspots(summarizeHotspots([
+      { state: 'AR', obs: [obs('mallar3', 'L1', 40), obs('snogoo', 'L1', 200, { obsDt: '2026-11-10 07:00' }), obs('gadwal', 'L2', null, { obsDt: '2026-10-28 16:00' })] },
+    ]))
+    expect(packed.species).toEqual(['gadwall', 'mallard', 'snow-goose'])
+    expect(packed.speciesNames).toEqual(['Gadwall', 'Mallard', 'Snow Goose'])
+    expect(packed.firstDay).toBe('2026-10-28')
+    expect(packed.places.map(p => [p.id, p.r])).toEqual([['L1', [[2, 200, 13], [1, 40, 11]]], ['L2', [[0, null, 0]]]])
+  })
+
+  it('leaves out personal locations, places without coordinates, flagged reports and other birds', () => {
+    expect(summarizeHotspots([{ state: 'TX', obs: [
+      obs('mallar3', 'L2', 12, { locationPrivate: true }),
+      obs('mallar3', 'L3', 12, { lat: undefined, lng: undefined }),
+      obs('mallar3', 'L4', 12, { obsValid: false }),
+      obs('amerob', 'L5', 3),
+    ] }])).toEqual([])
   })
 })
 

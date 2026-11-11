@@ -376,7 +376,9 @@ function codesFor(slug: string): string[] {
 }
 
 async function fetchSpeciesObs(apiKey: string, state: string, code: string, daysBack: number, fresh = false): Promise<EBirdObservation[]> {
-  const key = `ebird:sp:US-${state}:${code}:${daysBack}d`
+  // sp2: answers saved since hotspots' coordinates were kept (2026-11-11, for the Map page);
+  // the older sp: answers have none
+  const key = `ebird:sp2:US-${state}:${code}:${daysBack}d`
   if (!fresh) {
     const cached = speciesCache.get(key)
     if (cached) return cached
@@ -412,7 +414,8 @@ async function requestSpeciesObs(apiKey: string, state: string, code: string, da
     speciesCache.set(key, [], untilPauseEnds())
     return []
   }
-  // Only the fields used here; personal locations' coordinates are not kept
+  // Only the fields used here. Coordinates are kept for public hotspots only (the Map page draws
+  // them); a personal location's (often someone's home) are not kept
   const obs: EBirdObservation[] = ((await resp.json()) as EBirdObservation[]).map(o => ({
     speciesCode: o.speciesCode,
     comName: o.comName,
@@ -422,6 +425,7 @@ async function requestSpeciesObs(apiKey: string, state: string, code: string, da
     locName: o.locName,
     obsValid: o.obsValid,
     locationPrivate: o.locationPrivate,
+    ...(o.locationPrivate !== false || typeof o.lat !== 'number' || typeof o.lng !== 'number' ? {} : { lat: o.lat, lng: o.lng }),
   }))
   speciesCache.set(key, obs, SPECIES_TTL)
   save(key, obs)
@@ -489,12 +493,12 @@ export function reportCodes(speciesSlugs: string[]): string[] {
   return speciesSlugs.flatMap(s => (speciesSlugs.length <= 2 ? codesFor(s) : codesFor(s).slice(0, 1)))
 }
 
-export async function getEBirdSpeciesReports(
+async function fetchStateObs(
   stateCodes: string[],
   speciesSlugs: string[],
-  daysBack = 14,
-  options: { fresh?: boolean } = {},
-): Promise<EBirdSpeciesReport[]> {
+  daysBack: number,
+  options: { fresh?: boolean },
+): Promise<Array<{ state: string; obs: EBirdObservation[] }>> {
   const apiKey = process.env.EBIRD_API_KEY
   if (!apiKey || stateCodes.length === 0 || speciesSlugs.length === 0) return []
   const codes = reportCodes(speciesSlugs)
@@ -508,5 +512,88 @@ export async function getEBirdSpeciesReports(
     })))
     rows.push(...batch)
   }
-  return summarizeSpeciesReports(rows)
+  return rows
+}
+
+export async function getEBirdSpeciesReports(
+  stateCodes: string[],
+  speciesSlugs: string[],
+  daysBack = 14,
+  options: { fresh?: boolean } = {},
+): Promise<EBirdSpeciesReport[]> {
+  return summarizeSpeciesReports(await fetchStateObs(stateCodes, speciesSlugs, daysBack, options))
+}
+
+// ─── Hotspots (Map page) ─────────────────────────────────────────────────────
+// The same per-species state answers, grouped by place: every public eBird hotspot with a duck
+// or goose report in the window, and each species' latest report there. Personal locations are
+// left out (their coordinates are never kept).
+
+export interface EBirdHotspot {
+  /** eBird location id (L...); its page is ebird.org/hotspot/{id} */
+  id: string
+  name: string
+  state: string
+  lat: number
+  lng: number
+  /** Latest report per species, largest first. count null = seen, not counted */
+  species: Array<{ slug: string; name: string; count: number | null; date: string }>
+}
+
+export function summarizeHotspots(rows: Array<{ state: string; obs: EBirdObservation[] }>): EBirdHotspot[] {
+  const places = new Map<string, { place: EBirdHotspot; bySlug: Map<string, EBirdHotspot['species'][number]> }>()
+  for (const { state, obs } of rows) {
+    for (const o of obs) {
+      const mapped = EBIRD_SPECIES[o.speciesCode]
+      if (!mapped || !o.locId || o.locationPrivate !== false || o.obsValid === false) continue
+      if (typeof o.lat !== 'number' || typeof o.lng !== 'number') continue
+      let entry = places.get(o.locId)
+      if (!entry) {
+        entry = {
+          place: { id: o.locId, name: o.locName, state, lat: Math.round(o.lat * 1e4) / 1e4, lng: Math.round(o.lng * 1e4) / 1e4, species: [] },
+          bySlug: new Map(),
+        }
+        places.set(o.locId, entry)
+      }
+      const count = typeof o.howMany === 'number' ? o.howMany : null
+      const date = o.obsDt.substring(0, 10)
+      const best = entry.bySlug.get(mapped.slug)
+      // Several codes can map to one species (Snow Goose, Snow/Ross's): keep the largest report
+      if (!best || (count ?? -1) > (best.count ?? -1)) entry.bySlug.set(mapped.slug, { slug: mapped.slug, name: mapped.name, count, date })
+    }
+  }
+  return [...places.values()].map(({ place, bySlug }) => ({
+    ...place,
+    species: [...bySlug.values()].sort((a, b) => (b.count ?? -1) - (a.count ?? -1) || a.name.localeCompare(b.name)),
+  }))
+}
+
+/**
+ * Hotspots in a compact form for the map (2,300 places and 7,000 reports were 860 KB as plain
+ * objects): species as an index into `species`, dates as days after `firstDay`. Each place's
+ * reports are [species index, count or null, day].
+ */
+export function packHotspots(places: EBirdHotspot[]) {
+  const slugs = [...new Set(places.flatMap(p => p.species.map(s => s.slug)))].sort()
+  const index = new Map(slugs.map((s, i) => [s, i]))
+  const names = Object.fromEntries(places.flatMap(p => p.species.map(s => [s.slug, s.name])))
+  const days = places.flatMap(p => p.species.map(s => s.date)).sort()
+  const firstDay = days[0] ?? new Date().toISOString().slice(0, 10)
+  const dayNum = (d: string) => Math.round((Date.parse(`${d}T00:00:00Z`) - Date.parse(`${firstDay}T00:00:00Z`)) / 86_400_000)
+  return {
+    species: slugs,
+    speciesNames: slugs.map(s => names[s]),
+    firstDay,
+    places: places.map(p => ({
+      id: p.id,
+      n: p.name,
+      st: p.state,
+      c: [p.lng, p.lat] as [number, number],
+      r: p.species.map(s => [index.get(s.slug)!, s.count, dayNum(s.date)] as [number, number | null, number]),
+    })),
+  }
+}
+
+export async function getEBirdHotspots(stateCodes: string[], daysBack = 14): Promise<EBirdHotspot[]> {
+  return summarizeHotspots(await fetchStateObs(stateCodes, ALL_REPORT_SPECIES, daysBack, {}))
 }

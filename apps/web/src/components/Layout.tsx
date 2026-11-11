@@ -12,6 +12,7 @@ import {
   Crosshair,
   AlertCircle,
   Settings,
+  Map as MapIcon,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useThemeStore } from '../stores/themeStore'
@@ -26,10 +27,10 @@ const primaryNav = [
   { name: 'Where to Hunt', href: '/where-to-hunt', icon: Crosshair },
   { name: 'Migration', href: '/migration', icon: Bird },
   { name: 'Regulations', href: '/regulations', icon: FileText },
+  { name: 'Map', href: '/map', icon: MapIcon },
   { name: 'Ask AI', href: '/chat', icon: MessageSquare },
 ]
 
-// The Map page is a "coming soon" placeholder: reachable by URL, not linked until it's built
 const secondaryNav = [
   { name: 'Outfitters', href: '/outfitters', icon: Users },
 ]
@@ -83,8 +84,8 @@ export function Layout() {
   // Set when a signed-out user taps Report birds: the sheet opens once sign-in lands.
   const [reportPending, setReportPending] = useState(false)
   const showReport = reportRoutes.includes(location.pathname.replace(/\/+$/, ''))
-  // Chat fills the screen under the header and scrolls inside itself, with no footer below
-  const fullHeight = location.pathname.startsWith('/chat')
+  // Chat and the map fill the screen under the header, with no footer below
+  const fullHeight = location.pathname.startsWith('/chat') || location.pathname.startsWith('/map')
 
   useEffect(() => {
     initialize()
@@ -183,7 +184,7 @@ export function Layout() {
             </Link>
 
             {/* Desktop Navigation */}
-            <nav className="hidden md:flex items-center gap-6 flex-1 self-stretch">
+            <nav className="hidden lg:flex items-center gap-6 flex-1 self-stretch">
               {/* Primary nav — the planning tools */}
               {primaryNav.map((item) => {
                 const isActive = location.pathname === item.href ||
@@ -229,7 +230,7 @@ export function Layout() {
             </nav>
 
             {/* Auth Buttons + Theme Toggle */}
-            <div className="hidden md:flex items-center gap-2">
+            <div className="hidden lg:flex items-center gap-2">
               <button
                 onClick={toggleTheme}
                 className="w-9 h-9 grid place-items-center rounded-md border border-[#26292d] dark:border-[#24272b] text-[#a7adb4] hover:text-white hover:border-[#4a4f55] transition-colors"
@@ -274,7 +275,7 @@ export function Layout() {
             </div>
 
             {/* Mobile menu button */}
-            <div className="md:hidden flex items-center gap-2">
+            <div className="lg:hidden flex items-center gap-2">
               <button
                 onClick={toggleTheme}
                 className="w-10 h-10 grid place-items-center rounded-md border border-[#26292d] dark:border-[#24272b] text-[#a7adb4] hover:text-white transition-colors"
@@ -307,7 +308,7 @@ export function Layout() {
         {mobileMenuOpen && (
           <div
             id="mobile-menu"
-            className="md:hidden border-t"
+            className="lg:hidden border-t"
             style={{
               backgroundColor: `rgb(var(--color-header-bg))`,
               borderColor: `rgb(var(--color-header-border))`,
@@ -432,7 +433,7 @@ export function Layout() {
 
       {/* Main Content */}
       {/* On phones, room at the bottom so the Report birds button never covers the last content */}
-      <main className={`flex-1 ${fullHeight ? 'min-h-0 flex flex-col' : ''} ${showReport ? 'pb-20 md:pb-0' : ''}`}>
+      <main className={`flex-1 ${fullHeight ? 'min-h-0 flex flex-col' : ''} ${showReport ? 'pb-20 lg:pb-0' : ''}`}>
         <Outlet />
       </main>
 
@@ -489,7 +490,7 @@ export function Layout() {
         <button
           onClick={openReport}
           data-report-trigger
-          className="md:hidden fixed right-4 z-40 flex items-center gap-2 px-4 min-h-12 rounded-md shadow-lg text-white text-base font-semibold"
+          className="lg:hidden fixed right-4 z-40 flex items-center gap-2 px-4 min-h-12 rounded-md shadow-lg text-white text-base font-semibold"
           style={{
             backgroundColor: 'rgb(var(--color-accent))',
             bottom: 'calc(1rem + env(safe-area-inset-bottom))',

@@ -735,6 +735,35 @@ class ApiClient {
     }>('/api/migration/regional-activity', { params: options })
   }
 
+  /** Map page: every public eBird hotspot with a duck or goose report in the last 14 days,
+   *  and each state's eBird activity per species */
+  async getEbirdMap() {
+    return this.request<{
+      states: string[]
+      days: number
+      /** Packed (see packHotspots in the API's lib/ebird.ts): each place's reports are
+       *  [index into species, count or null = seen not counted, days after firstDay] */
+      hotspots: {
+        species: string[]
+        speciesNames: string[]
+        firstDay: string
+        places: Array<{ id: string; n: string; st: string; c: [number, number]; r: Array<[number, number | null, number]> }>
+      }
+      stateSpecies: Array<{
+        state: string
+        species: string
+        speciesName: string
+        places: number
+        birds: number
+        deltaPercent: number | null
+        trend: 'increasing' | 'decreasing' | 'stable' | 'new'
+        topPlaces: Array<{ name: string; count: number; date: string }>
+      }>
+      fetchedAt: string
+      attribution: string
+    }>('/api/migration/ebird-map')
+  }
+
   // Hunt Recommendations
   async getHuntRecommendations(options?: {
     species?: string

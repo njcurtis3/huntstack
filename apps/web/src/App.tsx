@@ -1,9 +1,8 @@
-import { Component, type ReactNode, type ErrorInfo } from 'react'
+import { Component, Suspense, lazy, type ReactNode, type ErrorInfo } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import * as Sentry from '@sentry/react'
 import { Layout } from './components/Layout'
 import { HomePage } from './pages/HomePage'
-import { MapPage } from './pages/MapPage'
 import { RegulationsPage } from './pages/RegulationsPage'
 import { OutfittersPage } from './pages/OutfittersPage'
 import { MigrationPage } from './pages/MigrationPage'
@@ -23,6 +22,9 @@ import { BlogPage } from './pages/BlogPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { AdminPage } from './pages/AdminPage'
 import { SettingsPage } from './pages/SettingsPage'
+
+// The map pulls in MapLibre, so it loads only when someone opens it.
+const MapPage = lazy(() => import('./pages/MapPage'))
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null }
@@ -67,7 +69,7 @@ function App() {
         <Route path="/" element={<Layout />}>
           <Route index element={<HomePage />} />
           <Route path="search" element={<Navigate to="/chat" replace />} />
-          <Route path="map" element={<MapPage />} />
+          <Route path="map" element={<Suspense fallback={<div className="flex-1" />}><MapPage /></Suspense>} />
           <Route path="migration" element={<MigrationPage />} />
           <Route path="where-to-hunt" element={<WhereToHuntPage />} />
           <Route path="regulations" element={<RegulationsPage />} />
