@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
 
-const LAST_UPDATED = 'November 8, 2026'
+const LAST_UPDATED = 'November 11, 2026'
 
 export function TermsPage() {
   return (
@@ -90,13 +90,14 @@ export function TermsPage() {
 
         <section>
           <h2 className="text-lg font-semibold mb-2" style={{ color: `rgb(var(--color-text-primary))` }}>
-            AI questions and subscriptions
+            AI questions, the map and subscriptions
           </h2>
           <p className="mb-2">
             Visitors can ask the AI a few questions without an account, and free accounts get a set number
-            each month. HuntStack Pro costs $5.99 per month, billed by Stripe, renews each month until you
-            cancel, and removes the monthly limit. A fair-use rate limit still applies to stop automated
-            use.
+            each month. Without Pro, the map opens a set number of details a day (currently 10); moving
+            around the map and changing layers or dates is not limited. HuntStack Pro costs $5.99 per
+            month, billed by Stripe, renews each month until you cancel, and removes both limits. A
+            fair-use rate limit still applies to stop automated use.
           </p>
           <p className="mb-2">
             You can cancel any time in Settings. Cancelling stops future charges; you keep Pro until the end
