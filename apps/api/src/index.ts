@@ -70,7 +70,7 @@ await app.register(swagger, {
     info: {
       title: 'HuntStack API',
       description: 'API for hunting regulations, locations, and AI-powered search',
-      version: '1.0.0',
+      version: '1.1.0',
     },
     servers: [
       { url: 'http://localhost:4001', description: 'Development' },
