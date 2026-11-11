@@ -3,7 +3,7 @@ import { sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { getPushFactorsForStates, pushFactorLabel } from '../lib/weather.js'
 import { generateChatResponse, isConfigured } from '../lib/together.js'
-import { STATE_FLYWAY } from '../lib/ebird.js'
+import { STATE_FLYWAY, getEBirdHotspots, packHotspots } from '../lib/ebird.js'
 import { getStateActivity, type StateSpeciesActivity } from '../lib/ebird-activity.js'
 import { BoundedCache } from '../lib/cache.js'
 import { decodePoint } from '../lib/jsonb.js'
@@ -530,6 +530,42 @@ Keep it under 150 words. Be direct and actionable.`
       fetchedAt: new Date().toISOString(),
       source: 'ebird',
       attribution: 'Community observations via eBird (Cornell Lab of Ornithology)',
+    }
+  })
+
+  // eBird for the Map page: every public hotspot with a duck or goose report in the last 14 days
+  // in the states whose eBird answers are kept fresh (STATE_FLYWAY, refreshed every 6 hours), and
+  // each state's activity for every species. Read from the same cached answers as
+  // /regional-activity, so it asks eBird for nothing the refresh hasn't already.
+  app.get('/ebird-map', {
+    schema: {
+      tags: ['migration'],
+      summary: 'eBird hotspots with duck or goose reports in the last 14 days (latest report per species), and statewide activity per species',
+    },
+  }, async () => {
+    const states = Object.keys(STATE_FLYWAY)
+    const base = {
+      states,
+      days: 14,
+      source: 'ebird',
+      attribution: 'Community observations via eBird (Cornell Lab of Ornithology)',
+    }
+    if (!process.env.EBIRD_API_KEY) return { ...base, hotspots: packHotspots([]), stateSpecies: [], fetchedAt: new Date().toISOString() }
+    const [places, activity] = await Promise.all([getEBirdHotspots(states), getStateActivity(states)])
+    return {
+      ...base,
+      hotspots: packHotspots(places),
+      stateSpecies: activity.map(a => ({
+        state: a.state,
+        species: a.species,
+        speciesName: a.speciesName,
+        places: a.places,
+        birds: a.currentCount,
+        deltaPercent: a.deltaPercent,
+        trend: a.trend,
+        topPlaces: a.topPlaces,
+      })),
+      fetchedAt: new Date().toISOString(),
     }
   })
 }

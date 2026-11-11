@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Static sitemap. Only substantive, publicly useful pages are listed.
-  Deliberately excluded: /map (gated "coming soon"), /blog,
+  Deliberately excluded: /blog,
   /outfitters/dashboard, /outfitters/reg-alerts, /outfitters/list-your-business
   (all "not built yet" placeholders), /search (redirect to /chat),
   /report (print view), and parameterized routes (/regulations/:state,
@@ -19,6 +19,12 @@
     <lastmod>2026-08-18</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://huntstack.net/map</loc>
+    <lastmod>2026-11-11</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
   </url>
   <url>
     <loc>https://huntstack.net/where-to-hunt</loc>

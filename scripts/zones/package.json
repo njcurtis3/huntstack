@@ -1,0 +1,13 @@
+{
+  "name": "huntstack-zone-map-build",
+  "private": true,
+  "type": "module",
+  "description": "Builds apps/web/public/data/waterfowl-zones-*.json. Not part of the pnpm workspace.",
+  "scripts": {
+    "fetch": "node fetch-sources.mjs",
+    "build": "node build-zones.mjs"
+  },
+  "devDependencies": {
+    "@turf/turf": "7.2.0"
+  }
+}

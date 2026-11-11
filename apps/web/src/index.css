@@ -233,3 +233,10 @@
     color: #f4a06b;
   }
 }
+
+/* Map page: on a phone the zoom and locate buttons sit below the floating control bar */
+@media (max-width: 767px) {
+  .season-map .maplibregl-ctrl-top-right {
+    top: 64px;
+  }
+}
