@@ -46,7 +46,7 @@
 </p>
 
 <p align="center">
-  <img src=".github/screenshots/migration.png" alt="The migration dashboard: refuge activity by state on the flyway map, with this weekend's call" width="100%">
+  <img src=".github/screenshots/map.png" alt="The season map on December 10: duck zones shaded open, special or closed, with survey sites, eBird hotspots and the Missouri South Zone's seasons" width="100%">
 </p>
 
 ## Introduction
@@ -57,14 +57,17 @@ reports. It pulls federal and state aerial surveys, eBird sightings, NOAA
 weather and state regulations into one structured dataset, and answers the
 question that matters before a hunt: *where should I go this weekend?*
 
-It does not try to be a map. OnX, HuntStand and BaseMap own in-field
-navigation. **HuntStack tells you where to hunt; OnX helps you get there.**
+It does not try to be a navigation app. OnX, HuntStand and BaseMap own the
+field; HuntStack's season map is for planning, with no GPS, offline maps or
+property lines. **HuntStack tells you where to hunt; OnX helps you get there.**
 
-It covers waterfowl in the Central and Mississippi Flyways: season rules for
-TX, NM, AR, LA, KS and OK, and bird counts for those states plus MO, IL and IA.
+It covers waterfowl in the Central and Mississippi Flyways: seasons, zones and
+bird counts for TX, NM, AR, LA, KS, OK, MO, IL and IA, and license rules for
+the first six.
 
 HuntStack has been live at **[huntstack.net](https://huntstack.net)** since
-v1.0.0 (November 2026), on desktop and phone browsers.
+v1.0.0 (November 2026), on desktop and phone browsers. v1.1.0 added the season
+map.
 
 > [!IMPORTANT]
 > Season dates, bag limits and bird counts are informational and may be out of
@@ -74,25 +77,32 @@ v1.0.0 (November 2026), on desktop and phone browsers.
 ## Features
 
 <p align="center">
-  <img width="49%" src=".github/screenshots/where-to-hunt.png" alt="Where to Hunt: refuges ranked by opportunity score, with the breakdown on each card"/>
+  <img width="49%" src=".github/screenshots/migration.png" alt="The migration dashboard: survey sites and eBird places by state on the flyway map, the snapshot, this weekend's call and the season comparison"/>
 &nbsp;
-  <img width="49%" src=".github/screenshots/flyway.png" alt="Flyway progression: weekly counts by state, ordered north to south"/>
+  <img width="49%" src=".github/screenshots/where-to-hunt.png" alt="Where to Hunt: places ranked by opportunity score, with access notes, season status, conditions and the score breakdown on each card"/>
 </p>
 
 <p align="center">
-  <img width="49%" src=".github/screenshots/regulations.png" alt="Texas regulations: 2026–2027 goose seasons, dates, bag limits and restrictions"/>
+  <img width="49%" src=".github/screenshots/regulations.png" alt="Texas regulations: 2026–2027 goose seasons by zone, with dates, bag limits and what is open today"/>
 &nbsp;
   <img width="49%" src=".github/screenshots/report.png" alt="The shareable migration conditions report"/>
 </p>
 
+<p align="center">
+  <img width="98%" src=".github/screenshots/flyway.png" alt="Flyway progression: weekly counts by state this season, ordered north to south"/>
+</p>
+
 <table>
+  <tr>
+    <td colspan="2"><b>Season map</b> (<code>/map</code>)<br>Season zones for all nine states, shaded open, special season only or closed for the day you pick, for ducks or geese; step through the season day by day or with a slider. Tap a zone for its seasons, bag limits, agency links and the state's eBird activity. On top: survey sites, every eBird hotspot with a duck or goose report in the last 14 days, the eBird areas HuntStack watches, and hunter reports. Map or satellite, light or dark.</td>
+  </tr>
   <tr>
     <td width="50%"><b>Migration</b> (<code>/migration</code>)<br>Refuge and aerial survey counts with week-over-week change and species trends, survey sites and eBird places on the map, flyway arrows, a season-to-date comparison and an AI-written weekly summary. Old surveys are labeled as old, never shown as current.</td>
     <td width="50%"><b>Where to Hunt</b> (<code>/where-to-hunt</code>)<br>Enter a species and a city, zip or GPS fix, and get public hunting areas ranked by recent bird counts, migration status, push factors, open seasons, weather and distance, with the score broken down on every card.</td>
   </tr>
   <tr>
     <td><b>AI hunting guide</b> (<code>/chat</code>)<br>Ask <i>"When does teal season open in Arkansas?"</i> or <i>"Where are the snow geese right now?"</i> Each question searches the web, then adds HuntStack's season records, survey counts, eBird reports and saved agency documents. Answers cite their sources, and the season records win on dates and bag limits.</td>
-    <td><b>Regulations and licenses</b> (<code>/regulations</code>)<br>Seasons by zone, bag limits, shooting hours, stamps and license prices for TX, NM, AR, LA, KS and OK, from the agencies' own data, with a side-by-side state comparison.</td>
+    <td><b>Regulations and licenses</b> (<code>/regulations</code>)<br>Seasons by zone, bag limits and shooting hours for TX, NM, AR, LA, KS, OK, MO, IL and IA, and stamps and license prices for the first six, from the agencies' own data, with a side-by-side state comparison.</td>
   </tr>
   <tr>
     <td><b>Push factors and eBird activity</b><br>Cold fronts, north winds and freezing temperatures from NOAA, scored per state and for regions such as the Texas Panhandle. eBird places and birds per state over the last 14 days, with trends from daily snapshots.</td>
@@ -205,7 +215,8 @@ their own.
 | TPWD midwinter survey, incl. High Plains series | TX | TPWD workbooks | annual |
 | USFWS Midwinter Waterfowl Inventory | KS, NM, OK, TX (to 2024); AR, LA (to 2016) | Central Flyway report | annual |
 | eBird (Cornell Lab) | all covered states | statewide reports by species, sightings near each refuge, and eBird-only areas (Texas Panhandle and South Plains, Arkansas refuges and WMAs, Cheyenne Bottoms KS) | live; saved in the database and refreshed every 6 hours |
-| State agencies | TX, NM, AR, LA, KS, OK | seasons, licenses and regulation documents | each season |
+| State agencies | TX, NM, AR, LA, KS, OK; MO, IL, IA (seasons only) | seasons, licenses and regulation documents | each season |
+| Zone shapes | all nine states | TPWD, KDWP and MDC zone layers, the USFWS flyway boundary, Census roads, states and counties (`scripts/zones`) | each season |
 | NOAA | all | forecasts, alerts and push factors | live |
 
 eBird reports are the latest sighting of each species at each place, not survey
@@ -269,7 +280,7 @@ huntstack/
 |---|---|
 | `GET /api/health` · `/api/health/ready` | status and database readiness |
 | `GET /api/refuges` · `/coverage` · `/:id/counts` · `/migration/dashboard` | refuges, survey coverage, count history, the migration dashboard |
-| `GET /api/migration/push-factors` · `/weekly-summary` · `/flyway-progression` · `/regional-activity` | push factors, the AI weekly summary, weekly counts north to south, eBird activity per state |
+| `GET /api/migration/push-factors` · `/weekly-summary` · `/flyway-progression` · `/regional-activity` · `/ebird-map` | push factors, the AI weekly summary, weekly counts north to south, eBird activity per state, eBird hotspots for the season map |
 | `GET /api/hunt/recommendations` | ranked hunting areas by species and location |
 | `GET /api/regulations/states` · `/:state` · `/:state/seasons` · `/:state/licenses` | regulations, seasons and licenses |
 | `GET /api/species` · `/:id` · `/:id/regulations` · `/:id/migration` | the species catalog |
@@ -363,7 +374,8 @@ files in `scripts/`, run against the database before the code that needs them.
 - [x] Push factors from NOAA, including regional scores
 - [x] Where to Hunt: scored recommendations
 - [x] AI chat with web search and HuntStack data
-- [x] Regulations and licenses for TX, NM, AR, LA, KS and OK, 2026–27 seasons from agency data
+- [x] Regulations and licenses for TX, NM, AR, LA, KS and OK, 2026–27 seasons from agency data (MO, IL and IA seasons added in v1.1.0)
+- [x] Season map: zones open or closed by day, survey sites, eBird hotspots, hunter reports (v1.1.0)
 - [x] Outfitter directory, self-service listings and admin review
 - [x] Hunter field reports
 - [x] Accounts, question allowance, HuntStack Pro on Stripe, own AI keys
