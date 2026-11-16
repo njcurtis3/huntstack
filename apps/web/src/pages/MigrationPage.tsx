@@ -1,9 +1,12 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import BreedingPopulationCard from '../components/BreedingPopulationCard'
+import { SectionCardGrid, sectionDomId, useOpenSections, type SectionCard } from '../components/SectionCards'
 import { useQuery } from '@tanstack/react-query'
 import {
   Loader2, AlertCircle, Bird, X, TrendingUp, TrendingDown, Minus, Sparkles,
   Wind, Thermometer, Zap, AlertTriangle, ChevronDown, ChevronUp, RefreshCw,
   Send, Bot, User, MessageSquare, MapPin, Navigation, Share2,
+  Map as MapIcon, LayoutDashboard, Egg, FileText, Users, ListOrdered, Route, History,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -1140,6 +1143,9 @@ function MigrationChat({ speciesName, selectedStates }: {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
+// Sections behind the cards, in page order (see sectionCards in the component)
+const SECTION_IDS = ['map', 'snapshot', 'breeding', 'weekly', 'intel', 'ebird', 'myarea', 'counts', 'flyway', 'history']
+
 export function MigrationPage() {
   const navigate = useNavigate()
   // Filters live in the URL so a view can be shared, bookmarked and refreshed
@@ -1224,6 +1230,9 @@ export function MigrationPage() {
   // States whose card lists every site (long lists show the top few), and per-state site search
   const [showAllSites, setShowAllSites] = useState<Set<string>>(new Set())
   const [siteQuery, setSiteQuery] = useState<Record<string, string>>({})
+  // Each section of the page sits behind a square card (components/SectionCards)
+  const sections = useOpenSections('huntstack-migration-sections', SECTION_IDS)
+  const mapOpen = sections.isOpen('map')
   // The map is drawn 980 units wide; on a narrow screen markers are scaled up to stay tappable
   const mapBoxRef = useRef<HTMLDivElement>(null)
   const [mapScreenScale, setMapScreenScale] = useState(1)
@@ -1236,7 +1245,7 @@ export function MigrationPage() {
     })
     ro.observe(el)
     return () => ro.disconnect()
-  }, [])
+  }, [mapOpen]) // the map box only exists while its section is open
   const [shareCopied, setShareCopied] = useState(false)
 
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme)
@@ -1621,6 +1630,7 @@ export function MigrationPage() {
   }, [])
 
   const openSiteCard = useCallback((siteId: string, state: string) => {
+    sections.reveal('counts')
     setExpandedStates(prev => new Set(prev).add(state))
     setExpandedRefuges(prev => new Set(prev).add(siteId))
     setShowAllSites(prev => new Set(prev).add(state))
@@ -1628,7 +1638,7 @@ export function MigrationPage() {
     setTimeout(() => {
       document.getElementById(`site-card-${siteId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 400)
-  }, [])
+  }, [sections.reveal])
 
   const handleReportOrSiteClick = useCallback((site: MapSite) => {
     if (site.kind === 'report') { setReportCellId(site.id); return }
@@ -1687,7 +1697,12 @@ export function MigrationPage() {
 
   // Summary stats: fresh agency survey counts only (see lib/migrationStats). eBird reports and
   // old surveys are left out, the same as on the /report page.
-  const { totalBirds, siteCount: refugeCount } = headlineStats(filteredCounts)
+  // With a state picked, the Snapshot shows that state's card numbers (agency surveys plus eBird
+  // reports), so the two agree. With no state picked it stays agency surveys only.
+  const agencyStats = headlineStats(filteredCounts)
+  const selectedGroup = selectedState ? stateGroups.find(g => g.state === selectedState) : undefined
+  const totalBirds = selectedGroup ? selectedGroup.totalBirds : agencyStats.totalBirds
+  const refugeCount = selectedGroup ? selectedGroup.refugeCount : agencyStats.siteCount
   const latestDate = filteredCounts.length > 0
     ? new Date(Math.max(...filteredCounts.map(c => parseCalendarDate(c.surveyDate).getTime())))
     : null
@@ -1841,6 +1856,23 @@ export function MigrationPage() {
     })
   }, [currentProgression])
 
+  const sectionCards: SectionCard[] = [
+    { id: 'map', title: 'State map', icon: MapIcon,
+      teaser: selectedState ? `${STATE_CODE_TO_NAME[selectedState] ?? selectedState} selected` : 'Pick a state, see survey sites' },
+    { id: 'snapshot', title: 'Snapshot', icon: LayoutDashboard,
+      teaser: totalBirds > 0 ? `${totalBirds.toLocaleString()} birds counted` : 'Counts, index and trend' },
+    { id: 'breeding', title: 'Breeding population', icon: Egg, teaser: '2026 May survey: 33.4M ducks' },
+    { id: 'weekly', title: 'Weekly summary', icon: FileText, teaser: 'This week, written by AI from the data' },
+    { id: 'intel', title: 'Quick intel', icon: Zap,
+      teaser: `Migration index ${migrationIndex.score}/100 · weather and push factors` },
+    { id: 'ebird', title: 'eBird activity', icon: Users, teaser: 'Birder reports, last 14 days' },
+    { id: 'myarea', title: 'My area', icon: MapPin, teaser: 'Sites near your town or zip' },
+    { id: 'counts', title: 'Latest counts', icon: ListOrdered,
+      teaser: stateGroups.length > 0 ? `${stateGroups.length} ${stateGroups.length === 1 ? 'state' : 'states'}, by site and species` : 'By state, site and species' },
+    { id: 'flyway', title: 'Flyway progression', icon: Route, teaser: 'Counts week by week, north to south' },
+    { id: 'history', title: 'Historical trends', icon: History, teaser: 'January surveys since 2006' },
+  ]
+
   return (
     <div>
       {/* Header */}
@@ -1923,6 +1955,16 @@ export function MigrationPage() {
           </select>
         </div>
 
+        <SectionCardGrid
+          cards={sectionCards}
+          isOpen={sections.isOpen}
+          onToggle={sections.toggle}
+          onOpenAll={sections.openAll}
+          onCloseAll={sections.closeAll}
+        />
+
+        {mapOpen && (
+        <div id={sectionDomId('map')} className="scroll-mt-20">
         {/* US State Map */}
         <div className="card p-4 mb-8" ref={mapBoxRef}>
           <div className="flex items-center justify-between mb-2">
@@ -2215,6 +2257,9 @@ export function MigrationPage() {
           </div>
         )}
 
+        </div>
+        )}
+
         {/* Loading */}
         {loading && (
           <div className="flex justify-center py-20">
@@ -2235,6 +2280,8 @@ export function MigrationPage() {
 
         {!loading && !error && (
           <>
+            {sections.isOpen('snapshot') && (
+            <div id={sectionDomId('snapshot')} className="scroll-mt-20">
             {/* Snapshot */}
             <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
               <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
@@ -2247,7 +2294,7 @@ export function MigrationPage() {
               <div className="card p-4">
                 <p className="text-sm" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                   Birds Counted
-                  <span className="ml-1 text-xs text-earth-500 dark:text-earth-400">(agency surveys, {freshWindowLabel(new Date())})</span>
+                  <span className="ml-1 text-xs text-earth-500 dark:text-earth-400">({selectedGroup ? 'surveys and eBird reports' : 'agency surveys'}, {freshWindowLabel(new Date())})</span>
                 </p>
                 <p className="text-2xl font-bold" style={{ color: `rgb(var(--color-text-primary))` }}>
                   {totalBirds > 0 ? totalBirds.toLocaleString() : '—'}
@@ -2410,7 +2457,18 @@ export function MigrationPage() {
 
               </div>
             </div>
+            </div>
+            )}
 
+            {sections.isOpen('breeding') && (
+            <div id={sectionDomId('breeding')} className="scroll-mt-20">
+            {/* This year's breeding population (May survey): the season's context */}
+            <BreedingPopulationCard selectedSpecies={selectedSpecies} />
+            </div>
+            )}
+
+            {sections.isOpen('weekly') && (
+            <div id={sectionDomId('weekly')} className="scroll-mt-20">
             {/* Weekly Intelligence */}
             {(weeklySummary || weeklySummaryLoading) && (
               <div className="rounded-lg border" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
@@ -2454,7 +2512,11 @@ export function MigrationPage() {
                 </div>
               </div>
             )}
+            </div>
+            )}
 
+            {sections.isOpen('intel') && (
+            <div id={sectionDomId('intel')} className="scroll-mt-20">
             {/* Quick Intel */}
             <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
               <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
@@ -2484,7 +2546,11 @@ export function MigrationPage() {
                 )}
               </div>
             </div>
+            </div>
+            )}
 
+            {sections.isOpen('ebird') && (
+            <div id={sectionDomId('ebird')} className="scroll-mt-20">
             {/* Regional Activity — eBird community data */}
             {(regionalActivityLoading || (regionalActivity && regionalActivity.stateActivity.length > 0)) && (
               <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
@@ -2507,7 +2573,11 @@ export function MigrationPage() {
                 </div>
               </div>
             )}
+            </div>
+            )}
 
+            {sections.isOpen('myarea') && (
+            <div id={sectionDomId('myarea')} className="scroll-mt-20">
             {/* My Area */}
             <div className="rounded-lg border my-6" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
               <div className="px-4 py-3 border-b" style={{ borderColor: `rgb(var(--color-border-primary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
@@ -2633,7 +2703,11 @@ export function MigrationPage() {
               )}
               </div>
             </div>
+            </div>
+            )}
 
+            {sections.isOpen('counts') && (
+            <div id={sectionDomId('counts')} className="scroll-mt-20">
             {/* Current Counts — State → Refuge → Species hierarchy */}
             {stateGroups.length > 0 ? (
               <div className="mb-8">
@@ -3060,7 +3134,11 @@ export function MigrationPage() {
                 )}
               </div>
             )}
+            </div>
+            )}
 
+            {sections.isOpen('flyway') && (
+            <div id={sectionDomId('flyway')} className="scroll-mt-20">
             {/* Flyway Progression Chart */}
             {currentProgression && progressionChartData.length > 0 && currentProgression.states.length > 0 && (
               <div className="card p-6 mb-8">
@@ -3160,7 +3238,11 @@ export function MigrationPage() {
                 )}
               </div>
             )}
+            </div>
+            )}
 
+            {sections.isOpen('history') && (
+            <div id={sectionDomId('history')} className="scroll-mt-20">
             {/* Historical Trends Chart */}
             {chartData.length > 0 && (
               <div className="card p-6">
@@ -3196,6 +3278,8 @@ export function MigrationPage() {
                   Midwinter Waterfowl Survey, January counts: 2006–2024 for KS, NM, OK and TX (USFWS Central Flyway reports); 2006–2016 for AR and LA. TX High Plains: TPWD's Panhandle and South Plains survey region, 1997–2018 (the last year TPWD published regional estimates).
                 </p>
               </div>
+            )}
+            </div>
             )}
           </>
         )}
