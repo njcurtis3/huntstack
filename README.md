@@ -46,7 +46,7 @@
 </p>
 
 <p align="center">
-  <img src=".github/screenshots/map.png" alt="The season map on December 10: duck zones shaded open, special or closed, with survey sites, eBird hotspots and the Missouri South Zone's seasons" width="100%">
+  <img src=".github/screenshots/map.png" alt="The season map on December 10: duck zones shaded open, special or closed, with migration status and flow arrows, survey sites, eBird hotspots and the Missouri Middle Zone's seasons" width="100%">
 </p>
 
 ## Introduction
@@ -67,7 +67,8 @@ the first six.
 
 HuntStack has been live at **[huntstack.net](https://huntstack.net)** since
 v1.0.0 (November 2026), on desktop and phone browsers. v1.1.0 added the season
-map.
+map; v1.2.0 put the Migration page behind cards and added the 2026 breeding
+population.
 
 > [!IMPORTANT]
 > Season dates, bag limits and bird counts are informational and may be out of
@@ -77,7 +78,7 @@ map.
 ## Features
 
 <p align="center">
-  <img width="49%" src=".github/screenshots/migration.png" alt="The migration dashboard: survey sites and eBird places by state on the flyway map, the snapshot, this weekend's call and the season comparison"/>
+  <img width="49%" src=".github/screenshots/migration.png" alt="The migration page: ten square cards, one per section, each with a blurred preview; the Snapshot card is open below with birds counted, sites, the migration index, this weekend's call and the season comparison"/>
 &nbsp;
   <img width="49%" src=".github/screenshots/where-to-hunt.png" alt="Where to Hunt: places ranked by opportunity score, with access notes, season status, conditions and the score breakdown on each card"/>
 </p>
@@ -97,7 +98,7 @@ map.
     <td colspan="2"><b>Season map</b> (<code>/map</code>)<br>Season zones for all nine states, shaded open, special season only or closed for the day you pick, for ducks or geese; step through the season day by day or with a slider. Tap a zone for its seasons, bag limits, agency links and the state's eBird activity. On top: survey sites, every eBird hotspot with a duck or goose report in the last 14 days, the eBird areas HuntStack watches, and hunter reports. Map or satellite, light or dark.</td>
   </tr>
   <tr>
-    <td width="50%"><b>Migration</b> (<code>/migration</code>)<br>Refuge and aerial survey counts with week-over-week change and species trends, survey sites and eBird places on the map, flyway arrows, a season-to-date comparison and an AI-written weekly summary. Old surveys are labeled as old, never shown as current.</td>
+    <td width="50%"><b>Migration</b> (<code>/migration</code>)<br>Each section sits behind a square card: open one, several, or all of them. Refuge and aerial survey counts with week-over-week change and species trends, survey sites and eBird places on the map, flyway arrows, a season-to-date comparison, an AI-written weekly summary, and the 2026 USFWS breeding population by species. Old surveys are labeled as old, never shown as current.</td>
     <td width="50%"><b>Where to Hunt</b> (<code>/where-to-hunt</code>)<br>Enter a species and a city, zip or GPS fix, and get public hunting areas ranked by recent bird counts, migration status, push factors, open seasons, weather and distance, with the score broken down on every card.</td>
   </tr>
   <tr>
