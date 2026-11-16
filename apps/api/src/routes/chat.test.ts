@@ -126,6 +126,7 @@ describe('extractEntities', () => {
       isWeatherQuery: false,
       isRegulationQuery: false,
       isBirdsNowQuery: false,
+      isPopulationQuery: false,
     })
   })
 })
@@ -338,6 +339,35 @@ describe('needsDocuments', () => {
   it('skips documents when the question is only about where birds are now', () => {
     for (const q of ['where are the snow geese right now?', 'Where are the ducks right now?', 'how many ducks are in Arkansas right now', 'latest refuge counts']) {
       expect(needs(q), q).toBe(false)
+    }
+  })
+})
+
+describe('breeding population questions', () => {
+  it('search only the stateless breeding survey report', () => {
+    for (const q of [
+      'How are pintail numbers this year?',
+      'what was the 2026 breeding population of mallards',
+      'how big is the fall flight',
+    ]) {
+      const e = extractEntities(q)
+      expect(e.isPopulationQuery, q).toBe(true)
+      expect(needsDocuments(e), q).toBe(true)
+      expect(documentFilters(e), q).toEqual({ stateless: true })
+    }
+  })
+
+  it('with a state and "season", search that state plus the stateless report', () => {
+    const e = extractEntities('How are mallard numbers looking for Arkansas this season?')
+    expect(e.isPopulationQuery).toBe(true)
+    expect(needsDocuments(e)).toBe(true)
+    // chunkConditions admits documents with no state alongside the named states
+    expect(documentFilters(e)).toEqual({ stateCodes: ['AR'], skipReports: false })
+  })
+
+  it('leave count questions alone', () => {
+    for (const q of ['duck numbers in Arkansas this season', 'how many ducks are in Arkansas right now', 'latest refuge counts']) {
+      expect(extractEntities(q).isPopulationQuery, q).toBe(false)
     }
   })
 })

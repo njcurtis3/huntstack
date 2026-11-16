@@ -86,6 +86,10 @@ const WEATHER_KEYWORDS = ['weather', 'forecast', 'temperature', 'wind', 'cold fr
 // Questions about birds being somewhere now ("where are the snow geese right now?"), which ask
 // for counts and push factors without using a migration keyword.
 const BIRDS_NOW_PATTERN = /\b(where are|right now|this (week|weekend)|today|tomorrow|moving|arriv|showed up|how many|how'?s the hunting|how is the hunting)/
+// Questions about how many ducks there are this year as a population ("how are pintail numbers
+// this year?"), which the USFWS breeding survey report answers (ingest_population_status.py).
+// Not "duck numbers in Arkansas this season": that is about counts, and isn't matched.
+const POPULATION_PATTERN = /\b(populations?|breeding|fall flight|may ponds|pond (counts?|numbers)|(numbers|population) this year|how are (the )?[a-z -]{0,25}numbers)/
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -98,6 +102,7 @@ interface ExtractedEntities {
   isWeatherQuery: boolean
   isRegulationQuery: boolean
   isBirdsNowQuery: boolean
+  isPopulationQuery: boolean
 }
 
 interface StructuredContext {
@@ -431,6 +436,7 @@ export function extractEntities(query: string): ExtractedEntities {
   const isWeatherQuery = WEATHER_KEYWORDS.some(kw => lower.includes(kw))
   const isRegulationQuery = REGULATION_PATTERN.test(lower)
   const isBirdsNowQuery = BIRDS_NOW_PATTERN.test(lower)
+  const isPopulationQuery = POPULATION_PATTERN.test(lower)
 
   return {
     stateCodes: [...stateCodes],
@@ -441,6 +447,7 @@ export function extractEntities(query: string): ExtractedEntities {
     isWeatherQuery,
     isRegulationQuery,
     isBirdsNowQuery,
+    isPopulationQuery,
   }
 }
 
@@ -455,10 +462,15 @@ export function needsDocuments(e: ExtractedEntities): boolean {
   // "Where are the ducks right now?": saved documents are past seasons' weekly reports (2019-2023
   // AGFC surveys came back), which can't say where birds are now. Survey counts and eBird reports
   // come from the structured data instead.
-  const birdsNowOnly = (e.isMigrationQuery || e.isWeatherQuery || e.isBirdsNowQuery)
-    && !e.isRegulationQuery && !e.isLocationQuery
-  if (birdsNowOnly) return false
+  // A population question still gets the breeding survey report (see documentFilters).
+  if (e.isPopulationQuery) return true
+  if (birdsNowOnly(e)) return false
   return e.stateCodes.length > 0 || e.isRegulationQuery || e.isLocationQuery
+}
+
+function birdsNowOnly(e: ExtractedEntities): boolean {
+  return (e.isMigrationQuery || e.isWeatherQuery || e.isBirdsNowQuery)
+    && !e.isRegulationQuery && !e.isLocationQuery
 }
 
 /**
@@ -525,6 +537,14 @@ export function structuredPlan(e: ExtractedEntities): StructuredPlan {
 export function documentFilters(entities: ExtractedEntities): ChunkFilters {
   // "how many can be mallards?" on a bag-limit question is about the rules, not the birds
   const birdsNow = entities.isBirdsNowQuery && !entities.isRegulationQuery
+  // "How are pintail numbers this year?" is a birds-now question, whose documents are only past
+  // seasons' state reports; it gets the continent-wide breeding survey report and nothing else.
+  // With no state named, same. With one, that state's documents plus the stateless report, and
+  // reports kept (REPORT_PATTERN matches the breeding survey report too).
+  if (entities.isPopulationQuery) {
+    if (birdsNowOnly(entities) || entities.stateCodes.length === 0) return { stateless: true }
+    return { stateCodes: entities.stateCodes, skipReports: false }
+  }
   return {
     stateCodes: entities.stateCodes,
     skipReports: !entities.isMigrationQuery && !entities.isLocationQuery && !birdsNow,

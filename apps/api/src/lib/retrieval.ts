@@ -60,21 +60,29 @@ export function distinctChunks<T extends RetrievedChunk>(rows: T[], limit: numbe
 // URL (Postgres regex, case-insensitive). Useful for "how many ducks" or "where are they", but
 // on a rules question they outrank the rules: their text is full of species and state names.
 // Checked against every document on 2026-10-27: 88 matched, all reports, no rules pages.
+// Also the USFWS "Waterfowl Population Status" breeding survey report (2026-11-16).
 export const REPORT_PATTERN =
-  '(survey[ +_-]*report|hunter[ +_-]*survey|waterfowl[ +_-]*reports?|wetland[ +_-]*status[ +_-]*report|banding[ +_-]*report|season[ +_-]*report)'
+  '(survey[ +_-]*report|hunter[ +_-]*survey|waterfowl[ +_-]*reports?|wetland[ +_-]*status[ +_-]*report|banding[ +_-]*report|season[ +_-]*report|population[ +_-]*status)'
 
 export interface ChunkFilters {
-  /** Only documents from these states (every document has a state). Empty: all states. */
+  /** Only documents from these states, plus the few with no state (continent-wide reports such
+   *  as the USFWS breeding population survey, which answer "mallard numbers in Arkansas" too).
+   *  Empty: all states. */
   stateCodes?: string[]
   /** Leave out survey and area reports (REPORT_PATTERN). */
   skipReports?: boolean
+  /** Only documents with no state: the continent-wide reports (USFWS breeding population survey). */
+  stateless?: boolean
 }
 
 /** WHERE conditions for a chunk search (`dc` = document_chunks, `d` = documents). */
 export function chunkConditions(filters: ChunkFilters): SQL {
   const conditions: SQL[] = [sql`dc.embedding IS NOT NULL`]
   if (filters.stateCodes && filters.stateCodes.length > 0) {
-    conditions.push(sql`d.state_id IN (SELECT id FROM states WHERE code IN (${sql.join(filters.stateCodes.map(c => sql`${c}`), sql`, `)}))`)
+    conditions.push(sql`(d.state_id IS NULL OR d.state_id IN (SELECT id FROM states WHERE code IN (${sql.join(filters.stateCodes.map(c => sql`${c}`), sql`, `)})))`)
+  }
+  if (filters.stateless) {
+    conditions.push(sql`d.state_id IS NULL`)
   }
   if (filters.skipReports) {
     conditions.push(sql`(coalesce(d.title, '') || ' ' || coalesce(d.source_url, '')) !~* ${REPORT_PATTERN}`)
