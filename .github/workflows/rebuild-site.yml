@@ -1,0 +1,42 @@
+name: Rebuild site
+
+# Rebuilds the site on Cloudflare Pages so the pre-rendered state guides (/duck-hunting/*) carry
+# the latest season dates and bird counts. The pages fetch fresh data in the browser anyway; this
+# keeps what search engines read from going stale between pushes.
+#
+# Runs daily, after each Data pipeline run (new survey counts), and by hand. Each run is one
+# Pages build (the free plan allows 500 a month).
+#
+# Secret (Settings > Secrets and variables > Actions):
+#   CF_PAGES_DEPLOY_HOOK   required: the deploy hook URL from Cloudflare (Workers & Pages >
+#                          huntstack > Settings > Builds > Deploy hooks, branch main).
+#                          Anyone with the URL can trigger builds, so keep it a secret.
+
+on:
+  schedule:
+    - cron: '0 11 * * *'   # daily 11:00 UTC = 5am Central (6am during daylight time)
+  workflow_run:
+    workflows: ['Data pipeline']
+    types: [completed]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  rebuild:
+    name: Trigger Pages build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call the deploy hook
+        env:
+          HOOK: ${{ secrets.CF_PAGES_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::error::CF_PAGES_DEPLOY_HOOK is not set. Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          # Cloudflare answers {"success":true,...}; anything else fails the run
+          body=$(curl -fsS --retry 3 --retry-all-errors -X POST "$HOOK")
+          echo "$body" | grep -q '"success":true' || { echo "::error::Deploy hook did not accept the request"; exit 1; }
+          echo "Pages build queued."
