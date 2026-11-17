@@ -99,7 +99,7 @@ population.
   </tr>
   <tr>
     <td width="50%"><b>Migration</b> (<code>/migration</code>)<br>Each section sits behind a square card: open one, several, or all of them. Refuge and aerial survey counts with week-over-week change and species trends, survey sites and eBird places on the map, flyway arrows, a season-to-date comparison, an AI-written weekly summary, and the 2026 USFWS breeding population by species. Old surveys are labeled as old, never shown as current.</td>
-    <td width="50%"><b>Where to Hunt</b> (<code>/where-to-hunt</code>)<br>Enter a species and a city, zip or GPS fix, and get public hunting areas ranked by recent bird counts, migration status, push factors, open seasons, weather and distance, with the score broken down on every card.</td>
+    <td width="50%"><b>Where to Hunt</b> (<code>/where-to-hunt</code>)<br>Areas, not just refuges: every survey count, eBird report and hunter report is grouped into areas about 25 miles across, named after a nearby town (<i>"8 mi NE of Havana, IL"</i>), and ranked by birds counted, which way the counts are moving, the weather push and the season on your date. Each area lists the public land in and around it (state wildlife areas, refuges, waterfowl production areas, Corps land) from USGS PAD-US, the places birds were counted, and a map link; add a city, zip or GPS fix for distances.</td>
   </tr>
   <tr>
     <td><b>AI hunting guide</b> (<code>/chat</code>)<br>Ask <i>"When does teal season open in Arkansas?"</i> or <i>"Where are the snow geese right now?"</i> Each question searches the web, then adds HuntStack's season records, survey counts, eBird reports and saved agency documents. Answers cite their sources, and the season records win on dates and bag limits.</td>
@@ -116,6 +116,9 @@ population.
   <tr>
     <td><b>Shareable report</b> (<code>/report</code>)<br>A one-page snapshot of current conditions, filtered by state and species.</td>
     <td><b>Native app</b> (<code>apps/mobile</code>)<br>An Expo app, Where to Hunt first, using the same API. Not released to the app stores yet; see <a href="apps/mobile/README.md">its README</a>.</td>
+  </tr>
+  <tr>
+    <td colspan="2"><b>State guides</b> (<code>/duck-hunting</code>, <code>/duck-hunting/texas</code>, …)<br>One page per state: this season's duck and goose dates by zone, daily limits, what's open today, and the latest refuge and eBird counts. Pre-rendered as plain HTML at build time so search engines can read them, listed in the sitemap, and rebuilt every morning.</td>
   </tr>
 </table>
 
@@ -212,17 +215,24 @@ their own.
 | INHS Forbes Biological Station aerial inventory | IL, MO, IA | Illinois River and central Mississippi River flights, one location per survey site | weekly, Sept–Jan |
 | Hagerman NWR weekly bird census | TX | Friends of Hagerman checklists, read through eBird | weekly |
 | AGFC aerial survey | AR | statewide and 20 survey zones, added by hand | Dec–Jan |
-| LDWF aerial survey | LA | state PDF | monthly |
+| LDWF aerial survey | LA | state PDFs from LDWF's resource list; species must add up to the report's TOTAL DUCKS row | monthly |
 | TPWD midwinter survey, incl. High Plains series | TX | TPWD workbooks | annual |
 | USFWS Midwinter Waterfowl Inventory | KS, NM, OK, TX (to 2024); AR, LA (to 2016) | Central Flyway report | annual |
 | eBird (Cornell Lab) | all covered states | statewide reports by species, sightings near each refuge, and eBird-only areas (Texas Panhandle and South Plains, Arkansas refuges and WMAs, Cheyenne Bottoms KS) | live; saved in the database and refreshed every 6 hours |
 | State agencies | TX, NM, AR, LA, KS, OK; MO, IL, IA (seasons only) | seasons, licenses and regulation documents | each season |
 | Zone shapes | all nine states | TPWD, KDWP and MDC zone layers, the USFWS flyway boundary, Census roads, states and counties (`scripts/zones`) | each season |
 | NOAA | all | forecasts, alerts and push factors | live |
+| USGS PAD-US Public Access | all nine states | public land for Where to Hunt: 1,556 state wildlife and conservation areas, refuges, waterfowl production areas and Corps units (`scripts/build-public-lands.py` → `apps/api/src/data/public-lands.ts`) | yearly |
+| Census Gazetteer and city population estimates | all nine states | 8,660 towns that name Where to Hunt's areas, with county (`scripts/build-places.py` → `apps/api/src/data/places.ts`) | yearly |
 
 eBird reports are the latest sighting of each species at each place, not survey
 totals. State PDFs are read by an LLM at temperature 0. When eBird refuses
 requests, the site keeps showing the last saved eBird numbers (up to a week old).
+Counts are compared survey to survey only when the two surveys are at most 21
+days apart; a monthly survey or last season's count starts a new run instead of
+showing a spike. PAD-US records public access, not hunting rules, and where
+HuntStack has checked a place itself (for example a refuge closed to waterfowl
+hunting), its own access note wins.
 
 </details>
 
@@ -258,14 +268,17 @@ requests, the site keeps showing the last saved eBird numbers (up to a week old)
 huntstack/
 ├── apps/
 │   ├── web/                  # React + Vite site (huntstack.net)
+│   │   └── prerender/        # build plugin that writes the state guides as HTML
 │   ├── api/                  # Fastify API: routes, chat, billing, eBird, NOAA
+│   │   └── src/data/         # generated: Census towns, PAD-US public land
 │   ├── mobile/               # Expo native app (not yet released)
 │   └── scrapers-python/      # data pipeline: scrapers, parsers, LLM/PDF extractors
 ├── packages/
 │   ├── db/                   # Drizzle schema
 │   └── shared/               # Zod schemas and shared utilities
-├── scripts/                  # raw SQL schema changes, seed and check scripts
-└── .github/workflows/        # ci.yml (typecheck, tests, lint), data-pipeline.yml (weekly data)
+├── scripts/                  # raw SQL schema changes, seed and check scripts, data builders
+└── .github/workflows/        # ci.yml (typecheck, tests, lint), data-pipeline.yml (weekly data),
+                              # rebuild-site.yml (daily site rebuild)
 ```
 
 </details>
@@ -282,7 +295,8 @@ huntstack/
 | `GET /api/health` · `/api/health/ready` | status and database readiness |
 | `GET /api/refuges` · `/coverage` · `/:id/counts` · `/migration/dashboard` | refuges, survey coverage, count history, the migration dashboard |
 | `GET /api/migration/push-factors` · `/weekly-summary` · `/flyway-progression` · `/regional-activity` · `/ebird-map` | push factors, the AI weekly summary, weekly counts north to south, eBird activity per state, eBird hotspots for the season map |
-| `GET /api/hunt/recommendations` | ranked hunting areas by species and location |
+| `GET /api/hunt/areas` | Where to Hunt: areas named after a nearby town, ranked by birds counted nearby, trend, season and weather push, with public land and the evidence behind each |
+| `GET /api/hunt/recommendations` | the older per-refuge ranking (no longer used by the site) |
 | `GET /api/regulations/states` · `/:state` · `/:state/seasons` · `/:state/licenses` | regulations, seasons and licenses |
 | `GET /api/species` · `/:id` · `/:id/regulations` · `/:id/migration` | the species catalog |
 | `GET /api/weather/forecast/:refugeId` · `/alerts` · `/hunting-conditions/:refugeId` | NOAA weather |
@@ -359,9 +373,15 @@ SCRAPER_ALERT_WEBHOOK=     # optional
 | Database and auth | Supabase; sign-up email sent through Resend |
 | Payments | Stripe, with a webhook to `/api/billing/webhook` |
 | Data pipeline | GitHub Actions, weekly |
+| Site rebuild | GitHub Actions, daily at 11:00 UTC and after each data pipeline run, through a Cloudflare Pages deploy hook (secret `CF_PAGES_DEPLOY_HOOK`) |
 
 Pushing to `main` deploys both the site and the API. Schema changes are raw SQL
 files in `scripts/`, run against the database before the code that needs them.
+The state guides are written at build time from the live API, so the daily
+rebuild keeps what search engines read current. The town and public land files
+in `apps/api/src/data/` are rebuilt by hand once a year
+(`python -I scripts/build-places.py <gazetteer> <population csv>`,
+`python -I scripts/build-public-lands.py`) and committed.
 
 ## Roadmap
 
@@ -374,6 +394,8 @@ files in `scripts/`, run against the database before the code that needs them.
 - [x] Migration dashboard: counts, trends, survey sites, flyway map and arrows, weekly AI summary
 - [x] Push factors from NOAA, including regional scores
 - [x] Where to Hunt: scored recommendations
+- [x] Where to Hunt by area, named after towns, with public land from USGS PAD-US (v1.3.0)
+- [x] State guides for search, rebuilt daily (v1.3.0)
 - [x] AI chat with web search and HuntStack data
 - [x] Regulations and licenses for TX, NM, AR, LA, KS and OK, 2026–27 seasons from agency data (MO, IL and IA seasons added in v1.1.0)
 - [x] Season map: zones open or closed by day, survey sites, eBird hotspots, hunter reports (v1.1.0)
@@ -398,8 +420,9 @@ files in `scripts/`, run against the database before the code that needs them.
 - [ ] Outfitters beyond Texas
 - [ ] Web tests
 
-Later: public land layers, predictive migration models, crowdsourced harvest
-reports, and big game (elk and deer in CO, MT and WY).
+Later: public land boundaries on the season map, hunting rules per public unit,
+predictive migration models, crowdsourced harvest reports, and big game (elk and
+deer in CO, MT and WY).
 
 </details>
 

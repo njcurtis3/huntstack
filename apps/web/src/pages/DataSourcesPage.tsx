@@ -84,14 +84,32 @@ const OTHER_GROUPS: SourceGroup[] = [
   {
     title: 'Community Bird Observations',
     description:
-      'Where each species is being reported: places with a report in the last 14 days statewide, the latest report near each refuge, and the change since two weeks earlier, from eBird\'s public data, shown next to refuge survey counts on the Migration dashboard and used by the AI chat. eBird also covers places with no published refuge counts: the Texas Panhandle (Amarillo, Lubbock, Dalhart and Hereford-Dimmitt playas) and Cheyenne Bottoms, Kansas. These are the latest sightings reported by birders, not survey totals.',
+      'Where each species is being reported: places with a report in the last 14 days statewide, the latest report near each refuge, and the change since two weeks earlier, from eBird\'s public data, shown next to refuge survey counts on the Migration dashboard, counted toward Where to Hunt\'s areas, and used by the AI chat. eBird also covers places with no published refuge counts: the Texas Panhandle (Amarillo, Lubbock, Dalhart and Hereford-Dimmitt playas) and Cheyenne Bottoms, Kansas. These are the latest sightings reported by birders, not survey totals.',
     cadence: 'Live API',
     sources: [{ name: 'eBird (Cornell Lab of Ornithology)', url: 'https://ebird.org/' }],
   },
   {
+    title: 'Public Land & Places',
+    description:
+      'Where to Hunt groups every count and report into areas named after a nearby town, and lists the public land in and around each one: state wildlife and conservation areas, national wildlife refuges, waterfowl production areas and Corps of Engineers land. The land comes from the USGS Protected Areas Database, which records public access (open, or by permit or season), not hunting rules, so always check the managing agency. Where HuntStack has checked a place itself and found it closed to waterfowl hunting, that wins. Town names, counties and populations come from the Census Bureau.',
+    cadence: 'Updated yearly, when the USGS and Census publish new editions',
+    sources: [
+      {
+        name: 'USGS Protected Areas Database of the United States (PAD-US) — Public Access',
+        url: 'https://www.usgs.gov/programs/gap-analysis-project/science/pad-us-data-overview',
+        note: '1,556 public units in the nine states',
+      },
+      {
+        name: 'U.S. Census Bureau — Gazetteer Files and City Population Estimates',
+        url: 'https://www.census.gov/geographies/reference-files/time-series/geo/gazetteer-files.html',
+        note: '8,660 towns and places, 2024 Gazetteer and 2023 population estimates',
+      },
+    ],
+  },
+  {
     title: 'Weather',
     description:
-      'Forecasts, alerts, and hunting-condition scoring (wind, precipitation, cold-front detection) for the Where to Hunt recommendations and refuge detail pages.',
+      'Forecasts, alerts, and hunting-condition scoring (wind, precipitation, cold-front detection) for Where to Hunt\'s areas and the refuge detail pages.',
     cadence: 'Live API',
     sources: [{ name: 'National Weather Service (NOAA)', url: 'https://www.weather.gov/documentation/services-web-api' }],
   },
