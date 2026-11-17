@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, Legend, ResponsiveContainer, ReferenceLine,
+  Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import { ComposableMap, Geographies, Geography, Annotation } from 'react-simple-maps'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -1852,21 +1852,44 @@ export function MigrationPage() {
     return { ...flywayProgression, weeks, states }
   }, [flywayProgression])
 
-  // Flyway progression chart — one entry per week, state codes as keys
+  // Flyway progression chart — one entry per week, state codes as keys. Each state is drawn as a
+  // share of its own season high: the states' surveys cover very different areas (Louisiana's is
+  // statewide, Texas's one refuge), so raw totals put every small survey flat on the zero line and
+  // hid the timing the chart is for. The raw count rides along as `<ST>_n` for the tooltip.
+  // Survey weeks up to 21 days apart are joined (the weeks between are filled in along the line,
+  // with no dot and no tooltip); a longer gap is left open, the same limit as comparable surveys
+  // (COMPARABLE_DAYS in the API's lib/survey-change.ts). Louisiana's teal-only September flight is not a trend into November.
   const progressionChartData = useMemo(() => {
     if (!currentProgression || currentProgression.weeks.length === 0) return []
-    return currentProgression.weeks.map(week => {
+    const rows = currentProgression.weeks.map(week => {
       const entry: Record<string, unknown> = {
         week,
         label: parseCalendarDate(week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       }
       for (const state of currentProgression.states) {
         const match = state.weeks.find(w => w.weekStart === week)
-        entry[state.stateCode] = match ? match.totalCount : null
+        entry[state.stateCode] = match && state.peakCount > 0 ? Math.round((match.totalCount / state.peakCount) * 100) : null
+        entry[`${state.stateCode}_n`] = match ? match.totalCount : null
       }
       return entry
     })
+    const DAY = 86_400_000
+    for (const { stateCode } of currentProgression.states) {
+      const at = rows.flatMap((r, i) => (typeof r[stateCode] === 'number' ? [i] : []))
+      for (let k = 1; k < at.length; k++) {
+        const [i, j] = [at[k - 1], at[k]]
+        const days = (parseCalendarDate(rows[j].week as string).getTime() - parseCalendarDate(rows[i].week as string).getTime()) / DAY
+        if (j - i < 2 || days > 21) continue
+        const [a, b] = [rows[i][stateCode] as number, rows[j][stateCode] as number]
+        for (let m = i + 1; m < j; m++) rows[m][stateCode] = a + ((b - a) * (m - i)) / (j - i)
+      }
+    }
+    return rows
   }, [currentProgression])
+  // One color per state, shared by its line and its chip (the chips are a filtered list)
+  const progressionColor = useMemo(() => new Map(
+    (currentProgression?.states ?? []).map((s, i) => [s.stateCode, STATE_LINE_COLORS[i % STATE_LINE_COLORS.length]]),
+  ), [currentProgression])
 
   const sectionCards: SectionCard[] = [
     { id: 'map', title: 'State map', icon: MapIcon,
@@ -3160,7 +3183,7 @@ export function MigrationPage() {
                       Flyway Progression
                     </h2>
                     <p className="text-sm mt-0.5" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                      Weekly counts by state — ordered north to south. Southward migration shows earlier peaks in northern states.
+                      Each state&rsquo;s weekly count as a share of its highest this season, north to south. Dots are survey weeks; states survey on different schedules.
                     </p>
                   </div>
                   <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
@@ -3177,54 +3200,51 @@ export function MigrationPage() {
                       interval="preserveStartEnd"
                     />
                     <YAxis
-                      tickFormatter={compactCount}
+                      domain={[0, 100]}
+                      ticks={[0, 25, 50, 75, 100]}
+                      tickFormatter={(v: number) => `${v}%`}
                       stroke={chartColors.axis}
+                      width={44}
                     />
                     <Tooltip
                       labelFormatter={(label) => `Week of ${label}`}
-                      formatter={(value, name) => [(value as number)?.toLocaleString() ?? '—', name]}
+                      formatter={(value, name, item) => {
+                        const raw = (item?.payload as Record<string, unknown> | undefined)?.[`${String(item?.dataKey)}_n`]
+                        // A week filled in along the line has no survey of its own: leave it out
+                        return typeof raw === 'number' ? [`${raw.toLocaleString()} birds (${value}% of season high)`, name] : [null, null]
+                      }}
                       contentStyle={{ backgroundColor: chartColors.tooltipBg, border: `1px solid ${chartColors.tooltipBorder}`, color: chartColors.tooltipText }}
                     />
-                    <Legend />
-                    {currentProgression.states.map((state, i) => (
+                    {/* Recharts 3 sorts legend items alphabetically by default; keep north to south */}
+                    <Legend itemSorter={null} />
+                    {currentProgression.states.map(state => (
                       <Line
                         key={state.stateCode}
                         type="monotone"
                         dataKey={state.stateCode}
-                        name={`${state.stateCode} (↑${state.latitude.toFixed(0)}°N)`}
-                        stroke={STATE_LINE_COLORS[i % STATE_LINE_COLORS.length]}
+                        name={`${state.stateCode} (${state.latitude.toFixed(0)}°N)`}
+                        stroke={progressionColor.get(state.stateCode)}
                         strokeWidth={2}
-                        dot={false}
+                        // A dot on each survey week only, not on the weeks filled in between
+                        dot={(props: { cx?: number; cy?: number; index?: number; payload?: Record<string, unknown> }) =>
+                          typeof props.payload?.[`${state.stateCode}_n`] === 'number' && props.cx != null && props.cy != null
+                            ? <circle key={`${state.stateCode}-${props.index}`} cx={props.cx} cy={props.cy} r={3} fill={progressionColor.get(state.stateCode)} />
+                            : <g key={`${state.stateCode}-${props.index}`} />}
+                        activeDot={false}
                         connectNulls={false}
                       />
                     ))}
-                    {/* Peak week reference lines for states with notable peaks */}
-                    {currentProgression.states
-                      .filter(s => s.peakWeek && s.peakCount >= 1000)
-                      .map((s, i) => {
-                        const peakLabel = progressionChartData.find(d => d.week === s.peakWeek)?.label as string | undefined
-                        return peakLabel ? (
-                          <ReferenceLine
-                            key={`peak-${s.stateCode}`}
-                            x={peakLabel}
-                            stroke={STATE_LINE_COLORS[i % STATE_LINE_COLORS.length]}
-                            strokeDasharray="4 2"
-                            strokeOpacity={0.5}
-                          />
-                        ) : null
-                      })
-                    }
                   </LineChart>
                 </ResponsiveContainer>
                 {/* Peak week summary */}
                 {currentProgression.states.some(s => s.peakWeek) && (
                   <div className="mt-4 flex flex-wrap gap-3">
                     <p className="text-xs font-medium w-full" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                      Peak weeks this season:
+                      Highest count so far this season:
                     </p>
                     {currentProgression.states
                       .filter(s => s.peakWeek && s.peakCount > 0)
-                      .map((s, i) => (
+                      .map(s => (
                         <div
                           key={s.stateCode}
                           className="flex items-center gap-1.5 text-xs rounded px-2.5 py-1 border"
@@ -3232,7 +3252,7 @@ export function MigrationPage() {
                         >
                           <span
                             className="w-2 h-2 rounded-full flex-shrink-0"
-                            style={{ backgroundColor: STATE_LINE_COLORS[i % STATE_LINE_COLORS.length] }}
+                            style={{ backgroundColor: progressionColor.get(s.stateCode) }}
                           />
                           <span className="font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
                             {s.stateCode}
