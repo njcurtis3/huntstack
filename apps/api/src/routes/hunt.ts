@@ -5,6 +5,7 @@ import { getHuntingConditions, getPushFactorsForStates, pushFactorAt } from '../
 import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 import { FRESH_DAYS, FRESH_DAYS_MONTHLY } from '../lib/freshness.js'
 import { accessOf, isHuntable } from '../lib/access.js'
+import { surveyChange } from '../lib/survey-change.js'
 
 const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
 
@@ -101,6 +102,7 @@ interface CountRow {
   survey_date: string | null
   survey_type: string | null
   previous_count: number | null
+  previous_date: string | null
 }
 
 export interface SeasonRow {
@@ -279,7 +281,7 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
         c.center_point, c.website_url, c.location_metadata,
         c.species_slug, c.species_name,
         c.count, c.survey_date, c.survey_type,
-        p.count AS previous_count
+        p.count AS previous_count, p.survey_date AS previous_date
       FROM ranked c
       LEFT JOIN ranked p
         ON c.location_id = p.location_id AND c.species_id = p.species_id AND p.rn = 2
@@ -402,18 +404,11 @@ export const huntRoutes: FastifyPluginAsync = async (app) => {
       let deltaPercent: number | null = null
 
       if (row.count !== null && row.count !== undefined) {
-        if (row.previous_count === null || row.previous_count === undefined) {
-          trend = 'new'
-        } else {
-          delta = row.count - row.previous_count
-          deltaPercent = row.previous_count !== 0
-            ? Math.round(((row.count - row.previous_count) / row.previous_count) * 1000) / 10
-            : null
-          const absPct = deltaPercent !== null ? Math.abs(deltaPercent) : null
-          if (absPct !== null && absPct < 5) trend = 'stable'
-          else if (delta > 0) trend = 'increasing'
-          else trend = 'decreasing'
-        }
+        // Only against a survey close enough to compare (lib/survey-change.ts)
+        const change = surveyChange(row.count, row.survey_date, row.previous_count, row.previous_date)
+        trend = change.trend
+        delta = change.delta
+        deltaPercent = change.deltaPercent
       }
 
       const migrationStatus = getMigrationStatus(trend, deltaPercent)

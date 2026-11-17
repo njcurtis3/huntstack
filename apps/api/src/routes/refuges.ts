@@ -5,6 +5,7 @@ import { locations, refugeCounts, species, states } from '@huntstack/db/schema'
 import { assignSharedReports, getEBirdCountsForRefuge } from '../lib/ebird.js'
 import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 import { BoundedCache } from '../lib/cache.js'
+import { surveyChange } from '../lib/survey-change.js'
 
 const coverageCache = new BoundedCache<{ sites: number; states: Array<{ state: string; sites: number }> }>(1)
 
@@ -191,31 +192,11 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
     const countsWithDelta = rows.map((row, i) => {
       const prevRow = rows[i + 1]
       const sameSpecies = prevRow && prevRow.speciesSlug === row.speciesSlug
-      const previousCount = sameSpecies ? (prevRow.count as number) : null
-      const previousDate = sameSpecies ? prevRow.surveyDate : null
-
-      let delta: number | null = null
-      let deltaPercent: number | null = null
-      let trend: 'increasing' | 'decreasing' | 'stable' | 'new'
-
-      if (previousCount === null) {
-        trend = 'new'
-      } else {
-        delta = (row.count as number) - previousCount
-        deltaPercent = previousCount !== 0
-          ? Math.round((((row.count as number) - previousCount) / previousCount) * 1000) / 10
-          : null
-        const absPct = deltaPercent !== null ? Math.abs(deltaPercent) : null
-        if (absPct !== null && absPct < 5) {
-          trend = 'stable'
-        } else if (delta > 0) {
-          trend = 'increasing'
-        } else {
-          trend = 'decreasing'
-        }
-      }
-
-      return { ...row, previousCount, previousDate, delta, deltaPercent, trend }
+      const change = surveyChange(
+        row.count as number, row.surveyDate,
+        sameSpecies ? (prevRow.count as number) : null, sameSpecies ? prevRow.surveyDate : null,
+      )
+      return { ...row, ...change }
     })
 
     return {
@@ -442,29 +423,10 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
       surveyZones,
       currentCounts: results.map(r => {
         const currentCount = r.count as number
-        const previousCount = r.previous_count as number | null
-        const previousDate = r.previous_date as string | null
-
-        let delta: number | null = null
-        let deltaPercent: number | null = null
-        let trend: 'increasing' | 'decreasing' | 'stable' | 'new'
-
-        if (previousCount === null || previousCount === undefined) {
-          trend = 'new'
-        } else {
-          delta = currentCount - previousCount
-          deltaPercent = previousCount !== 0
-            ? Math.round(((currentCount - previousCount) / previousCount) * 1000) / 10
-            : null
-          const absPct = deltaPercent !== null ? Math.abs(deltaPercent) : null
-          if (absPct !== null && absPct < 5) {
-            trend = 'stable'
-          } else if (delta > 0) {
-            trend = 'increasing'
-          } else {
-            trend = 'decreasing'
-          }
-        }
+        const { previousCount, previousDate, delta, deltaPercent, trend } = surveyChange(
+          currentCount, r.survey_date as string | Date,
+          r.previous_count as number | null, r.previous_date as string | Date | null,
+        )
 
         return {
           refugeId: r.location_id,

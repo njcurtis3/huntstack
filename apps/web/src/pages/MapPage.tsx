@@ -1644,12 +1644,12 @@ function StateMigration({ info, compact }: { info: StateMigrationInfo; compact?:
           <p className="text-xs font-medium mb-1" style={muted}>Spikes and drops</p>
           <ul className="border-t mb-3" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
             {anomalies.slice(0, 6).map(r => {
-              const item = r.items.find(i => i.anomaly === r.topAnomaly)
+              // The site's overall change since its previous survey (what flags it), not one species
               return (
                 <li key={r.refugeId} className="py-2 border-b text-sm flex items-center justify-between gap-3" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
                   <span style={{ color: 'rgb(var(--color-text-primary))' }}>{r.refugeName}</span>
                   <span className="font-mono text-xs text-right" style={{ color: r.topAnomaly === 'spike' ? SPIKE_COLOR : DROP_COLOR }}>
-                    {item ? `${item.speciesName} ${item.deltaPercent != null ? formatChange(item.deltaPercent, 0) : ''}` : r.topAnomaly}
+                    {r.change ? formatChange(r.change.percent, 0) : r.topAnomaly}
                   </span>
                 </li>
               )

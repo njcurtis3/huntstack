@@ -132,6 +132,33 @@ export function sortCounts<T extends Enriched>(counts: T[]): T[] {
   })
 }
 
+/** Counted birds now against the same species' previous counts at the same places, over the
+ *  rows that have one. The API leaves out a previous survey too far back to compare (a monthly
+ *  survey, or last season), so this is survey-to-survey movement. */
+export type Change = { now: number; previous: number; percent: number }
+
+function changeOf<T extends CountLike>(items: T[]): { now: number; previous: number } {
+  let now = 0
+  let previous = 0
+  for (const c of items) {
+    if (c.source === 'ebird' || c.previousCount === null || c.previousCount === undefined) continue
+    now += c.count || 0
+    previous += c.previousCount
+  }
+  return { now, previous }
+}
+
+function asChange(t: { now: number; previous: number }): Change | null {
+  return t.previous > 0 ? { ...t, percent: Math.round(((t.now - t.previous) / t.previous) * 100) } : null
+}
+
+/** A site's or state's spike or drop: its overall change, by the same thresholds as one species.
+ *  One species at one site rising 30% used to flag the whole site and state, and a spike in any
+ *  one row hid drops in all the others. */
+function anomalyOf(change: Change | null): AnomalyType {
+  return change ? getAnomaly(change.now, change.percent, change.previous) : null
+}
+
 export type RefugeGroup<T> = {
   refugeId: string
   refugeName: string
@@ -141,6 +168,8 @@ export type RefugeGroup<T> = {
   speciesCount: number
   latestDate: string
   topAnomaly: AnomalyType
+  /** Change since the previous surveys (null when stale or nothing to compare) */
+  change: Change | null
   dominantStatus: MigrationStatus
   isStale: boolean
   items: T[]
@@ -168,8 +197,8 @@ export function groupRefuges<T extends Enriched>(sortedCounts: T[]): RefugeGroup
     const totalBirds = items.reduce((s, c) => s + (c.count || 0), 0)
     const latestDate = items.reduce((best, c) =>
       c.surveyDate > best ? c.surveyDate : best, items[0].surveyDate)
-    const topAnomaly: AnomalyType = !isStale && items.some(c => c.anomaly === 'spike') ? 'spike'
-      : !isStale && items.some(c => c.anomaly === 'drop') ? 'drop' : null
+    const change = isStale ? null : asChange(changeOf(items))
+    const topAnomaly = anomalyOf(change)
     // Dominant status: pick the status that appears most, preferring interesting ones
     const dominantStatus = STATUS_PRIORITY.find(s => items.some(c => c.migrationStatus === s)) ?? null
     return {
@@ -181,6 +210,7 @@ export function groupRefuges<T extends Enriched>(sortedCounts: T[]): RefugeGroup
       speciesCount: items.length,
       latestDate,
       topAnomaly,
+      change,
       dominantStatus,
       isStale,
       items,
@@ -197,6 +227,8 @@ export type StateGroup<T> = {
   speciesCount: number
   latestDate: string
   topAnomaly: AnomalyType
+  /** Change since the previous surveys over the state's current sites */
+  change: Change | null
   dominantStatus: MigrationStatus
   allStale: boolean
   refuges: RefugeGroup<T>[]
@@ -225,8 +257,8 @@ export function groupStates<T extends Enriched>(refugeGroups: RefugeGroup<T>[], 
     const totalBirds = shown.reduce((s, r) => s + r.totalBirds, 0)
     const speciesCount = new Set(shown.flatMap(r => r.items.map(i => i.species))).size
     const latestDate = shown.reduce((best, r) => r.latestDate > best ? r.latestDate : best, shown[0].latestDate)
-    const topAnomaly: AnomalyType = freshRefuges.some(r => r.topAnomaly === 'spike') ? 'spike'
-      : freshRefuges.some(r => r.topAnomaly === 'drop') ? 'drop' : null
+    const change = asChange(changeOf(freshRefuges.flatMap(r => r.items)))
+    const topAnomaly = anomalyOf(change)
     const dominantStatus = STATUS_PRIORITY.find(s => freshRefuges.some(r => r.dominantStatus === s)) ?? null
     return {
       state,
@@ -237,6 +269,7 @@ export function groupStates<T extends Enriched>(refugeGroups: RefugeGroup<T>[], 
       speciesCount,
       latestDate,
       topAnomaly,
+      change,
       dominantStatus,
       allStale,
       refuges,

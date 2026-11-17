@@ -1768,10 +1768,12 @@ export function MigrationPage() {
       const pf = pushFactors.find(p => p.stateCode === sg.state)
       const pushScore = pf?.pushScore ?? 0
       const isArriving = !sg.allStale && (sg.dominantStatus === 'arriving' || sg.dominantStatus === 'building')
-      const hasSpike = !sg.allStale && sg.topAnomaly === 'spike'
+      // The state as a whole up 30% on its previous surveys, not one species at one site
+      const change = sg.change
+      const hasSpike = sg.topAnomaly === 'spike'
       // Score on fresh birds only — stale data doesn't influence where to hunt this weekend
       const score = sg.freshTotalBirds + (pushScore * 5000) + (isArriving ? 10000 : 0) + (hasSpike ? 8000 : 0)
-      return { ...sg, pushScore, isArriving, hasSpike, compositeScore: score }
+      return { ...sg, pushScore, isArriving, hasSpike, change, compositeScore: score }
     }).sort((a, b) => b.compositeScore - a.compositeScore)
 
     const top = scoredStates[0]
@@ -1797,7 +1799,7 @@ export function MigrationPage() {
       urgency = 'high'
     } else if (top.hasSpike) {
       action = `Get to ${top.stateName} now`
-      reasoning = `Anomalous spike detected — ${birdCount.toLocaleString()} birds, well above recent averages. This window may be short.`
+      reasoning = `Survey counts up ${top.change!.percent}% since each site's previous survey — ${birdCount.toLocaleString()} birds counted now. This window may be short.`
       urgency = 'high'
     } else if (top.isArriving && birdCount > 5000) {
       action = `${top.stateName} is heating up`
@@ -2749,13 +2751,13 @@ export function MigrationPage() {
                         {isStateSpike && (
                           <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 px-5 py-1.5">
                             <Zap className="w-3 h-3" />
-                            Spike detected this survey
+                            Spike: counts {formatChange(sg.change!.percent, 0)} since the previous surveys
                           </div>
                         )}
                         {isStateDrop && (
                           <div className="flex items-center gap-1.5 text-xs font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 px-5 py-1.5">
                             <AlertTriangle className="w-3 h-3" />
-                            Sharp decline this survey
+                            Sharp decline: counts {formatChange(sg.change!.percent, 0)} since the previous surveys
                           </div>
                         )}
 
@@ -2848,13 +2850,13 @@ export function MigrationPage() {
                                   {isGroupSpike && (
                                     <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 px-5 py-1.5">
                                       <Zap className="w-3 h-3" />
-                                      Spike detected this survey
+                                      Spike: counts {formatChange(group.change!.percent, 0)} since the previous survey
                                     </div>
                                   )}
                                   {isGroupDrop && (
                                     <div className="flex items-center gap-1.5 text-xs font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 px-5 py-1.5">
                                       <AlertTriangle className="w-3 h-3" />
-                                      Sharp decline this survey
+                                      Sharp decline: counts {formatChange(group.change!.percent, 0)} since the previous survey
                                     </div>
                                   )}
 
