@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import {
-  Loader2, Crosshair, TrendingUp, TrendingDown, Minus, Sparkles,
-  ExternalLink, CheckCircle2, XCircle, AlertCircle, Wind, Thermometer, Zap,
-  MapPin, Navigation, X as XIcon, ArrowUpDown, HelpCircle, Lock, Ban,
+  Loader2, Crosshair, TrendingUp, TrendingDown, Minus,
+  CheckCircle2, XCircle, AlertCircle, Wind,
+  MapPin, Navigation, X as XIcon, ArrowUpDown, HelpCircle, Ban, Map as MapIcon,
 } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
-import { api } from '../lib/api'
+import { api, type HuntArea, type HuntAreaLand, type HuntAreaPlace } from '../lib/api'
 import { parseCalendarDate } from '../lib/dates'
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -16,7 +16,7 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
+const AREA_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO', 'IL', 'IA']
 
 // Where a hunter checks seasons for a state HuntStack has no season dates for
 const STATE_AGENCIES: Record<string, { name: string; url: string }> = {
@@ -25,192 +25,282 @@ const STATE_AGENCIES: Record<string, { name: string; url: string }> = {
   IA: { name: 'Iowa DNR', url: 'https://www.iowadnr.gov/hunting/migratory-game-birds' },
 }
 
-type Access = 'public' | 'limited' | 'closed' | 'private' | 'unknown'
+type Access = NonNullable<HuntAreaPlace['access']>
 
 const ACCESS_CONFIG: Record<Access, { label: string; className: string }> = {
   public:  { label: 'Public hunting', className: 'bg-forest-100 dark:bg-forest-900/40 text-forest-700 dark:text-forest-300' },
   limited: { label: 'Limited public hunting', className: 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300' },
-  closed:  { label: 'Closed to waterfowl hunting', className: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300' },
-  private: { label: 'Private land', className: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300' },
+  closed:  { label: 'Closed to hunting', className: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300' },
+  private: { label: 'Private', className: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300' },
   unknown: { label: 'Access not verified', className: 'bg-earth-100 dark:bg-earth-800 text-earth-700 dark:text-earth-300' },
 }
 
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
-
-type MigrationStatus = 'arriving' | 'building' | 'peak' | 'declining' | 'departing' | 'first_survey' | 'no_data'
-
-type Recommendation = {
-  rank: number
-  score: number
-  locationId: string
-  locationName: string
-  locationType: string
-  state: string
-  flyway: string | null
-  centerPoint: { lat: number; lng: number } | null
-  websiteUrl: string | null
-  species: string
-  speciesName: string
-  latestCount: number | null
-  surveyDate: string | null
-  trend: 'increasing' | 'decreasing' | 'stable' | 'new' | 'no_data'
-  delta: number | null
-  deltaPercent: number | null
-  migrationStatus: MigrationStatus | null
-  isAnomaly: boolean
-  pushScore: number
-  coldFrontPresent: boolean
-  coldFrontIncoming: boolean
-  seasonOpen: boolean
-  seasonStatus?: 'open' | 'closed' | 'unknown'
-  access?: Access
-  accessNote?: string | null
-  accessSource?: string | null
-  seasonName: string | null
-  seasonStart: string | null
-  seasonEnd: string | null
-  bagLimit: unknown
-  weatherRating: 'excellent' | 'good' | 'fair' | 'poor' | null
-  temperature: number | null
-  temperatureUnit: string | null
-  windSpeed: string | null
-  conditions: string | null
-  scoreBreakdown: {
-    trendScore: number
-    magnitudeScore: number
-    seasonScore: number
-    weatherScore: number
-    pushScore: number
-    migrationScore: number
-    anomalyBonus: number
-  }
+const KIND_LABEL: Record<HuntAreaPlace['kind'], string> = {
+  survey: 'Survey',
+  ebird: 'eBird',
+  report: 'Hunter report',
 }
 
-const MIGRATION_STATUS_CONFIG: Record<MigrationStatus, { label: string; className: string }> = {
-  arriving:     { label: 'Arriving',     className: 'bg-forest-100 dark:bg-forest-900/40 text-forest-700 dark:text-forest-300' },
-  building:     { label: 'Building',     className: 'bg-accent-100 dark:bg-accent-900/40 text-accent-700 dark:text-accent-300' },
-  peak:         { label: 'Peak',         className: 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300' },
-  declining:    { label: 'Declining',    className: 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300' },
-  departing:    { label: 'Departing',    className: 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300' },
-  first_survey: { label: 'First Survey', className: 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300' },
-  no_data:      { label: '',             className: '' },
+const muted = { color: 'rgb(var(--color-text-tertiary))' }
+const secondary = { color: 'rgb(var(--color-text-secondary))' }
+const primary = { color: 'rgb(var(--color-text-primary))' }
+const border = { borderColor: 'rgb(var(--color-border-primary))' }
+
+const toMiles = (km: number) => km * 0.621371
+
+function shortDate(d: string | null): string | null {
+  return d ? parseCalendarDate(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null
+}
+
+function ChangeBadge({ change }: { change: HuntArea['change'] }) {
+  if (!change) return <span className="text-xs" style={muted}>No earlier survey to compare</span>
+  const p = change.percent
+  const Icon = p >= 5 ? TrendingUp : p <= -5 ? TrendingDown : Minus
+  const cls = p >= 5 ? 'text-forest-600 dark:text-forest-400' : p <= -5 ? 'text-red-600 dark:text-red-400' : ''
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs font-medium ${cls}`} style={cls ? undefined : muted}>
+      <Icon className="w-3.5 h-3.5" />
+      {p > 0 ? '+' : ''}{p}% since the previous surveys
+    </span>
+  )
+}
+
+function AccessBadge({ access }: { access: Access }) {
+  const cfg = ACCESS_CONFIG[access]
+  const Icon = access === 'closed' || access === 'private' ? Ban : access === 'unknown' ? HelpCircle : CheckCircle2
+  return (
+    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap ${cfg.className}`}>
+      <Icon className="w-3 h-3" />
+      {cfg.label}
+    </span>
+  )
+}
+
+function PlaceRow({ place }: { place: HuntAreaPlace }) {
+  const name = place.url
+    ? <a href={place.url} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted hover:text-accent-600 dark:hover:text-accent-400">{place.name}</a>
+    : place.name
+  return (
+    <li className="py-2 border-b last:border-0 text-sm" style={border}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-medium break-words" style={primary}>{name}</p>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5 text-xs" style={muted}>
+            <span>{KIND_LABEL[place.kind]}</span>
+            {place.access && <AccessBadge access={place.access} />}
+            {place.topSpecies.length > 0 && <span>{place.topSpecies.map(s => s.name).join(', ')}</span>}
+          </div>
+          {place.accessNote && <p className="text-xs mt-0.5" style={secondary}>{place.accessNote}</p>}
+        </div>
+        <div className="text-right flex-shrink-0">
+          <p className="font-mono tabular-nums" style={primary}>{place.birds > 0 ? place.birds.toLocaleString() : '—'}</p>
+          {place.date && <p className="text-xs" style={muted}>{shortDate(place.date)}</p>}
+        </div>
+      </div>
+    </li>
+  )
+}
+
+function LandRow({ land }: { land: HuntAreaLand }) {
+  const maps = `https://www.google.com/maps/search/?api=1&query=${land.lat},${land.lng}`
+  const away = toMiles(land.distanceKm)
+  return (
+    <li className="py-2 border-b last:border-0 text-sm" style={border}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <a href={maps} target="_blank" rel="noopener noreferrer" className="font-medium underline decoration-dotted break-words hover:text-accent-600 dark:hover:text-accent-400" style={primary}>
+            {land.name}
+          </a>
+          <p className="text-xs mt-0.5 flex flex-wrap gap-x-2 gap-y-1" style={muted}>
+            <span>{land.kind}</span>
+            {land.manager && <span>{land.manager}</span>}
+            <span>{land.acres.toLocaleString()} acres</span>
+            <span className={land.access === 'OA' ? 'text-forest-700 dark:text-forest-300' : 'text-amber-700 dark:text-amber-300'}>
+              {land.access === 'OA' ? 'Open to the public' : 'Permit or seasonal access'}
+            </span>
+          </p>
+          {land.note && <p className="text-xs mt-0.5 font-medium" style={secondary}>{land.note}</p>}
+        </div>
+        <p className="text-xs text-right flex-shrink-0 whitespace-nowrap" style={muted}>
+          {away < 1 ? 'in the area' : `${Math.round(away)} mi ${land.direction}`}
+        </p>
+      </div>
+    </li>
+  )
+}
+
+function AreaCard({ area, distMi }: { area: HuntArea; distMi: number | null }) {
+  const [showAll, setShowAll] = useState(false)
+  const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${area.center.lat},${area.center.lng}`
+  const places = showAll ? area.evidence : area.evidence.slice(0, 4)
+  const seasonIcon = area.season.status === 'open'
+    ? <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-forest-600 dark:text-forest-400" />
+    : area.season.status === 'closed'
+      ? <XCircle className="w-4 h-4 flex-shrink-0" style={muted} />
+      : <HelpCircle className="w-4 h-4 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+
+  return (
+    <article className="py-6 border-b" style={border}>
+      {/* Header */}
+      <div className="flex items-start gap-3">
+        <span
+          className={`inline-flex w-7 pt-1 font-mono text-sm font-medium flex-shrink-0 ${area.rank <= 3 ? 'text-accent-600 dark:text-accent-400' : ''}`}
+          style={area.rank <= 3 ? undefined : muted}
+        >
+          {area.rank}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <h3 className="font-semibold text-lg tracking-tight break-words" style={primary}>{area.title}</h3>
+              <p className="text-xs mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1" style={muted}>
+                {area.county && <span>{area.county}</span>}
+                <span>{area.state}</span>
+                <span>about {Math.max(5, Math.round(toMiles(area.radiusKm)))} mi around</span>
+                {distMi !== null && (
+                  <span className="inline-flex items-center gap-0.5 font-medium" style={secondary}>
+                    <Navigation className="w-3 h-3" />
+                    {Math.round(distMi)} mi from you
+                  </span>
+                )}
+              </p>
+            </div>
+            <a
+              href={mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1 flex-shrink-0"
+              aria-label={`Open ${area.title} in Google Maps (new tab)`}
+            >
+              <MapIcon className="w-3.5 h-3.5" />
+              Map
+            </a>
+          </div>
+
+          {/* Numbers */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
+            <div>
+              <p className="text-xs mb-1" style={muted}>Birds counted nearby</p>
+              <p className="font-mono text-2xl font-medium tabular-nums" style={primary}>{area.birds.toLocaleString()}</p>
+              <ChangeBadge change={area.change} />
+              {area.latestDate && <p className="text-xs mt-0.5" style={muted}>Latest {shortDate(area.latestDate)}</p>}
+            </div>
+            <div>
+              <p className="text-xs mb-1" style={muted}>Season on your date</p>
+              <div className="flex items-start gap-1.5">
+                {seasonIcon}
+                <div className="text-sm" style={secondary}>
+                  {area.season.status === 'open' && area.season.lines.map(l => <p key={l}>{l}</p>)}
+                  {area.season.status === 'closed' && <p>Closed on this date</p>}
+                  {area.season.status === 'unknown' && (
+                    STATE_AGENCIES[area.state]
+                      ? <a href={STATE_AGENCIES[area.state].url} target="_blank" rel="noopener noreferrer" className="underline text-accent-600 dark:text-accent-400">Check {STATE_AGENCIES[area.state].name}</a>
+                      : <p>No season data — check the state agency</p>
+                  )}
+                </div>
+              </div>
+            </div>
+            <div className="col-span-2 sm:col-span-1">
+              <p className="text-xs mb-1" style={muted}>Most counted</p>
+              {area.topSpecies.length > 0 ? (
+                <ul className="text-sm space-y-0.5" style={secondary}>
+                  {area.topSpecies.slice(0, 3).map(s => (
+                    <li key={s.slug} className="flex justify-between gap-3">
+                      <span>{s.name}</span>
+                      <span className="font-mono tabular-nums">{s.count.toLocaleString()}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : <p className="text-sm" style={muted}>Seen, not counted</p>}
+              {area.push && area.push.score > 0 && (
+                <p className="mt-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                  <Wind className="w-3 h-3" />
+                  Weather push {area.push.score}/3{area.push.coldFrontPresent ? ' · cold front' : area.push.coldFrontIncoming ? ' · front coming' : ''}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Why */}
+          {area.reasons.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-medium mb-1" style={secondary}>Why it ranks here</p>
+              <ul className="text-sm list-disc pl-5 space-y-0.5" style={secondary}>
+                {area.reasons.map(r => <li key={r}>{r}</li>)}
+              </ul>
+            </div>
+          )}
+
+          {/* Where to hunt in the area */}
+          <div className="mt-4">
+            <p className="text-xs font-medium mb-1" style={secondary}>Public land in and near this area</p>
+            {area.publicLands.length > 0 || area.huntable.length > 0 ? (
+              <>
+                <ul>
+                  {area.publicLands.map(l => <LandRow key={`l-${l.name}`} land={l} />)}
+                  {area.huntable.map(p => <PlaceRow key={`h-${p.kind}-${p.name}`} place={p} />)}
+                </ul>
+                <p className="text-xs mt-1" style={muted}>
+                  Public access from the USGS Protected Areas Database. Hunting rules differ by unit (zones,
+                  permits, days, refuge closures): check the managing agency before you go.
+                </p>
+              </>
+            ) : (
+              <p className="text-sm" style={muted}>
+                No public wildlife areas, refuges or Corps land within reach of this area that we know of.
+                Birds feed well beyond the sites counted: check {area.state}'s public hunting maps near{' '}
+                {area.town ?? 'this area'}, or ask landowners.
+              </p>
+            )}
+          </div>
+
+          {/* Evidence */}
+          <div className="mt-4">
+            <p className="text-xs font-medium mb-1" style={secondary}>
+              Where birds were counted or reported ({area.evidenceCount})
+            </p>
+            <ul>{places.map(p => <PlaceRow key={`e-${p.kind}-${p.name}`} place={p} />)}</ul>
+            {area.evidence.length > 4 && (
+              <button onClick={() => setShowAll(v => !v)} className="text-xs underline text-accent-600 dark:text-accent-400 py-1">
+                {showAll ? 'Show fewer' : `Show ${area.evidence.length - 4} more`}
+              </button>
+            )}
+            {area.evidenceCount > area.evidence.length && showAll && (
+              <p className="text-xs" style={muted}>and {area.evidenceCount - area.evidence.length} smaller reports</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </article>
+  )
 }
 
 type SpeciesOption = { slug: string; name: string }
-
-const FLYWAY_COLORS: Record<string, string> = {
-  central: 'bg-accent-100 dark:bg-accent-900/30 text-accent-700 dark:text-accent-300',
-  mississippi: 'bg-forest-100 dark:bg-forest-900/30 text-forest-700 dark:text-forest-300',
-  pacific: 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300',
-  atlantic: 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300',
-}
-
-const WEATHER_RATING_COLORS: Record<string, string> = {
-  excellent: 'text-forest-600 dark:text-forest-400',
-  good: 'text-accent-600 dark:text-accent-400',
-  fair: 'text-amber-600 dark:text-amber-400',
-  poor: 'text-red-600 dark:text-red-400',
-}
-
-function ScoreBar({ score }: { score: number }) {
-  const color = score >= 70 ? '#1f883d' : score >= 45 ? '#bf8700' : '#cf222e'
-  return (
-    <div className="flex items-center gap-2">
-      <div className="flex-1 h-1.5 rounded-full" style={{ backgroundColor: 'rgb(var(--color-border-primary))' }}>
-        <div
-          className="h-1.5 rounded-sm transition-all"
-          style={{ width: `${score}%`, backgroundColor: color }}
-        />
-      </div>
-      <span className="text-xs font-semibold tabular-nums" style={{ color }}>
-        {score}
-      </span>
-    </div>
-  )
-}
-
-function TrendBadge({ trend, delta, deltaPercent }: {
-  trend: 'increasing' | 'decreasing' | 'stable' | 'new' | 'no_data'
-  delta: number | null
-  deltaPercent: number | null
-}) {
-  if (trend === 'no_data') return null
-
-  if (trend === 'new') {
-    return (
-      <span className="flex items-center gap-1 text-xs text-accent-500 dark:text-accent-400">
-        <Sparkles className="w-3 h-3" />
-        First survey
-      </span>
-    )
-  }
-
-  const formattedDelta = delta !== null ? `${delta >= 0 ? '+' : ''}${delta.toLocaleString()}` : null
-  // "+9400%" means nothing to a hunter; past doubling, say how many times more
-  const formattedPct = deltaPercent === null
-    ? ''
-    : deltaPercent >= 100
-      ? ` (${Math.round(1 + deltaPercent / 100)}× last survey)`
-      : ` (${deltaPercent >= 0 ? '+' : ''}${deltaPercent.toFixed(1)}%)`
-
-  if (trend === 'stable') return (
-    <span className="flex items-center gap-1 text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
-      <Minus className="w-3 h-3" />
-      {formattedDelta}{formattedPct}
-    </span>
-  )
-
-  if (trend === 'increasing') return (
-    <span className="flex items-center gap-1 text-xs text-forest-600 dark:text-forest-400">
-      <TrendingUp className="w-3 h-3" />
-      {formattedDelta}{formattedPct}
-    </span>
-  )
-
-  return (
-    <span className="flex items-center gap-1 text-xs" style={{ color: '#cf222e' }}>
-      <TrendingDown className="w-3 h-3" />
-      {formattedDelta}{formattedPct}
-    </span>
-  )
-}
-
-function RankBadge({ rank }: { rank: number }) {
-  return (
-    <span
-      className={`inline-flex items-center justify-start w-7 pt-0.5 font-mono text-sm font-medium ${rank <= 3 ? 'text-accent-600 dark:text-accent-400' : ''}`}
-      style={rank <= 3 ? undefined : { color: 'rgb(var(--color-text-tertiary))' }}
-    >
-      {rank}
-    </span>
-  )
-}
 
 export function WhereToHuntPage() {
   // Filters live in the URL so a search can be shared, bookmarked and refreshed
   const [searchParams, setSearchParams] = useSearchParams()
   const [selectedSpecies, setSelectedSpecies] = useState(() => searchParams.get('species') ?? '')
   const [selectedStates, setSelectedStates] = useState<Set<string>>(() => {
-    const fromUrl = (searchParams.get('states') ?? '').split(',').filter(s => V1_STATES.includes(s))
-    return new Set(fromUrl.length > 0 ? fromUrl : V1_STATES)
+    const fromUrl = (searchParams.get('states') ?? '').split(',').filter(s => AREA_STATES.includes(s))
+    return new Set(fromUrl.length > 0 ? fromUrl : AREA_STATES)
   })
   const [selectedDate, setSelectedDate] = useState(() => {
     const d = searchParams.get('date')
     return d && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : new Date().toISOString().split('T')[0]
   })
-  const [includeNoAccess, setIncludeNoAccess] = useState(() => searchParams.get('all') === '1')
-  const [hiddenNoAccess, setHiddenNoAccess] = useState(0)
-  const [statesWithoutSeasonData, setStatesWithoutSeasonData] = useState<string[]>([])
   const resultsRef = useRef<HTMLDivElement>(null)
   const [speciesOptions, setSpeciesOptions] = useState<SpeciesOption[]>([])
 
-  const [results, setResults] = useState<Recommendation[] | null>(null)
-  const [totalLocations, setTotalLocations] = useState(0)
+  const [areas, setAreas] = useState<HuntArea[] | null>(null)
+  const [totalAreas, setTotalAreas] = useState(0)
+  const [statesWithoutSeasonData, setStatesWithoutSeasonData] = useState<string[]>([])
+  const [ebirdMissing, setEbirdMissing] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
 
-  // My Area — user location for proximity sorting
+  // Near Me: the hunter's location, for distances and sorting
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number; label: string } | null>(null)
   const [locationInput, setLocationInput] = useState('')
   const [locationLoading, setLocationLoading] = useState(false)
@@ -218,16 +308,14 @@ export function WhereToHuntPage() {
   const [sortByDistance, setSortByDistance] = useState(false)
   const locationInputRef = useRef<HTMLInputElement>(null)
 
-  // Load species options on mount
   useEffect(() => {
     api.getSpecies({ category: 'waterfowl' }).then(data => {
       setSpeciesOptions(data.species.map(s => ({ slug: s.slug, name: s.name })))
     }).catch(() => {
-      // Silently fail — dropdown just stays empty, user can still search all species
+      // The dropdown stays at "All Waterfowl"; searching still works
     })
   }, [])
 
-  // Geocode helpers
   const resolveLocation = async (input: string) => {
     const trimmed = input.trim()
     if (!trimmed) return
@@ -235,9 +323,7 @@ export function WhereToHuntPage() {
     setLocationError(null)
     try {
       const isZip = /^\d{5}$/.test(trimmed)
-      const result = isZip
-        ? await api.geocodeZip(trimmed)
-        : await api.geocodeCity(trimmed)
+      const result = isZip ? await api.geocodeZip(trimmed) : await api.geocodeCity(trimmed)
       if (!result) {
         setLocationError('Location not found. Try "Stuttgart, AR" or a zip code.')
         return
@@ -265,9 +351,7 @@ export function WhereToHuntPage() {
         const { latitude: lat, longitude: lng } = pos.coords
         try {
           const result = await api.geocodeReverse(lat, lng)
-          const label = result?.city && result?.state
-            ? `${result.city}, ${result.state}`
-            : `${lat.toFixed(3)}, ${lng.toFixed(3)}`
+          const label = result?.city && result?.state ? `${result.city}, ${result.state}` : `${lat.toFixed(3)}, ${lng.toFixed(3)}`
           setUserLocation({ lat, lng, label })
           setLocationInput(label)
           setSortByDistance(true)
@@ -282,7 +366,7 @@ export function WhereToHuntPage() {
         setLocationError('Could not get your location.')
         setLocationLoading(false)
       },
-      { timeout: 8000 }
+      { timeout: 8000 },
     )
   }
 
@@ -294,24 +378,16 @@ export function WhereToHuntPage() {
     locationInputRef.current?.focus()
   }
 
-  // Distance-annotated + optionally sorted results
-  const displayResults = useMemo(() => {
-    if (!results) return null
-    const annotated = results.map(rec => {
-      const distKm = userLocation && rec.centerPoint
-        ? haversineKm(userLocation.lat, userLocation.lng, rec.centerPoint.lat, rec.centerPoint.lng)
-        : null
-      return { ...rec, distKm, distMi: distKm !== null ? distKm * 0.621371 : null }
-    })
-    if (sortByDistance && userLocation) {
-      return [...annotated].sort((a, b) => {
-        if (a.distKm === null) return 1
-        if (b.distKm === null) return -1
-        return a.distKm - b.distKm
-      })
-    }
-    return annotated
-  }, [results, userLocation, sortByDistance])
+  const displayAreas = useMemo(() => {
+    if (!areas) return null
+    const annotated = areas.map(a => ({
+      area: a,
+      distMi: userLocation ? toMiles(haversineKm(userLocation.lat, userLocation.lng, a.center.lat, a.center.lng)) : null,
+    }))
+    return sortByDistance && userLocation
+      ? [...annotated].sort((a, b) => (a.distMi ?? Infinity) - (b.distMi ?? Infinity))
+      : annotated
+  }, [areas, userLocation, sortByDistance])
 
   const toggleState = (code: string) => {
     setSelectedStates(prev => {
@@ -325,36 +401,32 @@ export function WhereToHuntPage() {
     })
   }
 
-  const handleSearch = async (opts: { includeNoAccess?: boolean } = {}) => {
-    const withNoAccess = opts.includeNoAccess ?? includeNoAccess
+  const handleSearch = async () => {
     setLoading(true)
     setError(null)
     setHasSearched(true)
-    const states = V1_STATES.filter(s => selectedStates.has(s))
+    const states = AREA_STATES.filter(s => selectedStates.has(s))
     const next = new URLSearchParams()
     if (selectedSpecies) next.set('species', selectedSpecies)
     next.set('date', selectedDate)
-    if (states.length < V1_STATES.length) next.set('states', states.join(','))
-    if (withNoAccess) next.set('all', '1')
+    if (states.length < AREA_STATES.length) next.set('states', states.join(','))
     next.set('go', '1')
     setSearchParams(next, { replace: true })
     // On a phone the results sit below the form; bring them into view
     requestAnimationFrame(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
     try {
-      const data = await api.getHuntRecommendations({
+      const data = await api.getHuntAreas({
         species: selectedSpecies || undefined,
         states: states.join(','),
         date: selectedDate,
-        limit: 10,
-        includeNoAccess: withNoAccess || undefined,
       })
-      setResults(data.recommendations)
-      setTotalLocations(data.totalLocations)
-      setHiddenNoAccess(data.hiddenNoAccess ?? 0)
-      setStatesWithoutSeasonData(data.statesWithoutSeasonData ?? [])
+      setAreas(data.areas)
+      setTotalAreas(data.totalAreas)
+      setStatesWithoutSeasonData(data.statesWithoutSeasonData)
+      setEbirdMissing(data.sources.ebird === null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch recommendations')
-      setResults(null)
+      setError(err instanceof Error ? err.message : 'Failed to find hunting areas')
+      setAreas(null)
     } finally {
       setLoading(false)
     }
@@ -366,32 +438,16 @@ export function WhereToHuntPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const toggleIncludeNoAccess = () => {
-    const next = !includeNoAccess
-    setIncludeNoAccess(next)
-    handleSearch({ includeNoAccess: next })
-  }
-
-  const bagLimitStr = (bl: unknown): string | null => {
-    if (!bl) return null
-    if (typeof bl === 'object' && bl !== null) {
-      const b = bl as Record<string, unknown>
-      if (b.daily) return `${b.daily}/day`
-    }
-    return null
-  }
-
   return (
     <div>
       {/* Hero */}
       <div className="bg-earth-900 dark:bg-[#121416] border-b border-earth-800 dark:border-[#24272b] text-white py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3 mb-3">
-            <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight">Where to Hunt</h1>
-          </div>
+          <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight mb-3">Where to Hunt</h1>
           <p className="text-[#a7adb4] max-w-2xl leading-relaxed">
-            Find the best spots based on real bird activity, open seasons, and current weather conditions.
-            Ranked by opportunity score — no guesswork.
+            The areas where ducks and geese are right now, from refuge and agency surveys, eBird reports and
+            hunter reports, ranked by birds counted nearby, which way the counts are moving, the season and
+            the weather.
           </p>
         </div>
       </div>
@@ -400,39 +456,19 @@ export function WhereToHuntPage() {
         {/* Input Panel */}
         <div className="card p-6 mb-8">
           <div className="grid md:grid-cols-3 gap-6 mb-6">
-            {/* Species */}
             <div>
-              <label htmlFor="wth-species" className="block text-sm font-medium mb-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-                Species
-              </label>
-              <select
-                id="wth-species"
-                className="input w-full"
-                value={selectedSpecies}
-                onChange={e => setSelectedSpecies(e.target.value)}
-              >
+              <label htmlFor="wth-species" className="block text-sm font-medium mb-2" style={secondary}>Species</label>
+              <select id="wth-species" className="input w-full" value={selectedSpecies} onChange={e => setSelectedSpecies(e.target.value)}>
                 <option value="">All Waterfowl</option>
-                {speciesOptions.map(s => (
-                  <option key={s.slug} value={s.slug}>{s.name}</option>
-                ))}
+                {speciesOptions.map(s => <option key={s.slug} value={s.slug}>{s.name}</option>)}
               </select>
             </div>
 
-            {/* Date */}
             <div>
-              <label htmlFor="wth-date" className="block text-sm font-medium mb-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-                Hunt Date
-              </label>
-              <input
-                id="wth-date"
-                type="date"
-                className="input w-full"
-                value={selectedDate}
-                onChange={e => setSelectedDate(e.target.value)}
-              />
+              <label htmlFor="wth-date" className="block text-sm font-medium mb-2" style={secondary}>Hunt Date</label>
+              <input id="wth-date" type="date" className="input w-full" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} />
             </div>
 
-            {/* Search button */}
             <div className="flex items-end">
               <button
                 onClick={() => handleSearch()}
@@ -440,24 +476,20 @@ export function WhereToHuntPage() {
                 data-fab-avoid
                 className="btn-primary w-full flex items-center justify-center gap-2"
               >
-                {loading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Crosshair className="w-4 h-4" />
-                )}
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Crosshair className="w-4 h-4" />}
                 {loading ? 'Searching…' : 'Find Hunts'}
               </button>
             </div>
           </div>
 
           {/* Near Me */}
-          <div className="border-t pt-5 mt-1" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
-            <label htmlFor="wth-location" className="block text-sm font-medium mb-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-              Near Me <span className="font-normal text-xs ml-1" style={{ color: 'rgb(var(--color-text-tertiary))' }}>— sort by distance from your location</span>
+          <div className="border-t pt-5 mt-1" style={border}>
+            <label htmlFor="wth-location" className="block text-sm font-medium mb-2" style={secondary}>
+              Near Me <span className="font-normal text-xs ml-1" style={muted}>— distances and sorting from your location</span>
             </label>
             <div className="flex gap-2">
               <div className="relative flex-1">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'rgb(var(--color-text-tertiary))' }} />
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={muted} />
                 <input
                   ref={locationInputRef}
                   id="wth-location"
@@ -473,7 +505,7 @@ export function WhereToHuntPage() {
                     onClick={clearLocation}
                     aria-label="Clear location"
                     className="absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded hover:opacity-70"
-                    style={{ color: 'rgb(var(--color-text-tertiary))' }}
+                    style={muted}
                   >
                     <XIcon className="w-3.5 h-3.5" />
                   </button>
@@ -497,423 +529,123 @@ export function WhereToHuntPage() {
                 {locationLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Navigation className="w-4 h-4" />}
               </button>
             </div>
-            {locationError && (
-              <p className="text-xs mt-1.5 text-red-600 dark:text-red-400">{locationError}</p>
-            )}
+            {locationError && <p className="text-xs mt-1.5 text-red-600 dark:text-red-400">{locationError}</p>}
             {userLocation && (
-              <p className="text-xs mt-1.5" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
-                Showing distances from <span className="font-medium" style={{ color: 'rgb(var(--color-text-secondary))' }}>{userLocation.label}</span>
+              <p className="text-xs mt-1.5" style={muted}>
+                Showing distances from <span className="font-medium" style={secondary}>{userLocation.label}</span>
               </p>
             )}
           </div>
 
           {/* State pills */}
           <div className="mt-5">
-            <p id="wth-states" className="block text-sm font-medium mb-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-              States
-            </p>
+            <p id="wth-states" className="block text-sm font-medium mb-2" style={secondary}>States</p>
             <div className="flex flex-wrap gap-2" role="group" aria-labelledby="wth-states">
-              {V1_STATES.map(code => {
+              {AREA_STATES.map(code => {
                 const active = selectedStates.has(code)
                 return (
-                  <button
-                    key={code}
-                    onClick={() => toggleState(code)}
-                    aria-pressed={active}
-                    className={`chip font-mono min-w-12 ${active ? 'chip-on' : ''}`}
-                  >
+                  <button key={code} onClick={() => toggleState(code)} aria-pressed={active} className={`chip font-mono min-w-12 ${active ? 'chip-on' : ''}`}>
                     {code}
                   </button>
                 )
               })}
-              <button
-                onClick={() => setSelectedStates(new Set(V1_STATES))}
-                className="chip border-dashed"
-              >
-                All
-              </button>
+              <button onClick={() => setSelectedStates(new Set(AREA_STATES))} className="chip border-dashed">All</button>
             </div>
           </div>
         </div>
 
         <div ref={resultsRef} className="scroll-mt-20" />
 
-        {/* Scoring Legend */}
-        <div className="flex flex-wrap gap-4 mb-6 text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
-          <span className="font-medium" style={{ color: 'rgb(var(--color-text-secondary))' }}>Score factors:</span>
-          <span>Bird trend <span className="font-medium">25 pts</span></span>
-          <span>Count volume <span className="font-medium">20 pts</span></span>
-          <span>Season open <span className="font-medium">20 pts</span></span>
-          <span>Weather <span className="font-medium">15 pts</span></span>
-          <span>Push factor <span className="font-medium">10 pts</span></span>
-          <span>Migration status <span className="font-medium">10 pts</span></span>
-          <span>Spike bonus <span className="font-medium">+5</span></span>
-          <span className="w-full sm:w-auto">Places with an open season come first, then places with no season data, then closed ones.</span>
-        </div>
+        <p className="mb-6 text-xs max-w-3xl" style={muted}>
+          An area is everything counted or reported within about 12 miles of its busiest spot, named after a nearby town.
+          Birds roost on refuges and feed for miles around, so a count at a refuge you can't hunt still tells you about
+          the land around it. Ranked by birds counted, nudged up when counts are rising or a cold front is pushing birds,
+          and down when the season is closed.
+        </p>
 
-        {/* Loading */}
         {loading && (
           <div className="flex justify-center py-20">
             <div className="text-center">
               <Loader2 className="w-8 h-8 animate-spin text-accent-500 mx-auto mb-3" />
-              <p className="text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-                Analyzing bird counts, seasons, and weather…
-              </p>
+              <p className="text-sm" style={secondary}>Gathering surveys, eBird reports, seasons and weather…</p>
             </div>
           </div>
         )}
 
-        {/* Error */}
         {error && !loading && (
           <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700 rounded-md p-4 flex items-start gap-3">
             <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5 flex-shrink-0" />
             <div>
-              <p className="font-medium text-yellow-800 dark:text-yellow-200">Failed to load recommendations</p>
+              <p className="font-medium text-yellow-800 dark:text-yellow-200">Couldn't load hunting areas</p>
               <p className="text-sm text-yellow-700 dark:text-yellow-300 mt-1">{error}</p>
             </div>
           </div>
         )}
 
-        {/* Empty state */}
-        {!loading && !error && hasSearched && results !== null && results.length === 0 && (
+        {!loading && !error && hasSearched && areas !== null && areas.length === 0 && (
           <div className="text-center py-16">
-            <Crosshair className="w-12 h-12 mx-auto mb-3" style={{ color: 'rgb(var(--color-text-tertiary))' }} />
-            <p className="text-lg font-medium mb-2" style={{ color: 'rgb(var(--color-text-primary))' }}>
-              No hunting locations found
-            </p>
-            <p className="text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-              Recommendations use refuge counts from the last few weeks. Try expanding your state selection or choosing a different species, or check back after the next weekly survey.
+            <Crosshair className="w-12 h-12 mx-auto mb-3" style={muted} />
+            <p className="text-lg font-medium mb-2" style={primary}>No areas with recent birds</p>
+            <p className="text-sm" style={secondary}>
+              Nothing was counted or reported in these states in the last few weeks. Try more states or all waterfowl,
+              or check back after the next surveys.
             </p>
           </div>
         )}
 
-        {/* What was left out, and what HuntStack doesn't know */}
-        {!loading && !error && hasSearched && (hiddenNoAccess > 0 || includeNoAccess || statesWithoutSeasonData.length > 0) && (
-          <div className="card p-4 mb-4 text-sm space-y-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>
+        {!loading && !error && hasSearched && (statesWithoutSeasonData.length > 0 || ebirdMissing) && (
+          <div className="card p-4 mb-4 text-sm space-y-2" style={secondary}>
             {statesWithoutSeasonData.length > 0 && (
               <p className="flex items-start gap-2">
                 <HelpCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <span>
-                  HuntStack doesn't have season dates for {statesWithoutSeasonData.join(', ')} yet, so places there are
-                  listed after places with an open season. Check dates with{' '}
-                  {statesWithoutSeasonData.some(c => STATE_AGENCIES[c])
-                    ? statesWithoutSeasonData.filter(c => STATE_AGENCIES[c]).map((c, i, arr) => (
-                        <span key={c}>
-                          <a href={STATE_AGENCIES[c].url} target="_blank" rel="noopener noreferrer" className="underline text-accent-600 dark:text-accent-400">
-                            {STATE_AGENCIES[c].name}
-                          </a>{i < arr.length - 1 ? ', ' : ''}
-                        </span>
-                      ))
-                    : 'the state wildlife agency'}.
-                </span>
+                <span>HuntStack doesn't have season dates for {statesWithoutSeasonData.join(', ')} yet. Check dates with the state agency before you go.</span>
               </p>
             )}
-            {(hiddenNoAccess > 0 || includeNoAccess) && (
+            {ebirdMissing && (
               <p className="flex items-start gap-2">
-                <Lock className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <span>
-                  {includeNoAccess
-                    ? 'Showing private places and places closed to waterfowl hunting too. They are survey sites, not hunting spots.'
-                    : `${hiddenNoAccess} place${hiddenNoAccess === 1 ? ' is' : 's are'} hidden because ${hiddenNoAccess === 1 ? "it's" : "they're"} private or closed to waterfowl hunting.`}{' '}
-                  <button onClick={toggleIncludeNoAccess} className="underline text-accent-600 dark:text-accent-400 py-1">
-                    {includeNoAccess ? 'Hide them' : 'Show them anyway'}
-                  </button>
-                </span>
+                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                <span>eBird reports didn't load this time, so areas come from surveys and hunter reports only. Try again in a minute.</span>
               </p>
             )}
           </div>
         )}
 
-        {/* Results */}
-        {!loading && !error && displayResults && displayResults.length > 0 && (
+        {!loading && !error && displayAreas && displayAreas.length > 0 && (
           <>
-            <div className="flex items-center justify-between pb-3 border-b-2 border-earth-900 dark:border-earth-200">
-              <h2 className="text-xl font-semibold tracking-tight" style={{ color: 'rgb(var(--color-text-primary))' }}>
-                Top Locations
-              </h2>
+            <div className="flex items-center justify-between gap-3 pb-3 border-b-2 border-earth-900 dark:border-earth-200 flex-wrap">
+              <h2 className="text-xl font-semibold tracking-tight" style={primary}>Best areas</h2>
               <div className="flex items-center gap-3">
                 {userLocation && (
                   <div className="flex items-center gap-1 text-xs">
-                    <button
-                      onClick={() => setSortByDistance(false)}
-                      className={`chip min-h-8 text-xs ${!sortByDistance ? 'chip-on' : ''}`}
-                    >
-                      Score
-                    </button>
-                    <button
-                      onClick={() => setSortByDistance(true)}
-                      className={`chip min-h-8 text-xs ${sortByDistance ? 'chip-on' : ''}`}
-                    >
+                    <button onClick={() => setSortByDistance(false)} className={`chip min-h-8 text-xs ${!sortByDistance ? 'chip-on' : ''}`}>Best</button>
+                    <button onClick={() => setSortByDistance(true)} className={`chip min-h-8 text-xs ${sortByDistance ? 'chip-on' : ''}`}>
                       <ArrowUpDown className="w-3 h-3" />
-                      Distance
+                      Nearest
                     </button>
                   </div>
                 )}
-                <span className="text-sm" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
-                  {displayResults.length} of {totalLocations} locations
-                </span>
+                <span className="text-sm" style={muted}>{displayAreas.length} of {totalAreas} areas</span>
               </div>
             </div>
-
             <div>
-              {displayResults.map(rec => (
-                <div
-                  key={rec.locationId}
-                  className="py-6 border-b"
-                  style={{ borderColor: 'rgb(var(--color-border-primary))' }}
-                >
-                  {/* Anomaly banner */}
-                  {rec.isAnomaly && (
-                    <div className="flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 mb-2">
-                      <Zap className="w-3.5 h-3.5" />
-                      Spike detected — numbers well above recent average
-                    </div>
-                  )}
-                  {/* Header row */}
-                  <div className="flex items-start gap-3 mb-3">
-                    <RankBadge rank={rec.rank} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <h3 className="font-semibold text-lg tracking-tight" style={{ color: 'rgb(var(--color-text-primary))' }}>
-                            {rec.locationName}
-                          </h3>
-                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            <span className="text-xs bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300 rounded px-2 py-0.5">
-                              {rec.state}
-                            </span>
-                            {rec.flyway && (
-                              <span className={`text-xs rounded px-2 py-0.5 ${FLYWAY_COLORS[rec.flyway] || 'bg-earth-100 dark:bg-earth-800 text-earth-600 dark:text-earth-300'}`}>
-                                {capitalize(rec.flyway)} Flyway
-                              </span>
-                            )}
-                            {rec.migrationStatus && rec.migrationStatus !== 'no_data' && MIGRATION_STATUS_CONFIG[rec.migrationStatus].label && (
-                              <span className={`text-xs rounded px-2 py-0.5 font-medium ${MIGRATION_STATUS_CONFIG[rec.migrationStatus].className}`}>
-                                {MIGRATION_STATUS_CONFIG[rec.migrationStatus].label}
-                              </span>
-                            )}
-                            <span className="text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
-                              {rec.speciesName}
-                            </span>
-                            {'distMi' in rec && rec.distMi !== null && (
-                              <span className="flex items-center gap-0.5 text-xs font-medium" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
-                                <Navigation className="w-3 h-3" />
-                                {Math.round(rec.distMi as number)} mi
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {rec.websiteUrl && (
-                          <a
-                            href={rec.websiteUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label={`${rec.locationName} website (opens in a new tab)`}
-                            className="flex-shrink-0 -m-2 p-2 text-accent-500 hover:text-accent-600 dark:hover:text-accent-400"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Hunting access */}
-                  {(() => {
-                    const access = rec.access ?? 'unknown'
-                    const cfg = ACCESS_CONFIG[access]
-                    const Icon = access === 'closed' || access === 'private' ? Ban : access === 'unknown' ? HelpCircle : CheckCircle2
-                    const note = rec.accessNote ?? (access === 'unknown' ? 'Check with the managing agency before you go.' : null)
-                    return (
-                      <div className="mb-3 text-xs flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 font-medium ${cfg.className}`}>
-                          <Icon className="w-3.5 h-3.5" />
-                          {cfg.label}
-                        </span>
-                        {note && <span style={{ color: 'rgb(var(--color-text-secondary))' }}>{note}</span>}
-                        {rec.accessSource && (
-                          <a href={rec.accessSource} target="_blank" rel="noopener noreferrer" className="underline text-accent-600 dark:text-accent-400">
-                            Hunting rules
-                          </a>
-                        )}
-                      </div>
-                    )
-                  })()}
-
-                  {/* Score bar */}
-                  <div className="mb-4">
-                    <ScoreBar score={rec.score} />
-                  </div>
-
-                  {/* Data grid */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-                    {/* Bird count */}
-                    <div>
-                      <p className="text-xs mb-1" style={{ color: 'rgb(var(--color-text-tertiary))' }}>Birds Counted</p>
-                      {rec.latestCount !== null ? (
-                        <>
-                          <p className="font-mono text-xl font-medium" style={{ color: 'rgb(var(--color-text-primary))' }}>
-                            {rec.latestCount.toLocaleString()}
-                          </p>
-                          <TrendBadge trend={rec.trend} delta={rec.delta} deltaPercent={rec.deltaPercent} />
-                          {rec.surveyDate && (
-                            <p className="text-xs mt-0.5" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
-                              {parseCalendarDate(rec.surveyDate).toLocaleDateString()}
-                            </p>
-                          )}
-                        </>
-                      ) : (
-                        <p className="text-sm" style={{ color: 'rgb(var(--color-text-tertiary))' }}>No data</p>
-                      )}
-                    </div>
-
-                    {/* Season status */}
-                    <div>
-                      <p className="text-xs mb-1" style={{ color: 'rgb(var(--color-text-tertiary))' }}>Season</p>
-                      {rec.seasonOpen ? (
-                        <div>
-                          <div className="flex items-center gap-1 text-forest-600 dark:text-forest-400">
-                            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                            <span className="font-semibold text-sm">Open</span>
-                          </div>
-                          {rec.seasonName && (
-                            <p className="text-xs mt-0.5" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-                              {rec.seasonName}
-                            </p>
-                          )}
-                          {rec.seasonEnd && (
-                            <p className="text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
-                              Closes {parseCalendarDate(rec.seasonEnd).toLocaleDateString()}
-                            </p>
-                          )}
-                          {bagLimitStr(rec.bagLimit) && (
-                            <p className="text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
-                              Bag: {bagLimitStr(rec.bagLimit)}
-                            </p>
-                          )}
-                        </div>
-                      ) : rec.seasonStatus === 'closed' ? (
-                        <div className="flex items-center gap-1" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
-                          <XCircle className="w-4 h-4 flex-shrink-0" />
-                          <span className="text-sm">Closed on this date</span>
-                        </div>
-                      ) : (
-                        <div>
-                          <div className="flex items-center gap-1 text-amber-700 dark:text-amber-300">
-                            <HelpCircle className="w-4 h-4 flex-shrink-0" />
-                            <span className="text-sm font-medium">No season data</span>
-                          </div>
-                          {STATE_AGENCIES[rec.state] ? (
-                            <a href={STATE_AGENCIES[rec.state].url} target="_blank" rel="noopener noreferrer" className="text-xs underline text-accent-600 dark:text-accent-400">
-                              Check {STATE_AGENCIES[rec.state].name}
-                            </a>
-                          ) : (
-                            <p className="text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>Check the state agency</p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Weather + Push */}
-                    <div>
-                      <p className="text-xs mb-1" style={{ color: 'rgb(var(--color-text-tertiary))' }}>Conditions</p>
-                      {rec.weatherRating ? (
-                        <div>
-                          <p className={`font-semibold capitalize text-sm ${WEATHER_RATING_COLORS[rec.weatherRating] || ''}`}>
-                            {rec.weatherRating}
-                          </p>
-                          {rec.temperature !== null && (
-                            <div className="flex items-center gap-1 text-xs mt-0.5" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-                              <Thermometer className="w-3 h-3" />
-                              {rec.temperature}°{rec.temperatureUnit === 'F' ? 'F' : rec.temperatureUnit}
-                            </div>
-                          )}
-                          {rec.windSpeed && (
-                            <div className="flex items-center gap-1 text-xs" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-                              <Wind className="w-3 h-3" />
-                              {rec.windSpeed}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="text-sm" style={{ color: 'rgb(var(--color-text-tertiary))' }}>Unavailable</p>
-                      )}
-                      {/* Push factor indicator */}
-                      {rec.pushScore > 0 && (
-                        <div className="mt-1.5 flex items-center gap-1" title="Weather pushing birds south: cold front, north wind, freezing temperatures">
-                          <span className="text-xs font-medium text-blue-600 dark:text-blue-400">Weather push {rec.pushScore}/3</span>
-                          <span className="flex gap-0.5">
-                            {[1,2,3].map(n => (
-                              <span key={n} className={`w-2 h-2 rounded-full ${n <= rec.pushScore ? 'bg-blue-500' : 'bg-earth-300 dark:bg-earth-600'}`} />
-                            ))}
-                          </span>
-                          {rec.coldFrontPresent && (
-                            <Wind className="w-3 h-3 text-blue-500 ml-0.5" />
-                          )}
-                        </div>
-                      )}
-                      {rec.coldFrontIncoming && !rec.coldFrontPresent && (
-                        <p className="text-xs text-blue-500 dark:text-blue-400 mt-1">Front incoming</p>
-                      )}
-                    </div>
-
-                    {/* Score breakdown */}
-                    <div>
-                      <p className="text-xs mb-1" style={{ color: 'rgb(var(--color-text-tertiary))' }}>Score Breakdown</p>
-                      <div className="space-y-0.5 text-xs" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-                        <div className="flex justify-between">
-                          <span>Trend</span>
-                          <span className="font-medium">{rec.scoreBreakdown.trendScore}/25</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Volume</span>
-                          <span className="font-medium">{rec.scoreBreakdown.magnitudeScore}/20</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Season</span>
-                          <span className="font-medium">{rec.scoreBreakdown.seasonScore}/20</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Weather</span>
-                          <span className="font-medium">{rec.scoreBreakdown.weatherScore}/15</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Push</span>
-                          <span className="font-medium">{rec.scoreBreakdown.pushScore}/10</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Migration</span>
-                          <span className="font-medium">{rec.scoreBreakdown.migrationScore}/10</span>
-                        </div>
-                        {rec.scoreBreakdown.anomalyBonus > 0 && (
-                          <div className="flex justify-between text-amber-600 dark:text-amber-400">
-                            <span className="flex items-center gap-0.5"><Zap className="w-3 h-3" />Spike</span>
-                            <span className="font-medium">+{rec.scoreBreakdown.anomalyBonus}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+              {displayAreas.map(({ area, distMi }) => <AreaCard key={area.id} area={area} distMi={distMi} />)}
             </div>
+            <p className="text-xs mt-4" style={muted}>
+              Survey counts from refuges and state and university aerial surveys; community reports via eBird (Cornell Lab
+              of Ornithology); hunter reports from HuntStack users, placed only to a rough grid. Always confirm access
+              and regulations with the landowner or managing agency.
+            </p>
           </>
         )}
 
-        {/* Pre-search CTA */}
         {!hasSearched && !loading && (
           <div className="text-center py-16">
             <Crosshair className="w-12 h-12 mx-auto mb-4 text-accent-500" />
-            <p className="text-lg font-medium mb-2" style={{ color: 'rgb(var(--color-text-primary))' }}>
-              Ready to find your next hunt?
+            <p className="text-lg font-medium mb-2" style={primary}>Ready to find your next hunt?</p>
+            <p className="text-sm mb-6 max-w-md mx-auto" style={secondary}>
+              Pick a species, a date and your states, then hit "Find Hunts" to see the areas where birds are now.
             </p>
-            <p className="text-sm mb-6 max-w-md mx-auto" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-              Select your species, target date, and states above — then hit "Find Hunts" to see
-              locations ranked by bird activity, open seasons, and weather.
-            </p>
-            <button onClick={() => handleSearch()} className="btn-primary">
-              Find Hunts Now
-            </button>
+            <button onClick={() => handleSearch()} className="btn-primary">Find Hunts Now</button>
           </div>
         )}
       </div>

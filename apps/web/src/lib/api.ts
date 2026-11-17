@@ -87,6 +87,75 @@ export function safeHttpUrl(value: string | null): string | null {
   }
 }
 
+export type HuntAreaPlace = {
+  kind: 'survey' | 'ebird' | 'report'
+  name: string
+  birds: number
+  date: string | null
+  access: 'public' | 'limited' | 'closed' | 'private' | 'unknown' | null
+  accessNote: string | null
+  url: string | null
+  topSpecies: Array<{ slug: string; name: string; count: number }>
+}
+
+/** Public land near an area, from USGS PAD-US: public access, not hunting rules */
+export type HuntAreaLand = {
+  name: string
+  kind: string
+  manager: string | null
+  access: 'OA' | 'RA'
+  acres: number
+  lat: number
+  lng: number
+  distanceKm: number
+  direction: string
+  /** HuntStack's own checked note for the same place, when it has one */
+  note: string | null
+}
+
+/** One area on Where to Hunt (GET /api/hunt/areas) */
+export type HuntArea = {
+  rank: number
+  id: string
+  score: number
+  /** "Near Stuttgart, AR" or "12 mi SE of Stuttgart, AR" */
+  title: string
+  town: string | null
+  townState: string | null
+  county: string | null
+  state: string
+  flyway: string | null
+  center: { lat: number; lng: number }
+  radiusKm: number
+  birds: number
+  surveyBirds: number
+  surveySites: number
+  ebirdBirds: number
+  ebirdPlaces: number
+  hunterReports: number
+  change: { now: number; previous: number; percent: number } | null
+  latestDate: string | null
+  topSpecies: Array<{ slug: string; name: string; count: number }>
+  season: { status: 'open' | 'closed' | 'unknown'; lines: string[] }
+  push: { score: number; coldFrontPresent: boolean; coldFrontIncoming: boolean; region: string | null } | null
+  reasons: string[]
+  publicLands: HuntAreaLand[]
+  huntable: HuntAreaPlace[]
+  evidence: HuntAreaPlace[]
+  evidenceCount: number
+}
+
+export type HuntAreasResponse = {
+  date: string
+  species: string | null
+  states: string[]
+  areaRadiusKm: number
+  areas: HuntArea[]
+  totalAreas: number
+  statesWithoutSeasonData: string[]
+  sources: { surveys: number; ebird: number | null; hunterReports: number }
+}
+
 class ApiClient {
   private baseUrl: string
 
@@ -765,6 +834,11 @@ class ApiClient {
   }
 
   // Hunt Recommendations
+  /** Where to Hunt: areas ranked by birds counted nearby, trend, season and weather */
+  async getHuntAreas(options?: { species?: string; states?: string; date?: string }) {
+    return this.request<HuntAreasResponse>('/api/hunt/areas', { params: options })
+  }
+
   async getHuntRecommendations(options?: {
     species?: string
     states?: string
