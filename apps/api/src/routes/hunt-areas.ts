@@ -13,7 +13,7 @@ import { getPushFactorsForStates, pushFactorAt } from '../lib/weather.js'
 import { STATE_FLYWAY, getEBirdHotspots } from '../lib/ebird.js'
 import { BoundedCache } from '../lib/cache.js'
 import {
-  AREA_RADIUS_KM, clusterPoints, distanceKm, nameArea, publicLandsNear, sameUnit, scoreArea, summarizeArea,
+  AREA_RADIUS_KM, clusterPoints, distanceKm, isSightingsOnly, nameArea, publicLandsNear, sameUnit, scoreArea, summarizeArea,
   type AreaPoint, type AreaSeason,
 } from '../lib/hunt-areas.js'
 import { findOpenSeason, huntZonesOf, seasonDisplayName, seasonYearOf, type SeasonRow } from './hunt.js'
@@ -276,7 +276,6 @@ export const huntAreasRoutes: FastifyPluginAsync = async (app) => {
 
       const pf = pushFactorAt(summary.state, { lat: summary.lat, lng: summary.lng }, push.pushFactors, push.regionalPushFactors)
       const pushScore = pf?.pushScore ?? 0
-      const score = scoreArea(summary, pushScore, season)
 
       const reasons: string[] = []
       if (summary.surveySites > 0) {
@@ -309,6 +308,11 @@ export const huntAreasRoutes: FastifyPluginAsync = async (app) => {
         const furthest = Math.max(...lands.map(l => l.distanceKm))
         reasons.push(`${lands.length} public land unit${lands.length === 1 ? '' : 's'} within ${miles(furthest)} mi (wildlife areas, refuges, Corps land)`)
       }
+      const sightingsOnly = isSightingsOnly(summary, lands.length)
+      if (sightingsOnly) {
+        reasons.push('Ranked lower: only birder sightings, with no survey site or public land nearby (often city parks and lakes)')
+      }
+      const score = scoreArea(summary, pushScore, season, sightingsOnly)
 
       const evidence = [...points].sort((a, b) => b.birds - a.birds)
       const place = (p: AreaPoint) => ({

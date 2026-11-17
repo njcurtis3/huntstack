@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Place } from '../data/places.js'
 import type { PublicLand } from '../data/public-lands.js'
 import {
-  clusterPoints, directionFrom, distanceKm, nameArea, publicLandsNear, sameUnit, scoreArea, summarizeArea, type AreaPoint,
+  clusterPoints, directionFrom, distanceKm, isSightingsOnly, nameArea, publicLandsNear, sameUnit, scoreArea, summarizeArea, type AreaPoint,
 } from './hunt-areas.js'
 
 function pt(id: string, lat: number, lng: number, birds: number, extra: Partial<AreaPoint> = {}): AreaPoint {
@@ -105,5 +105,18 @@ describe('sameUnit', () => {
   it('matches a survey site and a public land unit with the same name', () => {
     expect(sameUnit('Loess Bluffs National Wildlife Refuge', 'Loess Bluffs NWR')).toBe(true)
     expect(sameUnit('Bayou Meto', 'Big Lake')).toBe(false)
+  })
+})
+
+describe('isSightingsOnly', () => {
+  const ebirdOnly = summarizeArea([pt('park', 41.9, -87.6, 5000, { kind: 'ebird' })])
+  it('flags an area of eBird sightings with no public land, and sinks its score', () => {
+    expect(isSightingsOnly(ebirdOnly, 0)).toBe(true)
+    expect(scoreArea(ebirdOnly, 0, 'open', true)).toBe(1000)
+  })
+  it('keeps an area with public land, a survey site or a hunter report', () => {
+    expect(isSightingsOnly(ebirdOnly, 2)).toBe(false)
+    expect(isSightingsOnly(summarizeArea([pt('refuge', 34, -91, 100)]), 0)).toBe(false)
+    expect(isSightingsOnly(summarizeArea([pt('r', 34, -91, 30, { kind: 'report' })]), 0)).toBe(false)
   })
 })

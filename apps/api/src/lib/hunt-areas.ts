@@ -179,12 +179,25 @@ export type AreaSeason = 'open' | 'closed' | 'unknown'
  * pushing birds in, and whether the season is open. Birds lead on purpose: an area's count is
  * the best evidence there is of birds to hunt. A closed season sinks an area but keeps it listed.
  */
-export function scoreArea(summary: AreaSummary, pushScore: number, season: AreaSeason): number {
+export function scoreArea(summary: AreaSummary, pushScore: number, season: AreaSeason, sightingsOnly = false): number {
   const pct = summary.change ? Math.max(-50, Math.min(100, summary.change.percent)) : 0
   const trend = 1 + pct / 200                      // 0.75 .. 1.5
   const push = 1 + 0.1 * Math.max(0, pushScore)    // 1 .. 1.3
   const open = season === 'closed' ? 0.25 : 1
-  return Math.round(summary.birds * trend * push * open)
+  const huntable = sightingsOnly ? SIGHTINGS_ONLY_FACTOR : 1
+  return Math.round(summary.birds * trend * push * open * huntable)
+}
+
+/** How far an area of birder sightings alone, with no public land nearby, sinks */
+export const SIGHTINGS_ONLY_FACTOR = 0.2
+
+/**
+ * An area known only from eBird sightings, with no survey site, no hunter report and no public
+ * land within reach: usually city parks and suburban lakes (103 Chicago hotspots ranked #15 of
+ * 276 in v1.3.0). Real birds, but not somewhere to hunt; it stays listed, ranked lower.
+ */
+export function isSightingsOnly(summary: AreaSummary, publicLands: number): boolean {
+  return summary.surveySites === 0 && summary.hunterReports === 0 && publicLands === 0
 }
 
 /** Public land listed for an area reaches this far past the area's own edge */
