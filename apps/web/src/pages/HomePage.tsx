@@ -19,14 +19,14 @@ export function HomePage() {
       style={{ backgroundColor: `rgb(var(--color-bg-primary))`, color: `rgb(var(--color-text-primary))` }}
     >
       {/* Topo background: real contour lines (8 m) of the Illinois-Mississippi confluence at
-          Grafton, IL, from public elevation data (public/topo-grafton.svg). Used as a mask so
-          the lines take the theme's color; faded out behind the search bar. */}
-      <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-[0.14] dark:opacity-[0.16]"
-        style={{
-          backgroundColor: `rgb(var(--color-text-tertiary))`,
-          WebkitMask: 'url(/topo-grafton.svg) center / cover no-repeat',
-          mask: 'url(/topo-grafton.svg) center / cover no-repeat',
-        }} />
+          Grafton, IL, from public elevation data (scripts/build-topo-background.py). One copy per
+          theme with its color baked in, swapped by opacity, each on its own compositor layer
+          (will-change) so the 0.3 s theme color transition never redraws the lines; a mask colored
+          by a theme variable was re-rasterized on every frame of it, which made switching slow. */}
+      <img src="/topo-grafton-light.svg" alt="" aria-hidden="true" decoding="async"
+        className="pointer-events-none absolute inset-0 w-full h-full object-cover [will-change:transform] opacity-[0.14] dark:opacity-0" />
+      <img src="/topo-grafton-dark.svg" alt="" aria-hidden="true" decoding="async"
+        className="pointer-events-none absolute inset-0 w-full h-full object-cover [will-change:transform] opacity-0 dark:opacity-[0.16]" />
       <div aria-hidden="true" className="pointer-events-none absolute inset-0"
         style={{ background: `radial-gradient(ellipse 55% 50% at 50% 50%, rgb(var(--color-bg-primary)) 0%, rgb(var(--color-bg-primary) / 0) 100%)` }} />
       <div className="relative w-full max-w-2xl mx-auto px-4 sm:px-6 py-16 flex flex-col items-center">

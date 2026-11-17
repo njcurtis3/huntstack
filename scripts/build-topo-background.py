@@ -1,7 +1,10 @@
-# Build the home page topo background (apps/web/public/topo-grafton.svg): contour lines from
+# Build the home page topo background (apps/web/public/topo-grafton-{light,dark}.svg): contour lines from
 # Terrarium elevation tiles (AWS Terrain Tiles, open data; USGS 3DEP in the US).
 # Tiles: z12, x 1016-1021, y 1563-1567 from https://s3.amazonaws.com/elevation-tiles-prod/terrarium/12/{x}/{y}.png
-# Usage: TOL=1.0 python scripts/build-topo-background.py <tiles_dir> apps/web/public/topo-grafton.svg 8 5 4.5
+# Usage: TOL=1.0 python scripts/build-topo-background.py <tiles_dir> topo.svg 8 5 4.5
+# Then bake one copy per theme (HomePage swaps them; a CSS mask instead froze theme switches ~250 ms):
+#   sed "s/stroke=\"#000\"/stroke=\"#6b7178\"/" topo.svg > apps/web/public/topo-grafton-light.svg
+#   sed "s/stroke=\"#000\"/stroke=\"#8a9098\"/" topo.svg > apps/web/public/topo-grafton-dark.svg
 import sys, glob, os
 import numpy as np
 from PIL import Image
