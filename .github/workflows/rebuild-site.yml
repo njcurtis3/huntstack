@@ -36,7 +36,7 @@ jobs:
             echo "::error::CF_PAGES_DEPLOY_HOOK is not set. Add it under Settings > Secrets and variables > Actions."
             exit 1
           fi
-          # Cloudflare answers {"success":true,...}; anything else fails the run
+          # Cloudflare answers {"success": true, ...} (spacing varies); anything else fails the run
           body=$(curl -fsS --retry 3 --retry-all-errors -X POST "$HOOK")
-          echo "$body" | grep -q '"success":true' || { echo "::error::Deploy hook did not accept the request"; exit 1; }
+          echo "$body" | grep -Eq '"success"[[:space:]]*:[[:space:]]*true' || { echo "::error::Deploy hook did not accept the request"; exit 1; }
           echo "Pages build queued."
