@@ -38,6 +38,8 @@ from huntstack_scrapers.species_mapping import is_unknown_species_name
 log = logging.getLogger(__name__)
 
 DOWNLOAD_DELAY = 3  # seconds between requests — be respectful to government sites
+# Plain requests calls send this: LDWF answers 403 to non-browser User-Agents (owner-approved 2026-11-17)
+BROWSER_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
 
 class RefugeCountsScraper:
@@ -118,9 +120,10 @@ class RefugeCountsScraper:
     def _download_pdf(self, url: str) -> bytes | None:
         """Download a PDF directly with requests (bypasses robots.txt for external hosts)."""
         try:
-            resp = req.get(url, timeout=30)
+            resp = req.get(url, timeout=30, headers=BROWSER_HEADERS)
             if resp.status_code == 200:
                 return resp.content
+            log.warning(f"HTTP {resp.status_code} downloading {url}")
         except Exception as e:
             log.error(f"PDF download failed for {url}: {e}")
         return None
@@ -161,6 +164,7 @@ class RefugeCountsScraper:
             "source_url": source_url,
             "survey_type": result.survey_type or survey_type,
             "scraped_at": datetime.utcnow().isoformat(),
+            "verified_total": result.verified_total,
         }
 
     # ─── Source type handlers ─────────────────────────────────────────────────
@@ -252,8 +256,9 @@ class RefugeCountsScraper:
         found = 0
         for pdf_url in pdf_urls:
             try:
-                head = req.head(pdf_url, timeout=10, allow_redirects=True)
+                head = req.head(pdf_url, timeout=10, allow_redirects=True, headers=BROWSER_HEADERS)
                 if head.status_code != 200:
+                    log.warning(f"HTTP {head.status_code} checking {pdf_url}")
                     continue
                 content_length = int(head.headers.get("Content-Length", 0))
                 if content_length < 5000:
@@ -270,6 +275,9 @@ class RefugeCountsScraper:
                 if not result:
                     log.warning(f"Parser returned no data for {pdf_url}")
                     continue
+                # A source can correct what the PDF says from its URL (LDWF: typo'd report years)
+                if source.get("pdf_result_fix"):
+                    result = source["pdf_result_fix"](result, pdf_url)
 
                 log.info(f"Extracted {len(result.species_counts)} species from {source['name']} ({result.survey_date})")
                 items.append(self._make_item(source["name"], source["state_code"], result, pdf_url, source.get("survey_type", "weekly")))
@@ -339,7 +347,7 @@ class RefugeCountsScraper:
                     items = []
 
                 all_items.extend(items)
-                self._record(items, stats)
+                self._record(items, stats, source)
 
             except Exception as e:
                 log.error(f"Error scraping {source['name']}: {e}")
@@ -358,7 +366,7 @@ class RefugeCountsScraper:
         }
         return stats
 
-    def _record(self, items: list[dict], stats: dict) -> None:
+    def _record(self, items: list[dict], stats: dict, source: dict | None = None) -> None:
         """Count, check and (unless dry run) store one source's items."""
         stats["items"] += len(items)
         for item in items:
@@ -367,7 +375,10 @@ class RefugeCountsScraper:
             )
         if self.dry_run:
             return
+        near_days = (source or {}).get("same_survey_within_days")
         for item in items:
+            if near_days and not self._prepare_same_survey(item, near_days, stats):
+                continue
             stored = self._store_item(item)
             if stored is None:
                 continue
@@ -376,6 +387,64 @@ class RefugeCountsScraper:
             stats["no_location"] = stats["no_location"] or stored["no_location"]
             if stored["error"]:
                 stats["store_errors"] += 1
+
+    def _prepare_same_survey(self, item: dict, days: int, stats: dict) -> bool:
+        """For a source whose parser reads a report's date inconsistently (LDWF's LLM-read PDFs:
+        Dec 18 one run, Dec 19 the next): treat a survey stored within `days` as the same survey.
+        The upsert keys on the exact date, so without this a re-read is stored twice.
+
+        Returns whether to store the item:
+          - nothing stored nearby: store it as read.
+          - the stored survey adds up to the item's checked total: already right, skip.
+          - it doesn't, and the item's read was checked (verified_total): delete the stored
+            rows and store the item under the stored date, so charts keep their dates.
+          - it doesn't, and the item wasn't checked: skip; an unchecked read never overwrites.
+        """
+        location_id = self._location_map.get(item.get("refuge_name"))
+        if not self._conn or not location_id or not item.get("survey_date"):
+            return True
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT rc.survey_date::date,
+                       coalesce(sum(rc.count) FILTER (
+                           WHERE s.slug NOT LIKE '%%goose%%' AND s.slug NOT LIKE '%%swan%%'), 0)
+                FROM refuge_counts rc JOIN species s ON s.id = rc.species_id
+                WHERE rc.location_id = %s AND rc.survey_type = %s
+                  AND rc.survey_date::date BETWEEN %s::date - %s AND %s::date + %s
+                GROUP BY 1
+                ORDER BY abs(rc.survey_date::date - %s::date)
+                LIMIT 1
+                """,
+                (location_id, item["survey_type"], item["survey_date"], days,
+                 item["survey_date"], days, item["survey_date"]),
+            )
+            row = cur.fetchone()
+        if not row:
+            return True
+        stored_date, stored_total = str(row[0])[:10], int(row[1])
+        name, read_date, checked = item["refuge_name"], item["survey_date"], item.get("verified_total")
+        if checked is None:
+            if stored_date != read_date:
+                log.info(f"{name}: {read_date} skipped, the same survey is stored as {stored_date}")
+                return False
+            return True  # same date, unchecked: the plain upsert, as before
+        if stored_total == checked:
+            log.info(f"{name}: {read_date} skipped, stored as {stored_date} and it adds up ({checked:,})")
+            return False
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM refuge_counts WHERE location_id = %s AND survey_type = %s AND survey_date::date = %s::date",
+                (location_id, item["survey_type"], stored_date),
+            )
+            removed = cur.rowcount
+        log.warning(
+            f"{name}: stored {stored_date} added up to {stored_total:,}, the report says {checked:,}; "
+            f"replaced its {removed} rows with the checked read"
+        )
+        stats["replaced"] = stats.get("replaced", 0) + 1
+        item["survey_date"] = stored_date
+        return True
 
     def _store_zones(self, source: dict, batches: list[tuple[list, str, str]]) -> int:
         """Store zone rows from add_reports, each dated with its report's survey date."""

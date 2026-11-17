@@ -34,6 +34,9 @@ class ParseResult:
     # Per-region figures behind statewide counts, for parsers that check one table against
     # another (AGFC: {"Delta": (mallards, total ducks), ...})
     regions: dict | None = None
+    # The report's own total the species were checked against (LDWF's TOTAL DUCKS); None if
+    # the read wasn't checked. Lets storage replace a stored survey that doesn't match it.
+    verified_total: int | None = None
 
 
 # Shared date extraction patterns

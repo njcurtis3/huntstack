@@ -21,7 +21,7 @@ from huntstack_scrapers.parsers.agfc_pdf import parse_agfc_pdf
 from huntstack_scrapers.parsers.agfc_zones import store_zone_rows, zones_for_report
 from huntstack_scrapers.parsers.fws_html import parse_fws_refuge_page, parse_fws_story_page
 from huntstack_scrapers.parsers.loess_bluffs_pdf import parse_loess_bluffs_pdf, generate_loess_bluffs_urls
-from huntstack_scrapers.parsers.ldwf_pdf import parse_ldwf_pdf, fetch_ldwf_pdf_urls
+from huntstack_scrapers.parsers.ldwf_pdf import parse_ldwf_pdf, fetch_ldwf_pdf_urls, fix_ldwf_survey_date
 from huntstack_scrapers.parsers.tpwd_excel import fetch_tpwd_excel_urls, parse_tpwd_excel
 from huntstack_scrapers.parsers.inhs_forbes_pdf import RIVER_SOURCES, fetch_forbes_results
 from huntstack_scrapers.parsers.hagerman_census import CENSUS_PAGE_URL, fetch_census_results
@@ -94,6 +94,12 @@ WATERFOWL_SOURCES = [
         # since importing this module must not trigger live HTTP requests.
         "pdf_urls_fn": fetch_ldwf_pdf_urls,
         "pdf_parser": parse_ldwf_pdf,
+        "pdf_result_fix": fix_ldwf_survey_date,
+        # The LLM reads a report's date differently between runs (Jan 2026: the Jan 8 flight one
+        # run, the Jan 23 report date the next): a survey stored within 20 days is the same
+        # survey, kept if it matches TOTAL DUCKS, else replaced by a checked read. Surveys are
+        # monthly (closest pair: Nov 12 and Dec 18), so 20 days never joins two months.
+        "same_survey_within_days": 20,
     },
 
     # === INHS Forbes Biological Station — weekly aerial inventory, Sept-Jan (Mississippi Flyway) ===
