@@ -45,8 +45,8 @@ export function renderGuideHtml(g: Guide): string {
   out.push(`<p class="mt-3 text-base" style="${muted}">${esc(guideSummary(g))}</p>`)
   out.push(`<p class="mt-4 flex flex-wrap gap-2">${[
     link(`/migration?state=${g.state.code}`, `Migration in ${name}`, 'btn-primary text-sm'),
-    link(`/regulations/${g.state.code}`, `${name} regulations`, 'btn-outline text-sm'),
-    link('/where-to-hunt', 'Where to hunt', 'btn-outline text-sm'),
+    link(`/regulations/${g.state.code}?expand=all`, `${name} regulations`, 'btn-outline text-sm'),
+    link(`/where-to-hunt?states=${g.state.code}&go=1`, 'Where to hunt', 'btn-outline text-sm'),
     link(`/chat?q=${encodeURIComponent(guideQuestion(g.state))}`, 'Ask AI', 'btn-outline text-sm'),
   ].join('')}</p>`)
 
@@ -93,7 +93,7 @@ export function renderGuideHtml(g: Guide): string {
     }
     out.push(`</tbody></table></div>`)
   }
-  out.push(`<p class="mt-4 text-xs" style="${muted}">From ${g.sourceUrl ? link(g.sourceUrl, g.agencyName ?? `${name}'s wildlife agency`) : esc(g.agencyName ?? `${name}'s wildlife agency`)}. Daily limits are the most of that group in one day; species sub-limits, shooting hours and license rules are in ${link(`/regulations/${g.state.code}`, `${name} regulations`)}. Check the agency's current rules before you hunt.</p>`)
+  out.push(`<p class="mt-4 text-xs" style="${muted}">From ${g.sourceUrl ? link(g.sourceUrl, g.agencyName ?? `${name}'s wildlife agency`) : esc(g.agencyName ?? `${name}'s wildlife agency`)}. Daily limits are the most of that group in one day; species sub-limits, shooting hours and license rules are in ${link(`/regulations/${g.state.code}?expand=all`, `${name} regulations`)}. Check the agency's current rules before you hunt.</p>`)
   out.push(`</section>`)
 
   out.push(`<section class="mt-10" aria-labelledby="guide-more"><h2 id="guide-more" class="text-xl font-semibold">Other states</h2><div class="mt-3">${otherStates(g.state.code)}</div></section>`)

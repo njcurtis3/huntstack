@@ -1232,6 +1232,16 @@ export function MigrationPage() {
   const [siteQuery, setSiteQuery] = useState<Record<string, string>>({})
   // Each section of the page sits behind a square card (components/SectionCards)
   const sections = useOpenSections('huntstack-migration-sections', SECTION_IDS)
+  // Arriving with a state in the link (a state guide's "Migration in X"): open the sections
+  // that show that state's counts and expand its card, so its numbers are on screen at once
+  useEffect(() => {
+    const linked = (searchParams.get('state') ?? '').toUpperCase()
+    if (!linked) return
+    for (const id of ['map', 'snapshot', 'counts']) sections.reveal(id)
+    setExpandedStates(prev => new Set(prev).add(linked))
+    setShowAllSites(prev => new Set(prev).add(linked))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const mapOpen = sections.isOpen('map')
   // The map is drawn 980 units wide; on a narrow screen markers are scaled up to stay tappable
   const mapBoxRef = useRef<HTMLDivElement>(null)

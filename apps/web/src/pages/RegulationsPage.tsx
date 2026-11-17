@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { Link, useParams, useNavigate } from 'react-router-dom'
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { ChevronRight, ChevronDown, FileText, AlertCircle, ExternalLink, Loader2, MessageSquare, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps'
 import { api } from '../lib/api'
@@ -214,8 +214,8 @@ function SeasonTable({ seasons }: { seasons: Season[] }) {
 
 const isStatewideZone = (z: string) => /statewide/i.test(z)
 
-function SeasonGroups({ seasons }: { seasons: Season[] }) {
-  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set())
+function SeasonGroups({ seasons, openAll = false }: { seasons: Season[]; openAll?: boolean }) {
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(openAll ? GROUP_CONFIG.map(g => g.key) : []))
   // "Is it open in my zone this weekend?" Pick a zone and see only its seasons
   const [zone, setZone] = useState('')
 
@@ -506,6 +506,9 @@ function CompareTable({ stateCodes, statesList }: { stateCodes: string[], states
 
 function StateDetailView({ stateCode }: { stateCode: string }) {
   const navigate = useNavigate()
+  // "?expand=all" (a state guide's "<State> regulations" link) opens every group on arrival
+  const [searchParams] = useSearchParams()
+  const expandAll = searchParams.get('expand') === 'all'
   const [stateInfo, setStateInfo] = useState<StateInfo | null>(null)
   const [regs, setRegs] = useState<Regulation[]>([])
   const [seasonsList, setSeasonsList] = useState<Season[]>([])
@@ -551,14 +554,19 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
         setRegs(regData.regulations as Regulation[])
         setSeasonsList(seasonsData.seasons as Season[])
         setLicensesList(licensesData.licenses as License[])
+        if (expandAll) {
+          setExpandedCategories(new Set((regData.regulations as Regulation[]).map(r => r.category)))
+          setExpandedLicenseTypes(new Set((licensesData.licenses as License[]).map(l => l.licenseType || 'other')))
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load state data')
       } finally {
         setLoading(false)
       }
     }
-    fetchData()
     setExpandedCategories(new Set())
+    fetchData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateCode, selectedYear])
 
   if (loading) {
@@ -731,7 +739,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
       {selectedCategory === 'all' && seasonsList.length > 0 && (
         <div className="space-y-6 mb-8">
           <h2 className="text-xl font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>Seasons</h2>
-          <SeasonGroups seasons={seasonsList} />
+          <SeasonGroups seasons={seasonsList} openAll={expandAll} />
         </div>
       )}
 

@@ -98,8 +98,8 @@ function StateGuide({ state }: { state: GuideState }) {
       {g && <p className="mt-3 text-base" style={muted}>{guideSummary(g)}</p>}
       <p className="mt-4 flex flex-wrap gap-2">
         <Link to={`/migration?state=${state.code}`} className="btn-primary text-sm">Migration in {name}</Link>
-        <Link to={`/regulations/${state.code}`} className="btn-outline text-sm">{name} regulations</Link>
-        <Link to="/where-to-hunt" className="btn-outline text-sm">Where to hunt</Link>
+        <Link to={`/regulations/${state.code}?expand=all`} className="btn-outline text-sm">{name} regulations</Link>
+        <Link to={`/where-to-hunt?states=${state.code}&go=1`} className="btn-outline text-sm">Where to hunt</Link>
         <Link to={`/chat?q=${encodeURIComponent(guideQuestion(state))}`} className="btn-outline text-sm">Ask AI</Link>
       </p>
 
@@ -231,7 +231,7 @@ function Seasons({ g }: { g: Guide }) {
         From{' '}
         {g.sourceUrl ? <a href={g.sourceUrl} target="_blank" rel="noopener noreferrer" className="underline">{agency}</a> : agency}.
         {' '}Daily limits are the most of that group in one day; species sub-limits, shooting hours and license rules are in{' '}
-        <Link to={`/regulations/${g.state.code}`} className="underline">{name} regulations</Link>. Check the agency&rsquo;s current rules before you hunt.
+        <Link to={`/regulations/${g.state.code}?expand=all`} className="underline">{name} regulations</Link>. Check the agency&rsquo;s current rules before you hunt.
       </p>
     </section>
   )
