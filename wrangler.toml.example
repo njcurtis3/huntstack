@@ -39,5 +39,6 @@ pages_build_output_dir = "apps/web/dist"
 #   VITE_SUPABASE_ANON_KEY
 #   VITE_MAPTILER_KEY
 #
-# SPA client-side routing fallback is handled by apps/web/public/_redirects
+# SPA client-side routing fallback is Pages' default (no top-level 404.html); there is no
+# _redirects catch-all since 2026-11-16, because it would shadow the pre-rendered state guides
 # (already committed), not by this file.

@@ -21,6 +21,7 @@ import { AuthModal, type AuthMode } from './AuthModal'
 import { FieldReportSheet } from './FieldReportSheet'
 import { DismissibleNotice } from './DismissibleNotice'
 import { feedbackMailto } from '../lib/contact'
+import { guideStateBySlug } from '../lib/stateGuide'
 
 // In the order a hunter plans: where, are birds there, is it legal, anything else.
 const primaryNav = [
@@ -51,6 +52,7 @@ const PAGE_TITLES: Array<[RegExp, string]> = [
   [/^\/where-to-hunt/, 'Where to Hunt'],
   [/^\/migration/, 'Migration'],
   [/^\/regulations/, 'Regulations'],
+  [/^\/duck-hunting\/?$/, 'Duck & Goose Hunting by State'],
   [/^\/chat/, 'Ask AI'],
   [/^\/outfitters\/list-your-business/, 'List Your Business'],
   [/^\/outfitters\/dashboard/, 'Outfitter Dashboard'],
@@ -69,6 +71,11 @@ const PAGE_TITLES: Array<[RegExp, string]> = [
 ]
 
 function pageTitleFor(pathname: string): string {
+  const guide = /^\/duck-hunting\/([^/]+)\/?$/.exec(pathname)
+  if (guide) {
+    const state = guideStateBySlug(guide[1])
+    return state ? `${state.name} Duck & Goose Hunting - HuntStack` : 'Page not found - HuntStack'
+  }
   const hit = PAGE_TITLES.find(([re]) => re.test(pathname))
   if (!hit) return 'Page not found - HuntStack'
   return pathname === '/' ? hit[1] : `${hit[1]} - HuntStack`
@@ -447,6 +454,7 @@ export function Layout() {
                 <li><Link to="/where-to-hunt" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Where to Hunt</Link></li>
                 <li><Link to="/migration" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Migration</Link></li>
                 <li><Link to="/regulations" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Regulations</Link></li>
+                <li><Link to="/duck-hunting" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">State Guides</Link></li>
                 <li><Link to="/chat" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Ask AI</Link></li>
               </ul>
             </div>

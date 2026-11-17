@@ -22,6 +22,7 @@ import { BlogPage } from './pages/BlogPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { AdminPage } from './pages/AdminPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { StateGuideIndexPage, StateGuidePage } from './pages/StateGuidePage'
 
 // The map pulls in MapLibre, so it loads only when someone opens it.
 const MapPage = lazy(() => import('./pages/MapPage'))
@@ -72,6 +73,8 @@ function App() {
           <Route path="map" element={<Suspense fallback={<div className="flex-1" />}><MapPage /></Suspense>} />
           <Route path="migration" element={<MigrationPage />} />
           <Route path="where-to-hunt" element={<WhereToHuntPage />} />
+          <Route path="duck-hunting" element={<StateGuideIndexPage />} />
+          <Route path="duck-hunting/:state" element={<StateGuidePage />} />
           <Route path="regulations" element={<RegulationsPage />} />
           <Route path="regulations/:state" element={<RegulationsPage />} />
           <Route path="outfitters" element={<OutfittersPage />} />
