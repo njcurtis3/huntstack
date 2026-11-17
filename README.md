@@ -80,7 +80,7 @@ population.
 <p align="center">
   <img width="49%" src=".github/screenshots/migration.png" alt="The migration page: ten square cards, one per section, each with a blurred preview; the Snapshot card is open below with birds counted, sites, the migration index, this weekend's call and the season comparison"/>
 &nbsp;
-  <img width="49%" src=".github/screenshots/where-to-hunt.png" alt="Where to Hunt: places ranked by opportunity score, with access notes, season status, conditions and the score breakdown on each card"/>
+  <img width="49%" src=".github/screenshots/where-to-hunt.png" alt="Where to Hunt: the best area, 9 mi N of St. Charles, MO, with birds counted and the change since the previous surveys, the season by zone, the most-counted species, why it ranks there, and the public land in and near it with acres, access and distance"/>
 </p>
 
 <p align="center">
