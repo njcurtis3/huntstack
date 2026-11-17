@@ -104,6 +104,11 @@ const OTHER_GROUPS: SourceGroup[] = [
         url: 'https://www.census.gov/geographies/reference-files/time-series/geo/gazetteer-files.html',
         note: '8,660 towns and places, 2024 Gazetteer and 2023 population estimates',
       },
+      {
+        name: 'USGS 3D Elevation Program, via AWS Terrain Tiles',
+        url: 'https://registry.opendata.aws/terrain-tiles/',
+        note: 'Contour lines in the home page background: the Illinois and Mississippi rivers at Grafton, IL',
+      },
     ],
   },
   {
