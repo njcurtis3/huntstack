@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ChevronRight, ChevronDown, FileText, AlertCircle, ExternalLink, Loader2, MessageSquare, X, ZoomIn, ZoomOut, RotateCcw, LocateFixed, Map as MapIcon } from 'lucide-react'
+import { ChevronRight, ChevronDown, FileText, AlertCircle, ExternalLink, Loader2, MessageSquare, X, ZoomIn, ZoomOut, RotateCcw, LocateFixed, Map as MapIcon, CalendarPlus } from 'lucide-react'
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps'
 import { api } from '../lib/api'
 import { useThemeStore } from '../stores/themeStore'
@@ -573,6 +573,196 @@ function SeasonSummary({ state, stateName, seasons, licenses, zone, zones, onZon
   )
 }
 
+// ─── Season timeline and calendar file ───
+
+/** The rows a hunter plans around, in date order within each group: falconry and bag sub-limits left out */
+function timelineSeasons(seasons: Season[]): Season[] {
+  const unique = [...new Map(seasons.map(s => [`${s.name}|${s.startDate}|${s.endDate}`, s])).values()]
+  return unique.filter(s => !SUB_LIMIT.test(s.name) && !/falconry/i.test(`${s.name} ${s.seasonType ?? ''}`))
+}
+/** "Regular Duck Season (Split 2) - East Zone" -> "Regular Duck Season - East Zone": a split shares its row */
+const rowName = (name: string) => name.replace(/\s*\((split|segment|part)\s*\d+\)/i, '').trim()
+
+const BAR_REGULAR = 'bg-[#2a78d6] dark:bg-[#3987e5]'
+const BAR_SPECIAL = 'bg-[#eda100] dark:bg-[#c98500]'
+const DAY_MS = 86_400_000
+
+/**
+ * One row per season, splits on the same row, across the season's months, with a line at today.
+ * Each bar says its dates on hover and to a screen reader; the tables below carry the same dates.
+ */
+function SeasonTimeline({ seasons }: { seasons: Season[] }) {
+  const today = todayLocal()
+  const rows = useMemo(() => {
+    const byRow = new Map<string, { name: string; group: number; special: boolean; parts: Season[] }>()
+    for (const s of timelineSeasons(seasons)) {
+      const key = rowName(s.name)
+      const cls = classifySeason(s)
+      const row = byRow.get(key) ?? { name: key, group: GROUP_CONFIG.findIndex(g => g.key === cls), special: cls === 'special', parts: [] }
+      row.parts.push(s)
+      byRow.set(key, row)
+    }
+    const first = (r: { parts: Season[] }) => Math.min(...r.parts.map(p => toCalendarDate(p.startDate).getTime()))
+    return [...byRow.values()].sort((a, b) => a.group - b.group || first(a) - first(b))
+  }, [seasons])
+  if (rows.length === 0) return null
+
+  const starts = rows.flatMap(r => r.parts.map(p => toCalendarDate(p.startDate)))
+  const ends = rows.flatMap(r => r.parts.map(p => toCalendarDate(p.endDate)))
+  const lo = new Date(Math.min(...starts.map(d => d.getTime())))
+  const hi = new Date(Math.max(...ends.map(d => d.getTime())))
+  const from = new Date(lo.getFullYear(), lo.getMonth(), 1)
+  const to = new Date(hi.getFullYear(), hi.getMonth() + 1, 1)
+  const span = to.getTime() - from.getTime()
+  const pct = (d: Date) => ((d.getTime() - from.getTime()) / span) * 100
+  const months: Date[] = []
+  for (let m = new Date(from); m < to; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) months.push(m)
+  const todayIn = today >= from && today < to
+  const short = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  const dim = { color: `rgb(var(--color-text-tertiary))` }
+  const ink = { color: `rgb(var(--color-text-primary))` }
+  const grid = { backgroundColor: `rgb(var(--color-border-primary))` }
+  const hasSpecial = rows.some(r => r.special)
+
+  const Gridlines = () => (
+    <>
+      {months.slice(1).map(m => <span key={m.getTime()} aria-hidden className="absolute top-0 bottom-0 w-px" style={{ ...grid, left: `${pct(m)}%` }} />)}
+      {todayIn && <span aria-hidden className="absolute top-0 bottom-0 w-0.5 bg-red-500 dark:bg-red-400" style={{ left: `${pct(today)}%` }} />}
+    </>
+  )
+
+  return (
+    <div className="card p-4 sm:p-5">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-3 text-xs" style={dim}>
+        <span className="inline-flex items-center gap-1.5"><span className={`inline-block w-3 h-2 rounded-sm ${BAR_REGULAR}`} /> Season</span>
+        {hasSpecial && <span className="inline-flex items-center gap-1.5"><span className={`inline-block w-3 h-2 rounded-sm ${BAR_SPECIAL}`} /> Youth, conservation order and other special days</span>}
+        {todayIn && <span className="inline-flex items-center gap-1.5"><span className="inline-block w-0.5 h-3 bg-red-500 dark:bg-red-400" /> Today, {short(today)}</span>}
+      </div>
+      {/* Month axis */}
+      <div className="grid grid-cols-1 sm:grid-cols-[16rem_1fr] gap-x-3">
+        <span className="hidden sm:block" />
+        <div className="relative h-5 text-[11px]" style={dim}>
+          {months.map(m => (
+            <span key={m.getTime()} className="absolute top-0 pl-1" style={{ left: `${pct(m)}%` }}>
+              {m.toLocaleDateString('en-US', { month: 'short' })}
+            </span>
+          ))}
+        </div>
+      </div>
+      <ul className="space-y-1.5 sm:space-y-1">
+        {rows.map(r => (
+          <li key={r.name} className="grid grid-cols-1 sm:grid-cols-[16rem_1fr] gap-x-3 items-center">
+            <span className="text-xs sm:truncate" style={ink} title={r.name}>{r.name}</span>
+            <div className="relative h-4">
+              <Gridlines />
+              {r.parts.map(p => {
+                const a = toCalendarDate(p.startDate), b = toCalendarDate(p.endDate)
+                const when = a.getTime() === b.getTime() ? short(a) : `${short(a)} – ${short(b)}`
+                return (
+                  <span key={p.id} role="img" tabIndex={0} aria-label={`${p.name}: ${when}`} title={`${p.name}\n${when}`}
+                    className={`absolute top-0.5 bottom-0.5 rounded focus:outline-none focus:ring-2 focus:ring-accent-500 ${r.special ? BAR_SPECIAL : BAR_REGULAR}`}
+                    style={{ left: `${pct(a)}%`, width: `max(4px, calc(${((b.getTime() + DAY_MS - a.getTime()) / span) * 100}% - 2px))` }} />
+                )
+              })}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+/** iCalendar text: escape, and fold lines at 75 octets */
+const icsText = (t: string) => t.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n')
+function icsFold(line: string): string {
+  const bytes = new TextEncoder().encode(line)
+  if (bytes.length <= 75) return line
+  const out: string[] = []
+  let cur = ''
+  let size = 0
+  for (const ch of line) {
+    const n = new TextEncoder().encode(ch).length
+    if (size + n > (out.length ? 74 : 75)) { out.push(cur); cur = ''; size = 0 }
+    cur += ch; size += n
+  }
+  out.push(cur)
+  return out.join('\r\n ')
+}
+const icsDate = (d: Date) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+
+/**
+ * Opening days and last days as all-day events, from today on (the whole season when it is
+ * over), each with its limit and hours, a reminder the day before an opener, and a link back.
+ */
+function buildSeasonIcs(seasons: Season[], opts: { state: string; stateName: string; zone: string; agency: string | null }): { text: string; count: number } {
+  const today = todayLocal()
+  const page = `https://huntstack.net/regulations/${opts.state.toUpperCase()}${opts.zone ? `?zone=${encodeURIComponent(opts.zone)}` : ''}`
+  type Ev = { day: Date; title: string; uid: string; detail: string; opener: boolean }
+  const all: Ev[] = []
+  for (const s of timelineSeasons(seasons)) {
+    const a = toCalendarDate(s.startDate), b = toCalendarDate(s.endDate)
+    const bag = bagLine(s.bagLimit)
+    const hours = formatShootingHours(s.shootingHours)
+    const detail = [
+      `${s.name}: ${a.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} to ${b.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.`,
+      bag && `Limit: ${bag}.`,
+      hours !== '—' && `Shooting hours: ${hours}.`,
+      `Confirm with ${opts.agency ?? `the ${opts.stateName} wildlife agency`} before you hunt.`,
+      page,
+    ].filter(Boolean).join('\n')
+    if (a.getTime() === b.getTime()) {
+      all.push({ day: a, title: s.name, uid: `${s.id}-day`, detail, opener: true })
+    } else {
+      all.push({ day: a, title: `Opens: ${s.name}`, uid: `${s.id}-open`, detail, opener: true })
+      all.push({ day: b, title: `Last day: ${s.name}`, uid: `${s.id}-close`, detail, opener: false })
+    }
+  }
+  const ahead = all.filter(e => e.day >= today)
+  const events = (ahead.length > 0 ? ahead : all).sort((x, y) => x.day.getTime() - y.day.getTime())
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//HuntStack//Season dates//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    `X-WR-CALNAME:${icsText(`${opts.stateName}${opts.zone ? ` ${opts.zone}` : ''} waterfowl seasons`)}`,
+  ]
+  for (const e of events) {
+    const next = new Date(e.day.getFullYear(), e.day.getMonth(), e.day.getDate() + 1)
+    lines.push('BEGIN:VEVENT', `UID:${e.uid}@huntstack.net`, `DTSTAMP:${stamp}`,
+      `DTSTART;VALUE=DATE:${icsDate(e.day)}`, `DTEND;VALUE=DATE:${icsDate(next)}`,
+      `SUMMARY:${icsText(e.title)}`, `DESCRIPTION:${icsText(e.detail)}`, `URL:${page}`, 'TRANSP:TRANSPARENT')
+    if (e.opener) lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsText(e.title)}`, 'TRIGGER:-PT12H', 'END:VALARM')
+    lines.push('END:VEVENT')
+  }
+  lines.push('END:VCALENDAR')
+  return { text: lines.map(icsFold).join('\r\n') + '\r\n', count: events.length }
+}
+
+function AddToCalendar({ seasons, state, stateName, zone, zones, agency, year }: {
+  seasons: Season[]; state: string; stateName: string; zone: string; zones: string[]; agency: string | null; year: number
+}) {
+  const [note, setNote] = useState<string | null>(null)
+  function download() {
+    const { text, count } = buildSeasonIcs(seasons, { state, stateName, zone, agency })
+    const slug = (zone || (zones.length > 1 ? 'all-zones' : 'statewide')).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/calendar;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `huntstack-${state.toLowerCase()}-${slug}-${year}.ics`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    setNote(`${count} dates saved${zone ? ` for ${zone}` : zones.length > 1 ? ' for every zone. Pick your zone for fewer' : ''}.`)
+  }
+  return (
+    <div className="flex flex-col items-start sm:items-end gap-1">
+      <button type="button" onClick={download} className="chip min-h-10 inline-flex items-center gap-1.5">
+        <CalendarPlus className="w-4 h-4" /> Add to calendar
+      </button>
+      {note && <p className="text-xs" role="status" style={{ color: `rgb(var(--color-text-tertiary))` }}>{note}</p>}
+    </div>
+  )
+}
+
 function SeasonGroups({ seasons, zone, openAll = false }: { seasons: Season[]; zone: string; openAll?: boolean }) {
   const inZone = useMemo(() => seasonsInZone(seasons, zone), [seasons, zone])
   const [openGroups, setOpenGroups] = useState<Set<string>>(() =>
@@ -1044,8 +1234,14 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
       {/* Seasons first: dates and limits are what most visitors came for */}
       {selectedCategory === 'all' && seasonsList.length > 0 && (
         <div className="space-y-4 mb-8">
-          <h2 className="text-xl font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>Seasons</h2>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <h2 className="text-xl font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
+              Seasons{zone && <span className="text-base font-normal" style={{ color: `rgb(var(--color-text-tertiary))` }}> in {zone}</span>}
+            </h2>
+            <AddToCalendar seasons={zoneSeasons} state={stateCode} stateName={stateName} zone={zone} zones={zones} agency={stateInfo?.agencyName ?? null} year={selectedYear} />
+          </div>
           {selectedYear !== SEASON_YEAR && <ZonePicker zones={zones} zone={zone} onZone={setZone} />}
+          <SeasonTimeline seasons={zoneSeasons} />
           <SeasonGroups key={selectedYear} seasons={seasonsList} zone={zone} openAll={expandAll} />
         </div>
       )}
