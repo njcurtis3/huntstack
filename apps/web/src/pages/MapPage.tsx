@@ -2354,7 +2354,7 @@ function AreaDetails({ area, day }: { area: HuntArea; day: string }) {
   const secondary = { color: 'rgb(var(--color-text-secondary))' }
   return (
     <div>
-      <Heading eyebrow={`#${area.stateRank} in ${STATE_NAMES[area.state] ?? area.state} · #${area.rank} overall${area.county ? ` · ${area.county}` : ''}`} title={area.title} />
+      <Heading eyebrow={`#${area.stateRank} in ${STATE_NAMES[area.state] ?? area.state}${area.county ? ` · ${area.county}` : ''}`} title={area.title} />
       <div className="flex items-baseline gap-3 mb-1">
         <span className="font-mono text-2xl font-medium" style={{ color: 'rgb(var(--color-text-primary))' }}>{fmtNum(area.birds)}</span>
         <span className="text-sm" style={secondary}>birds counted nearby</span>

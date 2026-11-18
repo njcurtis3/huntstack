@@ -126,14 +126,18 @@ describe('rankAreas', () => {
     { id: 'a', state: 'IL' }, { id: 'b', state: 'IL' }, { id: 'c', state: 'IL' },
     { id: 'd', state: 'TX' }, { id: 'e', state: 'IL' }, { id: 'f', state: 'TX' },
   ]
-  it('ranks overall and within each state', () => {
+  it("ranks overall and within each state, taking each state's best first", () => {
     const r = rankAreas(sorted, 15)
     expect(r.map(a => [a.id, a.rank, a.stateRank])).toEqual([
-      ['a', 1, 1], ['b', 2, 2], ['c', 3, 3], ['d', 4, 1], ['e', 5, 4], ['f', 6, 2],
+      ['a', 1, 1], ['d', 4, 1], ['b', 2, 2], ['f', 6, 2], ['c', 3, 3], ['e', 5, 4],
     ])
   })
-  it('keeps the overall top max without perState', () => {
-    expect(rankAreas(sorted, 3).map(a => a.id)).toEqual(['a', 'b', 'c'])
+  it("gives every state a place in the top max before any state's second", () => {
+    expect(rankAreas(sorted, 3).map(a => a.id)).toEqual(['a', 'd', 'b'])
+  })
+  it('keeps plain score order for one state', () => {
+    const one = sorted.filter(a => a.state === 'IL')
+    expect(rankAreas(one, 3).map(a => a.id)).toEqual(['a', 'b', 'c'])
   })
   it('keeps the best N of each state with perState, best first', () => {
     expect(rankAreas(sorted, 3, 2).map(a => a.id)).toEqual(['a', 'b', 'd', 'f'])

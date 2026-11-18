@@ -203,8 +203,14 @@ export function isSightingsOnly(summary: AreaSummary, publicLands: number): bool
 
 /**
  * Rank areas (already sorted best first) overall and within their state. With perState, keep the
- * best few of each state, still best first, for the map: across nine states the overall top 15
- * were all on the Illinois and Mississippi river surveys, with nothing near a Texas hunter.
+ * best few of each state, still best first, for the map. Without it, take max areas a round at a
+ * time: every state's best, then every state's second best, each round best first.
+ *
+ * Scores compare birds, and states are not counted alike: INHS flies the Illinois and
+ * Mississippi rivers and counts every duck, while Texas has one refuge census and birders'
+ * eBird lists. Ranked straight, the top 12 of 300 were all INHS areas (Texas's best was #21),
+ * so a Texas hunter searching every state got Illinois. Within a state the order holds; across
+ * states it says more about coverage than birds. `rank` stays the plain score order.
  */
 export function rankAreas<T extends { state: string }>(sorted: T[], max: number, perState?: number): Array<T & { rank: number; stateRank: number }> {
   const seen = new Map<string, number>()
@@ -213,7 +219,9 @@ export function rankAreas<T extends { state: string }>(sorted: T[], max: number,
     seen.set(a.state, stateRank)
     return { ...a, rank: i + 1, stateRank }
   })
-  return perState ? ranked.filter(a => a.stateRank <= perState) : ranked.slice(0, max)
+  if (perState) return ranked.filter(a => a.stateRank <= perState)
+  // Stable: same stateRank keeps score order
+  return [...ranked].sort((a, b) => a.stateRank - b.stateRank || a.rank - b.rank).slice(0, max)
 }
 
 /** Public land listed for an area reaches this far past the area's own edge */

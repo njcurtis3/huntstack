@@ -1781,10 +1781,18 @@ export function MigrationPage() {
       // The state as a whole up 30% on its previous surveys, not one species at one site
       const change = sg.change
       const hasSpike = sg.topAnomaly === 'spike'
-      // Score on fresh birds only — stale data doesn't influence where to hunt this weekend
-      const score = sg.freshTotalBirds + (pushScore * 5000) + (isArriving ? 10000 : 0) + (hasSpike ? 8000 : 0)
+      // Movement, not totals: states aren't counted alike (LDWF's statewide estimate against
+      // Texas's few refuges), so the biggest total always picked the best-surveyed state. Change
+      // (capped, so one small site's 4x doesn't swamp the rest), the state's own weather and its
+      // status decide; stale states never lead; birds only break ties. A change measured at one
+      // or two sites counts for less (Iowa's one site up 4x was otherwise the pick): full weight
+      // from three sites with a previous survey.
+      const pct = change ? Math.max(-50, Math.min(100, change.percent)) : 0
+      const compared = sg.refuges.filter(r => !r.isStale && r.change).length
+      const weight = Math.min(1, compared / 3)
+      const score = sg.allStale ? -Infinity : (pct + (hasSpike ? 20 : 0)) * weight + (pushScore * 25) + (isArriving ? 30 : 0)
       return { ...sg, pushScore, isArriving, hasSpike, change, compositeScore: score }
-    }).sort((a, b) => b.compositeScore - a.compositeScore)
+    }).sort((a, b) => b.compositeScore - a.compositeScore || b.freshTotalBirds - a.freshTotalBirds)
 
     const top = scoredStates[0]
     if (!top) return null

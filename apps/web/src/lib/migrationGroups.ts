@@ -267,7 +267,12 @@ export function partialCountNote(sg: StateGroup<unknown>): string | null {
   return `Waiting for ${s.survey} counts. This total is ${sites}, not the whole state.`
 }
 
-/** One group per state, busiest current state first. */
+/**
+ * One group per state: current states before stale ones, then by how much the counts moved
+ * (most rising first, see weightedChange), then states with nothing to compare (eBird places, first surveys) by birds.
+ * Not by birds alone: states aren't counted alike (LDWF's statewide estimate against Texas's few
+ * refuges), so the biggest total was mostly the state with the most survey coverage.
+ */
 export function groupStates<T extends Enriched>(refugeGroups: RefugeGroup<T>[], nameOf: (code: string) => string): StateGroup<T>[] {
   const map = new Map<string, RefugeGroup<T>[]>()
   for (const rg of refugeGroups) {
@@ -307,7 +312,22 @@ export function groupStates<T extends Enriched>(refugeGroups: RefugeGroup<T>[], 
       allStale,
       refuges,
     }
-  }).sort((a, b) => b.freshTotalBirds - a.freshTotalBirds)
+  }).sort((a, b) =>
+    Number(a.allStale) - Number(b.allStale)
+    || Number(!a.change) - Number(!b.change)
+    || weightedChange(b) - weightedChange(a)
+    || b.freshTotalBirds - a.freshTotalBirds)
+}
+
+/**
+ * A state's change for ordering: capped at -50..+100%, and worth less when measured at one or
+ * two sites (full weight from three sites with a previous survey), so one small site up 4x
+ * doesn't put its state first.
+ */
+export function weightedChange(sg: StateGroup<unknown>): number {
+  if (!sg.change) return 0
+  const compared = sg.refuges.filter(r => !r.isStale && r.change).length
+  return Math.max(-50, Math.min(100, sg.change.percent)) * Math.min(1, compared / 3)
 }
 
 export type FlowLeg = { from: string; to: string; flow: Exclude<FlowDirection, null> }

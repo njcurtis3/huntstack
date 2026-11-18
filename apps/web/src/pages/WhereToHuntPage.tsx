@@ -147,8 +147,9 @@ function AreaSummaryLine({ area }: { area: HuntArea }) {
   )
 }
 
-function AreaCard({ area, distMi, open, onToggle }: {
-  area: HuntArea; distMi: number | null; open: boolean; onToggle: () => void
+function AreaCard({ area, place, distMi, open, onToggle }: {
+  /** place: the area's position in the Best order (the API's list order), kept when sorted by distance */
+  area: HuntArea; place: number; distMi: number | null; open: boolean; onToggle: () => void
 }) {
   const [showAll, setShowAll] = useState(false)
   const panelId = `area-${area.id}-details`
@@ -166,10 +167,10 @@ function AreaCard({ area, distMi, open, onToggle }: {
           for keyboard and screen readers (its click bubbles up to the header, so no handler of its own) */}
       <div className="flex items-start gap-3 cursor-pointer" onClick={onToggle}>
         <span
-          className={`inline-flex w-7 pt-1 font-mono text-sm font-medium flex-shrink-0 ${area.rank <= 3 ? 'text-accent-600 dark:text-accent-400' : ''}`}
-          style={area.rank <= 3 ? undefined : muted}
+          className={`inline-flex w-7 pt-1 font-mono text-sm font-medium flex-shrink-0 ${place <= 3 ? 'text-accent-600 dark:text-accent-400' : ''}`}
+          style={place <= 3 ? undefined : muted}
         >
-          {area.rank}
+          {place}
         </span>
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-3">
@@ -423,8 +424,9 @@ export function WhereToHuntPage() {
 
   const displayAreas = useMemo(() => {
     if (!areas) return null
-    const annotated = areas.map(a => ({
+    const annotated = areas.map((a, i) => ({
       area: a,
+      place: i + 1,
       distMi: userLocation ? toMiles(haversineKm(userLocation.lat, userLocation.lng, a.center.lat, a.center.lng)) : null,
     }))
     return sortByDistance && userLocation
@@ -492,7 +494,8 @@ export function WhereToHuntPage() {
           <p className="text-[#a7adb4] max-w-2xl leading-relaxed">
             The areas where ducks and geese are right now, from refuge and agency surveys, eBird reports and
             hunter reports, ranked by birds counted nearby, which way the counts are moving, the season and
-            the weather.
+            the weather. With several states picked, each state's best area comes first: states aren't
+            surveyed alike, so their bird counts don't compare.
           </p>
         </div>
       </div>
@@ -686,8 +689,8 @@ export function WhereToHuntPage() {
               </div>
             </div>
             <div>
-              {displayAreas.map(({ area, distMi }) => (
-                <AreaCard key={area.id} area={area} distMi={distMi}
+              {displayAreas.map(({ area, place, distMi }) => (
+                <AreaCard key={area.id} area={area} place={place} distMi={distMi}
                   open={openAreas.has(area.id)} onToggle={() => toggleArea(area.id)} />
               ))}
             </div>
