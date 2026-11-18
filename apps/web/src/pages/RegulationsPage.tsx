@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ChevronRight, ChevronDown, FileText, AlertCircle, ExternalLink, Loader2, MessageSquare, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react'
+import { ChevronRight, ChevronDown, FileText, AlertCircle, ExternalLink, Loader2, MessageSquare, X, ZoomIn, ZoomOut, RotateCcw, LocateFixed, Map as MapIcon } from 'lucide-react'
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps'
 import { api } from '../lib/api'
 import { useThemeStore } from '../stores/themeStore'
@@ -246,6 +246,199 @@ function groupsInSeason(seasons: Season[], today: Date): Set<string> {
   return new Set(next ? [classifySeason(next)] : [])
 }
 
+// ─── Zone: remembered, in the link, found from where you stand, shown on the map ───
+
+const ZONE_SHAPES_URL = '/data/waterfowl-zones-2026.json'
+const zoneKey = (state: string) => `huntstack-reg-zone-${state.toUpperCase()}`
+
+type ZoneShape = {
+  properties: { id: string; state: string; duckZone: string; gooseZone: string; duckUnits?: string[]; gooseUnits?: string[] }
+  geometry: { type: 'Polygon'; coordinates: number[][][] } | { type: 'MultiPolygon'; coordinates: number[][][][] }
+}
+let zoneShapes: Promise<ZoneShape[]> | null = null
+/** The Map page's zone shapes (one file, fetched once and only when needed) */
+function loadZoneShapes(): Promise<ZoneShape[]> {
+  zoneShapes ??= fetch(ZONE_SHAPES_URL)
+    .then(r => { if (!r.ok) throw new Error('zone shapes'); return r.json() })
+    .then(d => d.features as ZoneShape[])
+    .catch(e => { zoneShapes = null; throw e })
+  return zoneShapes
+}
+
+function inRing(lng: number, lat: number, ring: number[][]): boolean {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j]
+    if ((yi > lat) !== (yj > lat) && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+function inShape(lng: number, lat: number, g: ZoneShape['geometry']): boolean {
+  const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates
+  return polys.some(([outer, ...holes]) => inRing(lng, lat, outer) && !holes.some(h => inRing(lng, lat, h)))
+}
+
+/** The picker's name for a shape: its duck zone, else the first of its units the seasons use */
+function zoneNameFor(shape: ZoneShape, zones: string[]): string {
+  const p = shape.properties
+  return [p.duckZone, ...(p.duckUnits ?? []), p.gooseZone, ...(p.gooseUnits ?? [])].find(z => zones.includes(z)) ?? ''
+}
+
+/** The map shape for a picked zone, so "Show on map" opens that zone */
+function shapeIdFor(shapes: ZoneShape[], state: string, zone: string): string | null {
+  const mine = shapes.filter(s => s.properties.state === state.toUpperCase())
+  return (mine.find(s => s.properties.duckZone === zone)
+    ?? mine.find(s => s.properties.gooseZone === zone)
+    ?? mine.find(s => [...(s.properties.duckUnits ?? []), ...(s.properties.gooseUnits ?? [])].includes(zone)))?.properties.id ?? null
+}
+
+function ZoneControls({ state, stateName, zones, zone, onZone }: {
+  state: string; stateName: string; zones: string[]; zone: string; onZone: (z: string) => void
+}) {
+  const [status, setStatus] = useState<string | null>(null)
+  const [mapId, setMapId] = useState<string | null>(null)
+  useEffect(() => {
+    let live = true
+    setMapId(null)
+    if (zone) loadZoneShapes().then(shapes => { if (live) setMapId(shapeIdFor(shapes, state, zone)) }).catch(() => {})
+    return () => { live = false }
+  }, [state, zone])
+  if (zones.length < 2) return null
+
+  function locate() {
+    if (!navigator.geolocation) { setStatus('Your browser does not share location.'); return }
+    setStatus('Finding you…')
+    navigator.geolocation.getCurrentPosition(async pos => {
+      try {
+        const { longitude: lng, latitude: lat } = pos.coords
+        const shapes = await loadZoneShapes()
+        const here = shapes.find(s => s.properties.state === state.toUpperCase() && inShape(lng, lat, s.geometry))
+        const name = here ? zoneNameFor(here, zones) : ''
+        if (!name) { setStatus(`You're not in ${stateName}. Pick a zone instead.`); return }
+        onZone(name)
+        setStatus(`You're in ${name}.`)
+      } catch {
+        setStatus("Couldn't load the zone map. Pick a zone instead.")
+      }
+    }, err => {
+      setStatus(err.code === err.PERMISSION_DENIED ? 'Location is blocked. Pick a zone instead.' : "Couldn't find you. Pick a zone instead.")
+    }, { timeout: 15000, maximumAge: 10 * 60_000 })
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <label htmlFor="season-zone" className="text-sm font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>
+          Your zone
+        </label>
+        <select id="season-zone" className="input w-auto max-w-full" value={zone} onChange={e => { setStatus(null); onZone(e.target.value) }}>
+          <option value="">All zones</option>
+          {zones.map(z => <option key={z} value={z}>{z}</option>)}
+        </select>
+        <button type="button" onClick={locate} className="chip min-h-10 inline-flex items-center gap-1.5">
+          <LocateFixed className="w-4 h-4" /> Use my location
+        </button>
+        {zone && mapId && (
+          <Link to={`/map?zone=${encodeURIComponent(mapId)}`} className="chip min-h-10 inline-flex items-center gap-1.5">
+            <MapIcon className="w-4 h-4" /> Show on map
+          </Link>
+        )}
+      </div>
+      {status && <p className="text-xs" role="status" style={{ color: `rgb(var(--color-text-tertiary))` }}>{status}</p>}
+    </div>
+  )
+}
+
+// ─── What to buy: the four things a duck hunter carries ───
+
+type Residency = 'resident' | 'nonresident'
+const NONRES = /non-?resident/i
+const NOT_STANDARD = /youth|senior|65\+|lifetime|military|veteran|disabled|\d+-day|daily|native|combo|combination|package|fishing|preserve|3-year|collector|wma|breeder|endorsement \(|apprentice/i
+
+function priceFor(l: License, who: Residency): number | null {
+  return who === 'resident' ? l.priceResident : l.priceNonResident
+}
+/** Can this residency buy it? A price for them says yes; otherwise the name and the flag decide */
+function forWho(l: License, who: Residency): boolean {
+  if (priceFor(l, who) != null) return true
+  if (who === 'resident') return !NONRES.test(l.name)
+  return !l.isResidentOnly && !/^resident\b/i.test(l.name)
+}
+function pick(licenses: License[], who: Residency, test: (l: License) => boolean): License | null {
+  const ok = licenses.filter(l => test(l) && forWho(l, who) && !NOT_STANDARD.test(l.name))
+  return ok.find(l => priceFor(l, who) != null) ?? ok[0] ?? null
+}
+
+const BUY_SLOTS: { key: string; label: string; test: (l: License) => boolean }[] = [
+  { key: 'license', label: 'Hunting license', test: l => /^(base|license)$/.test(l.licenseType) && /hunting|sportsman|small game|conservation license/i.test(l.name) && !/waterfowl|stamp|hip\b/i.test(l.name) },
+  { key: 'state', label: 'State waterfowl license or stamp', test: l => !/federal/i.test(l.name) && /waterfowl (stamp|license|permit|hunting license)|state duck stamp|migratory game bird endorsement|^waterfowl license$/i.test(l.name) },
+  { key: 'hip', label: 'HIP certification', test: l => /\bhip\b|harvest information/i.test(l.name) },
+  { key: 'federal', label: 'Federal Duck Stamp', test: l => /federal/i.test(l.name) && /duck stamp|migratory bird hunting/i.test(l.name) },
+]
+
+/**
+ * What a duck hunter 16 or older buys, for a resident or a non-resident: hunting license, state
+ * waterfowl license or stamp, HIP, federal stamp, from this state's license rows. A price the data
+ * does not have is said so, never guessed, and the total says "at least" when one is missing.
+ */
+function WhatToBuy({ licenses, stateName, agencyUrl }: { licenses: License[]; stateName: string; agencyUrl: string | null }) {
+  const [who, setWho] = useState<Residency>('nonresident')
+  const rows = BUY_SLOTS.map(slot => ({ slot, lic: pick(licenses, who, slot.test) }))
+  if (rows.filter(r => r.lic).length < 2) return null
+  const known = rows.filter(r => r.lic && priceFor(r.lic, who) != null)
+  const total = known.reduce((sum, r) => sum + (priceFor(r.lic!, who) ?? 0), 0)
+  const missing = rows.length - known.length
+  const money = (n: number) => `$${n % 1 === 0 ? n : n.toFixed(2)}`
+  const dim = { color: `rgb(var(--color-text-tertiary))` }
+  const ink = { color: `rgb(var(--color-text-primary))` }
+  return (
+    <section id="what-to-buy" aria-labelledby="what-to-buy-h" className="card p-5 mb-4 scroll-mt-20">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <h3 id="what-to-buy-h" className="text-lg font-semibold" style={ink}>What you need to hunt ducks in {stateName}</h3>
+        <div role="radiogroup" aria-label="Residency" className="flex gap-2">
+          {(['resident', 'nonresident'] as const).map(r => (
+            <button key={r} type="button" role="radio" aria-checked={who === r} onClick={() => setWho(r)}
+              className={`chip min-h-10 ${who === r ? 'chip-on' : ''}`}>
+              {r === 'resident' ? 'Resident' : 'Non-resident'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <ul className="divide-y" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+        {rows.map(({ slot, lic }) => {
+          const price = lic ? priceFor(lic, who) : null
+          return (
+            <li key={slot.key} className="py-2.5 flex items-start justify-between gap-4 text-sm">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide" style={dim}>{slot.label}</p>
+                <p style={ink}>{lic ? lic.name : 'Not in our data. Check with the state'}</p>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <p className="font-medium" style={price != null ? ink : dim}>{lic ? (price != null ? money(price) : 'Price not listed') : '—'}</p>
+                {lic?.purchaseUrl && (
+                  <a href={lic.purchaseUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-accent-500 hover:underline inline-flex items-center gap-1">
+                    Buy <ExternalLink className="w-3 h-3" />
+                  </a>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+      <div className="pt-3 mt-1 flex flex-wrap items-baseline justify-between gap-2" style={{ borderTop: `1px solid rgb(var(--color-border-primary))` }}>
+        <p className="font-semibold" style={ink}>
+          {known.length === 0 ? 'Prices not listed' : missing > 0 ? `At least ${money(total)}` : `Total ${money(total)}`}
+        </p>
+        <p className="text-xs" style={dim}>
+          {missing > 0 && `${missing} price${missing > 1 ? 's' : ''} not in our data. `}
+          Ages 16 and up. Youth, senior and lifetime licenses differ.{' '}
+          {agencyUrl && <a href={agencyUrl} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:underline">Confirm with the state</a>}
+        </p>
+      </div>
+    </section>
+  )
+}
+
 function ZonePicker({ zones, zone, onZone }: { zones: string[]; zone: string; onZone: (z: string) => void }) {
   if (zones.length < 2) return null
   return (
@@ -293,8 +486,8 @@ function baseLicense(licenses: License[]): License | null {
  */
 const OPEN_SHOWN = 6
 
-function SeasonSummary({ seasons, licenses, zone, zones, onZone }: {
-  seasons: Season[]; licenses: License[]; zone: string; zones: string[]; onZone: (z: string) => void
+function SeasonSummary({ state, stateName, seasons, licenses, zone, zones, onZone }: {
+  state: string; stateName: string; seasons: Season[]; licenses: License[]; zone: string; zones: string[]; onZone: (z: string) => void
 }) {
   const today = todayLocal()
   // Each season once: some states carry a row twice
@@ -325,7 +518,7 @@ function SeasonSummary({ seasons, licenses, zone, zones, onZone }: {
         <h2 id="season-summary" className="text-lg font-semibold" style={body}>
           {zone ? `Today in ${zone}` : 'Today'} <span className="text-sm font-normal" style={labelStyle}>{fmtDay(today)}</span>
         </h2>
-        <ZonePicker zones={zones} zone={zone} onZone={onZone} />
+        <ZoneControls state={state} stateName={stateName} zones={zones} zone={zone} onZone={onZone} />
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
@@ -372,7 +565,7 @@ function SeasonSummary({ seasons, licenses, zone, zones, onZone }: {
             <p className="mt-1 text-sm" style={body}>
               {[money(license.priceResident) && `${money(license.priceResident)} resident`, money(license.priceNonResident) && `${money(license.priceNonResident)} non-resident`].filter(Boolean).join(' · ')}
             </p>
-            <a href="#licenses" className="text-xs text-accent-500 hover:underline">Every license and stamp</a>
+            <a href="#what-to-buy" className="text-xs text-accent-500 hover:underline">What you need to buy</a>
           </div>
         )}
       </div>
@@ -384,6 +577,12 @@ function SeasonGroups({ seasons, zone, openAll = false }: { seasons: Season[]; z
   const inZone = useMemo(() => seasonsInZone(seasons, zone), [seasons, zone])
   const [openGroups, setOpenGroups] = useState<Set<string>>(() =>
     openAll ? new Set(GROUP_CONFIG.map(g => g.key)) : groupsInSeason(inZone, todayLocal()))
+  // A newly picked zone opens what is in season there (adding to what is already open)
+  const [shownZone, setShownZone] = useState(zone)
+  if (shownZone !== zone) {
+    setShownZone(zone)
+    setOpenGroups(prev => new Set([...prev, ...groupsInSeason(inZone, todayLocal())]))
+  }
 
   const grouped = useMemo(() => {
     const map: Record<string, Season[]> = { duck: [], goose: [], dove: [], other: [], special: [] }
@@ -641,7 +840,7 @@ function CompareTable({ stateCodes, statesList }: { stateCodes: string[], states
 function StateDetailView({ stateCode }: { stateCode: string }) {
   const navigate = useNavigate()
   // "?expand=all" (a state guide's "<State> regulations" link) opens every group on arrival
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const expandAll = searchParams.get('expand') === 'all'
   const [stateInfo, setStateInfo] = useState<StateInfo | null>(null)
   const [regs, setRegs] = useState<Regulation[]>([])
@@ -654,8 +853,19 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [expandedLicenseTypes, setExpandedLicenseTypes] = useState<Set<string>>(new Set())
   // "Is it open in my zone this weekend?" One zone for the summary and the season tables
-  const [zone, setZone] = useState('')
+  // From the link (?zone=), else the one last picked for this state; one not in the data is ignored
+  const [pickedZone, setPickedZone] = useState(() => {
+    const fromLink = searchParams.get('zone')
+    if (fromLink) return fromLink
+    try { return localStorage.getItem(zoneKey(stateCode)) ?? '' } catch { return '' }
+  })
   const zones = useMemo(() => zonesOf(seasonsList), [seasonsList])
+  const zone = zones.includes(pickedZone) ? pickedZone : ''
+  const setZone = (z: string) => {
+    setPickedZone(z)
+    try { if (z) localStorage.setItem(zoneKey(stateCode), z); else localStorage.removeItem(zoneKey(stateCode)) } catch { /* not saved */ }
+    setSearchParams(p => { const n = new URLSearchParams(p); if (z) n.set('zone', z); else n.delete('zone'); return n }, { replace: true })
+  }
   const zoneSeasons = useMemo(() => seasonsInZone(seasonsList, zone), [seasonsList, zone])
 
   const regsByCategory = useMemo(() => {
@@ -801,7 +1011,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
 
       {/* What is open now: this season only */}
       {selectedYear === SEASON_YEAR && seasonsList.length > 0 && (
-        <SeasonSummary seasons={zoneSeasons} licenses={licensesList} zone={zone} zones={zones} onZone={setZone} />
+        <SeasonSummary state={stateCode} stateName={stateName} seasons={zoneSeasons} licenses={licensesList} zone={zone} zones={zones} onZone={setZone} />
       )}
 
       {/* Filters */}
@@ -893,6 +1103,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
           <h2 className="text-xl font-semibold mb-4" style={{ color: `rgb(var(--color-text-primary))` }}>
             License Requirements <span className="text-sm font-normal ml-2" style={{ color: `rgb(var(--color-text-tertiary))` }}>({licensesList.length} total)</span>
           </h2>
+          <WhatToBuy licenses={licensesList} stateName={stateName} agencyUrl={stateInfo?.licenseUrl ?? stateInfo?.agencyUrl ?? null} />
           {Object.entries(licensesByType).map(([type, typeLicenses]) => {
             const isOpen = expandedLicenseTypes.has(type)
             const label = type.charAt(0).toUpperCase() + type.slice(1)
@@ -1069,7 +1280,7 @@ export function RegulationsPage() {
   }, [statesList, selectedState, compareMode, search, statesWithData])
 
   if (state) {
-    return <StateDetailView stateCode={state} />
+    return <StateDetailView key={state.toUpperCase()} stateCode={state} />
   }
 
   const compareStateList = Array.from(compareStates)

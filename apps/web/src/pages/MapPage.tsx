@@ -889,6 +889,21 @@ export default function MapPage() {
     }
   }, [focus, ringMi])
 
+  // "?zone=LA-East" (the Regulations page's "Show on map"): open that zone once its shape is in
+  const zoneLinked = useRef(false)
+  useEffect(() => {
+    const map = mapRef.current
+    const id = params.get('zone')
+    if (zoneLinked.current || !map || !installed || !zones || !id) return
+    zoneLinked.current = true
+    const f = zones.features.find(z => z.properties.id === id)
+    if (!f) return
+    setSelection({ kind: 'zone', id })
+    const pts = (f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates).flat(2) as number[][]
+    const lngs = pts.map(c => c[0]); const lats = pts.map(c => c[1])
+    map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 40, duration: 0 })
+  }, [params, installed, zones])
+
   // Where to Hunt's areas for the chosen day
   useEffect(() => {
     const map = mapRef.current
