@@ -436,7 +436,7 @@ export function WhereToHuntPage() {
     setSelectedStates(prev => {
       const next = new Set(prev)
       if (next.has(code)) {
-        if (next.size > 1) next.delete(code) // always keep at least one
+        next.delete(code) // may leave none: Deselect all, then pick one or two
       } else {
         next.add(code)
       }
@@ -445,6 +445,8 @@ export function WhereToHuntPage() {
   }
 
   const handleSearch = async () => {
+    // No state picked: nothing to search (the API would read an empty list as every state)
+    if (selectedStates.size === 0) return
     setLoading(true)
     setError(null)
     setHasSearched(true)
@@ -515,7 +517,7 @@ export function WhereToHuntPage() {
             <div className="flex items-end">
               <button
                 onClick={() => handleSearch()}
-                disabled={loading}
+                disabled={loading || selectedStates.size === 0}
                 data-fab-avoid
                 className="btn-primary w-full flex items-center justify-center gap-2"
               >
@@ -593,7 +595,11 @@ export function WhereToHuntPage() {
                 )
               })}
               <button onClick={() => setSelectedStates(new Set(AREA_STATES))} className="chip border-dashed">All</button>
+              <button onClick={() => setSelectedStates(new Set())} className="chip border-dashed" disabled={selectedStates.size === 0}>Deselect all</button>
             </div>
+            {selectedStates.size === 0 && (
+              <p className="text-xs mt-2 text-amber-700 dark:text-amber-400" role="status">Pick at least one state to search.</p>
+            )}
           </div>
         </div>
 
