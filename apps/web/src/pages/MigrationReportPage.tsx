@@ -1,14 +1,17 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import {
-  Bird, Sparkles, Loader2, Wind, TrendingUp, TrendingDown, Minus, Zap, ExternalLink,
+  Bird, Sparkles, Loader2, Wind, TrendingUp, TrendingDown, Minus, Zap, ExternalLink, AlertTriangle, Info,
 } from 'lucide-react'
 import { api } from '../lib/api'
 import { parseCalendarDate } from '../lib/dates'
 import {
-  computeMigrationIndex, freshWindowLabel, getAnomaly, getMigrationStatus, headlineStats,
-  type AnomalyType, type MigrationStatus,
+  computeMigrationIndex, formatChange, freshWindowLabel, headlineStats, type MigrationStatus,
 } from '../lib/migrationStats'
+import {
+  enrichCounts, groupRefuges, groupStates, overallPushScoreOf, partialCountNote, sortCounts,
+  PUSH_SCORE_LABELS, type Change, type StateGroup as StateGroupOf,
+} from '../lib/migrationGroups'
 
 // ─── Types (mirrored from MigrationPage) ──────────────────────────────────────
 
@@ -68,30 +71,23 @@ const STATUS_CONFIG: Record<NonNullable<MigrationStatus>, { label: string; color
   first_survey: { label: 'New Data',    color: '#01210a' },
 }
 
-const PUSH_SCORE_LABELS = ['Low', 'Moderate', 'High', 'Extreme']
-
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function TrendIcon({ trend }: { trend: string }) {
-  if (trend === 'increasing') return <TrendingUp className="w-3.5 h-3.5" style={{ color: '#1f883d' }} />
-  if (trend === 'decreasing') return <TrendingDown className="w-3.5 h-3.5" style={{ color: '#cf222e' }} />
+/** A site's change since its previous surveys: up, down, or level within ±5% */
+function ChangeIcon({ change }: { change: Change | null }) {
+  if (change && change.percent > 5) return <TrendingUp className="w-3.5 h-3.5" style={{ color: '#1f883d' }} />
+  if (change && change.percent < -5) return <TrendingDown className="w-3.5 h-3.5" style={{ color: '#cf222e' }} />
   return <Minus className="w-3.5 h-3.5" style={{ color: '#6e7781' }} />
 }
 
-type StateGroup = {
-  state: string
-  stateName: string
-  totalBirds: number
-  refugeCount: number
-  speciesCount: number
-  latestDate: string
-  topAnomaly: AnomalyType
-  dominantStatus: MigrationStatus
-  topItems: Array<{ refugeName: string; count: number; trend: string }>
-}
+// The same state and site groups as the Migration page (migrationGroups.ts), so the two agree
+type StateGroup = StateGroupOf<ReturnType<typeof enrichCounts<CurrentCount>>[number]>
+
+const BANNER = { display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 500, padding: '6px 10px', borderRadius: 6, marginBottom: 10 } as const
 
 function StateReportCard({ sg }: { sg: StateGroup }) {
   const status = sg.dominantStatus ? STATUS_CONFIG[sg.dominantStatus] : null
+  const note = partialCountNote(sg)
 
   return (
     <div style={{
@@ -101,7 +97,18 @@ function StateReportCard({ sg }: { sg: StateGroup }) {
       background: '#fff',
       pageBreakInside: 'avoid',
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+      {note && (
+        <div style={{ ...BANNER, background: '#f6f8fa', color: '#57606a' }}>
+          <Info style={{ width: 12, height: 12, flexShrink: 0 }} /> {note}
+        </div>
+      )}
+      {sg.topAnomaly === 'drop' && sg.change && (
+        <div style={{ ...BANNER, background: '#ffebe9', color: '#cf222e' }}>
+          <AlertTriangle style={{ width: 12, height: 12, flexShrink: 0 }} />
+          Sharp decline: counts {formatChange(sg.change.percent, 0)} since the previous surveys
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontWeight: 700, fontSize: 18, color: '#1f2328' }}>{sg.stateName}</span>
           <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: '#f6f8fa', color: '#57606a', border: '1px solid #d0d7de' }}>
@@ -115,6 +122,11 @@ function StateReportCard({ sg }: { sg: StateGroup }) {
           {sg.topAnomaly === 'spike' && (
             <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 12, background: '#fff8c5', color: '#9a6700', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
               <Zap style={{ width: 10, height: 10 }} /> Spike
+            </span>
+          )}
+          {sg.change && (
+            <span style={{ fontSize: 12, fontWeight: 600, color: sg.change.percent > 5 ? '#1f883d' : sg.change.percent < -5 ? '#cf222e' : '#57606a' }}>
+              {formatChange(sg.change.percent, 0)}
             </span>
           )}
         </div>
@@ -138,15 +150,15 @@ function StateReportCard({ sg }: { sg: StateGroup }) {
         </div>
       </div>
 
-      {sg.topItems.length > 0 && (
+      {sg.refuges.length > 0 && (
         <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: 10 }}>
-          {sg.topItems.slice(0, 3).map(item => (
-            <div key={item.refugeName} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, color: '#57606a', marginBottom: 4 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <TrendIcon trend={item.trend} />
-                <span>{item.refugeName}</span>
+          {sg.refuges.slice(0, 3).map(r => (
+            <div key={r.refugeId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, fontSize: 12, color: '#57606a', marginBottom: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                <ChangeIcon change={r.change} />
+                <span>{r.refugeName}</span>
               </div>
-              <span style={{ fontWeight: 600, color: '#1f2328' }}>{item.count.toLocaleString()}</span>
+              <span style={{ fontWeight: 600, color: '#1f2328', whiteSpace: 'nowrap' }}>{r.totalBirds.toLocaleString()}</span>
             </div>
           ))}
         </div>
@@ -167,6 +179,7 @@ export function MigrationReportPage() {
   const [summary, setSummary] = useState<{ summary: string; generatedAt: string } | null>(null)
   const [stateActivity, setStateActivity] = useState<Array<{ activityLevel: 'high' | 'moderate' | 'low' }> | undefined>(undefined)
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
 
   // Update page title
   useEffect(() => {
@@ -181,33 +194,36 @@ export function MigrationReportPage() {
     let cancelled = false
     async function load() {
       setLoading(true)
+      setFailed(false)
       try {
         const [dashboardData, summaryData, activity] = await Promise.all([
           api.getMigrationDashboard({ flyway, species }),
-          api.getMigrationWeeklySummary({ flyway, species }),
+          // The written summary is extra: without it the counts still make a report
+          api.getMigrationWeeklySummary({ flyway, species }).catch(() => null),
           // Part of the Migration Index, the same as on the Migration page
           api.getMigrationRegionalActivity({ flyway, species }).catch(() => null),
         ])
         if (cancelled) return
         // The same counts the Migration page's headline uses: fresh agency surveys only
-        setCounts(headlineStats(dashboardData.currentCounts as CurrentCount[]).fresh)
+        const fresh = headlineStats(dashboardData.currentCounts as CurrentCount[]).fresh
+        setCounts(fresh)
         setSummary(summaryData)
         setStateActivity(activity?.stateActivity)
 
-        // Fetch push factors for states in the data
-        const states = [...new Set(dashboardData.currentCounts.map((c: CurrentCount) => c.state))]
+        // Push factors for the states in the report
+        const states = [...new Set(fresh.map(c => c.state))]
         if (states.length > 0) {
           try {
             const pd = await api.getMigrationPushFactors(states.join(','))
             if (!cancelled) {
-              // Headline = strongest state or region as a whole step 0–3 (scores move in 0.5 steps)
               const all = [...pd.pushFactors, ...(pd.regionalPushFactors ?? [])]
-              const max = all.reduce((m, f) => Math.max(m, f.pushScore), 0)
-              setPushData({ pushFactors: all, overallPushScore: Math.min(3, Math.floor(max)) })
+              setPushData({ pushFactors: all, overallPushScore: overallPushScoreOf(all) })
             }
           } catch { /* optional */ }
         }
-      } catch { /* silently handle */ } finally {
+      } catch {
+        if (!cancelled) setFailed(true)
+      } finally {
         if (!cancelled) setLoading(false)
       }
     }
@@ -215,62 +231,19 @@ export function MigrationReportPage() {
     return () => { cancelled = true }
   }, [flyway, species])
 
-  // Build state groups
-  const stateGroups = useMemo((): StateGroup[] => {
-    const enriched = counts.map(c => ({
-      ...c,
-      anomaly: getAnomaly(c.count, c.deltaPercent, c.previousCount),
-      migrationStatus: getMigrationStatus(c.trend, c.deltaPercent),
-    }))
+  const enriched = useMemo(() => enrichCounts(counts), [counts])
 
-    const byState = new Map<string, typeof enriched>()
-    for (const c of enriched) {
-      const arr = byState.get(c.state) ?? []
-      arr.push(c)
-      byState.set(c.state, arr)
-    }
+  // States in the Migration page's order: by how much the counts moved, not by raw totals,
+  // which only ranked how well each state is surveyed
+  const stateGroups = useMemo(
+    (): StateGroup[] => groupStates(groupRefuges(sortCounts(enriched)), code => STATE_CODE_TO_NAME[code] ?? code),
+    [enriched],
+  )
 
-    return Array.from(byState.entries()).map(([state, items]) => {
-      const totalBirds = items.reduce((s, c) => s + c.count, 0)
-      const refuges = new Set(items.map(c => c.refugeId))
-      const species = new Set(items.map(c => c.species))
-      const latestDate = items.reduce((best, c) => c.surveyDate > best ? c.surveyDate : best, items[0].surveyDate)
-      const topAnomaly: AnomalyType = items.some(c => c.anomaly === 'spike') ? 'spike'
-        : items.some(c => c.anomaly === 'drop') ? 'drop' : null
-      const statusPriority: MigrationStatus[] = ['arriving', 'first_survey', 'building', 'peak', 'declining', 'departing', null]
-      const dominantStatus = statusPriority.find(s => items.some(c => c.migrationStatus === s)) ?? null
-
-      // Top refuges sorted by count
-      const byRefuge = new Map<string, { refugeName: string; count: number; trend: string }>()
-      for (const c of items) {
-        const ex = byRefuge.get(c.refugeId)
-        if (!ex) byRefuge.set(c.refugeId, { refugeName: c.refugeName, count: c.count, trend: c.trend })
-        else ex.count += c.count
-      }
-      const topItems = Array.from(byRefuge.values()).sort((a, b) => b.count - a.count)
-
-      return {
-        state,
-        stateName: STATE_CODE_TO_NAME[state] ?? state,
-        totalBirds,
-        refugeCount: refuges.size,
-        speciesCount: species.size,
-        latestDate,
-        topAnomaly,
-        dominantStatus,
-        topItems,
-      }
-    }).sort((a, b) => b.totalBirds - a.totalBirds)
-  }, [counts])
-
-  const migrationIndex = useMemo(() => {
-    const enriched = counts.map(c => ({
-      trend: c.trend,
-      anomaly: getAnomaly(c.count, c.deltaPercent, c.previousCount),
-      deltaPercent: c.deltaPercent,
-    }))
-    return computeMigrationIndex(enriched, pushData?.overallPushScore ?? 0, stateActivity)
-  }, [counts, pushData, stateActivity])
+  const migrationIndex = useMemo(
+    () => computeMigrationIndex(enriched, pushData?.overallPushScore ?? 0, stateActivity),
+    [enriched, pushData, stateActivity],
+  )
 
   const totalBirds = counts.reduce((s, c) => s + c.count, 0) // counts are already the fresh ones
   const refugeCount = new Set(counts.map(c => c.refugeId)).size
@@ -290,7 +263,7 @@ export function MigrationReportPage() {
 
   return (
     <div style={{ background: '#fff', minHeight: '100vh', colorScheme: 'light' }}>
-      <style>{`@media print { .no-print { display: none !important; } body { background: #fff; } }`}</style>
+      <style>{`@media print { .no-print { display: none !important; } .print-only { display: block !important; } body { background: #fff; } }`}</style>
 
       {/* Header */}
       <div style={{ borderBottom: '1px solid #d0d7de', padding: '12px 16px', display: 'flex', flexWrap: 'wrap', rowGap: 8, columnGap: 16, alignItems: 'center', justifyContent: 'space-between', background: '#fff' }} className="no-print">
@@ -421,7 +394,13 @@ export function MigrationReportPage() {
               </div>
             )}
 
-            {stateGroups.length === 0 && (
+            {failed && (
+              <div style={{ textAlign: 'center', padding: 48, color: '#cf222e' }}>
+                Couldn’t load the survey data. Try again in a minute.
+              </div>
+            )}
+
+            {!failed && stateGroups.length === 0 && (
               <div style={{ textAlign: 'center', padding: 48, color: '#57606a' }}>
                 No survey data available for the selected filters.
               </div>
