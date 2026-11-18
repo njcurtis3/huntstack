@@ -85,9 +85,13 @@ def _refuge_job(source: dict) -> Job:
     def run(ctx: RunContext) -> Outcome:
         from huntstack_scrapers.scrapers.refuge_counts import RefugeCountsScraper
 
+        from huntstack_scrapers.pipeline import runlog
+
+        previous = runlog.previous_items(job.name)  # before this run is recorded
         scraper = RefugeCountsScraper(dry_run=ctx.dry_run)
         scraper.run(filter_name=name)
-        return judge_refuge_run(scraper.source_stats.get(name), ctx.today, in_season(job, ctx.today))
+        return judge_refuge_run(scraper.source_stats.get(name), ctx.today, in_season(job, ctx.today),
+                                previous_empty=previous == 0)
 
     job.run, job.newest = run, (lambda conn: _newest_count(conn, name))
     return job

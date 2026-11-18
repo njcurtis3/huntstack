@@ -109,8 +109,15 @@ SURVEY_TYPE_SCHEDULE: dict[str, dict[str, Any]] = {
 }
 
 
-def judge_refuge_run(stats: dict | None, today: date, active: bool) -> Outcome:
-    """Turn one source's RefugeCountsScraper.source_stats entry into an Outcome."""
+def judge_refuge_run(stats: dict | None, today: date, active: bool, previous_empty: bool = False) -> Outcome:
+    """Turn one source's RefugeCountsScraper.source_stats entry into an Outcome.
+
+    Parsing nothing in season is a warning the first time (a refuge may not have posted yet)
+    and a failure when the job's previous run parsed nothing too: a failed run fails the
+    workflow, so GitHub emails the owner. Warnings alone reach only SCRAPER_ALERT_WEBHOOK, and
+    in Nov 2026 Washita (page moved, 404), Salt Plains (page no longer parses) and LDWF (empty
+    list) warned "nothing parsed" for weeks with nobody told.
+    """
     if stats is None:
         return Outcome("failed", "source did not run (name not found in WATERFOWL_SOURCES?)")
     details = {
@@ -125,6 +132,9 @@ def judge_refuge_run(stats: dict | None, today: date, active: bool) -> Outcome:
         return Outcome("failed", "no matching row in locations (add it with a scripts/ SQL file)", items, rows, details)
     if stats.get("store_errors"):
         return Outcome("failed", f"{stats['store_errors']} survey(s) failed to save", items, rows, details)
+    if items == 0 and active and previous_empty:
+        return Outcome("failed", "nothing parsed two runs in a row (site changed or blocking us? "
+                       "check the source page and its parser)", items, rows, details)
     problems = []
     if items == 0 and active:
         problems.append("nothing parsed (site changed, or no survey posted yet)")

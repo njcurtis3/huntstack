@@ -78,6 +78,12 @@ class TestJudgeRefuseRun:
         assert judge_refuge_run(empty, date(2026, 11, 2), active=True).status == "warning"
         assert judge_refuge_run(empty, date(2026, 7, 1), active=False).status == "success"
 
+    def test_nothing_parsed_twice_fails(self):
+        empty = {**self.STATS, "items": 0, "rows": 0}
+        assert judge_refuge_run(empty, date(2026, 11, 16), True, previous_empty=True).status == "failed"
+        assert judge_refuge_run(empty, date(2026, 7, 1), False, previous_empty=True).status == "success"
+        assert judge_refuge_run(dict(self.STATS), date(2026, 11, 16), True, previous_empty=True).status == "success"
+
     def test_unmapped_species_warn(self):
         out = judge_refuge_run({**self.STATS, "unknown_names": {"Lesser Scaup"}}, date(2026, 11, 2), True)
         assert out.status == "warning" and "Lesser Scaup" in out.message

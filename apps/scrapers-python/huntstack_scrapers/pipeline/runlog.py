@@ -59,6 +59,20 @@ def last_runs() -> dict[str, dict]:
     return out
 
 
+def previous_items(job: str) -> int | None:
+    """How many items this job's last finished run parsed (None: no finished run, or no DB)."""
+    try:
+        with connect() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT items FROM pipeline_runs WHERE job = %s AND status <> 'running'
+                ORDER BY started_at DESC LIMIT 1
+            """, (job,))
+            row = cur.fetchone()
+    except Exception:
+        return None
+    return row[0] if row else None
+
+
 def close_interrupted(older_than_hours: int = 6) -> int:
     """Mark runs still 'running' after hours as failed: the process was killed (machine
     asleep, out of memory) before it could record a result. Returns how many."""

@@ -173,8 +173,9 @@ class RefugeCountsScraper:
         """Single-date HTML page — parser returns one ParseResult."""
         response = self._fetch_html(source["url"])
         if not response or response.status != 200:
-            log.warning(f"Bad response for {source['name']}: status {getattr(response, 'status', '?')}")
-            return []
+            # An error, not an empty week: the page moved or is blocking us (Washita's went 404
+            # in Nov 2026 and only ever showed up as "nothing parsed")
+            raise RuntimeError(f"HTTP {getattr(response, 'status', 'no response')} from {source['url']}")
 
         # Wrap in a Scrapy-compatible shim so existing parsers work unchanged
         result: ParseResult | None = source["parser"](_ScraplingResponseShim(response))
@@ -189,8 +190,9 @@ class RefugeCountsScraper:
         """Wide-format HTML table — parser returns list[ParseResult]."""
         response = self._fetch_html(source["url"])
         if not response or response.status != 200:
-            log.warning(f"Bad response for {source['name']}: status {getattr(response, 'status', '?')}")
-            return []
+            # An error, not an empty week: the page moved or is blocking us (Washita's went 404
+            # in Nov 2026 and only ever showed up as "nothing parsed")
+            raise RuntimeError(f"HTTP {getattr(response, 'status', 'no response')} from {source['url']}")
 
         results: list[ParseResult] = source["parser"](_ScraplingResponseShim(response))
         if not results:
