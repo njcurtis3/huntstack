@@ -133,10 +133,20 @@ export interface AreaSummary {
   topSpecies: Array<{ slug: string; name: string; count: number }>
 }
 
-/** Totals for one area's points; its center is weighted by birds */
+/**
+ * Totals for one area's points; its center is weighted by birds.
+ *
+ * `birds` is the largest of the three counts (surveys, eBird, hunter reports), not their sum:
+ * a birder at a refuge's overlook and the plane flying it count the same ducks, so adding them
+ * counted those birds twice and lifted areas that happen to have both (Havana, IL led Illinois
+ * on 34,581 eBird birds on top of its 134,120 surveyed). No conversion between the counts is
+ * attempted: where an area has both, eBird ran from 1/900th of the survey to twice it.
+ */
 export function summarizeArea(points: AreaPoint[]): AreaSummary {
-  const birds = points.reduce((s, p) => s + p.birds, 0)
-  const w = (p: AreaPoint) => (birds > 0 ? p.birds : 1)
+  const sumOf = (k: AreaPoint['kind']) => points.filter(p => p.kind === k).reduce((s, p) => s + p.birds, 0)
+  const birds = Math.max(sumOf('survey'), sumOf('ebird'), sumOf('report'))
+  const anyBirds = points.some(p => p.birds > 0)
+  const w = (p: AreaPoint) => (anyBirds ? p.birds : 1)
   const wSum = points.reduce((s, p) => s + w(p), 0)
   const lat = points.reduce((s, p) => s + p.lat * w(p), 0) / wSum
   const lng = points.reduce((s, p) => s + p.lng * w(p), 0) / wSum
@@ -162,9 +172,9 @@ export function summarizeArea(points: AreaPoint[]): AreaSummary {
     lat: Math.round(lat * 1e4) / 1e4,
     lng: Math.round(lng * 1e4) / 1e4,
     birds,
-    surveyBirds: of('survey').reduce((s, p) => s + p.birds, 0),
+    surveyBirds: sumOf('survey'),
     surveySites: of('survey').length,
-    ebirdBirds: of('ebird').reduce((s, p) => s + p.birds, 0),
+    ebirdBirds: sumOf('ebird'),
     ebirdPlaces: of('ebird').length,
     hunterReports: of('report').length,
     change: previous > 0 ? { now, previous, percent: Math.round(((now - previous) / previous) * 100) } : null,

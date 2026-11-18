@@ -117,9 +117,9 @@ export function HowItWorksPage() {
               numbers run far below a survey of the same place.
             </>],
             ['Hunter reports', <>
-              Birds reported by HuntStack hunters in the last 7 days. They’re unverified, shown only as a
-              rounded area (never the exact spot), and add a small amount to an area: 5 to 300 birds per
-              report, from the range the hunter picked.
+              Birds reported by HuntStack hunters in the last 7 days. They’re unverified and shown only as
+              a rounded area (never the exact spot). Each counts 5 to 300 birds, from the range the hunter
+              picked.
             </>],
             ['Weather', <>NOAA National Weather Service forecasts for each region.</>],
             ['Seasons and licenses', <>Each state wildlife agency’s published dates, limits and fees.</>],
@@ -175,7 +175,11 @@ export function HowItWorksPage() {
           ]} />
           <p><Strong>How an area is ranked.</Strong> Four things, multiplied together:</p>
           <ol className="list-decimal pl-5 space-y-2">
-            <li><Strong>Birds counted</Strong> in the area: recent surveys, eBird reports and hunter reports.</li>
+            <li>
+              <Strong>Birds counted</Strong> in the area: the biggest of its survey count, its eBird
+              reports and its hunter reports. Not all three added up, because a birder at the refuge
+              overlook and the survey plane are often counting the same ducks.
+            </li>
             <li>
               <Strong>Which way the counts are moving</Strong> since each site’s previous survey. Rising
               counts can lift an area by up to half again; falling counts lower it by up to a quarter.

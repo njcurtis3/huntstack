@@ -59,12 +59,21 @@ describe('summarizeArea', () => {
       pt('report', 34.55, -91.55, 30, { kind: 'report', state: 'AR', species: [] }),
     ])
     expect(s).toMatchObject({
-      state: 'AR', birds: 10030, surveyBirds: 9000, surveySites: 1, ebirdBirds: 1000, ebirdPlaces: 1, hunterReports: 1,
+      state: 'AR', birds: 9000, surveyBirds: 9000, surveySites: 1, ebirdBirds: 1000, ebirdPlaces: 1, hunterReports: 1,
       change: { now: 9000, previous: 6000, percent: 50 }, latestDate: '2026-11-15',
     })
     expect(s.topSpecies).toEqual([{ slug: 'mallard', name: 'Mallard', count: 10000 }])
     expect(s.lat).toBeGreaterThan(34.5)
     expect(s.lat).toBeLessThan(34.52)
+  })
+  it("takes the largest count, so the same birds aren't counted twice", () => {
+    const both = (survey: number, ebird: number) => summarizeArea([
+      pt('refuge', 34.5, -91.5, survey),
+      pt('hotspot', 34.6, -91.6, ebird, { kind: 'ebird' }),
+    ]).birds
+    expect(both(134120, 34581)).toBe(134120)
+    expect(both(1029, 2088)).toBe(2088)
+    expect(summarizeArea([pt('r1', 34, -91, 300, { kind: 'report' }), pt('r2', 34.1, -91, 30, { kind: 'report' })]).birds).toBe(330)
   })
   it('has no change without comparable surveys', () => {
     expect(summarizeArea([pt('a', 34, -91, 100)]).change).toBeNull()
