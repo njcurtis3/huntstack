@@ -167,3 +167,52 @@ def test_every_site_has_a_point_in_the_flyway():
     for site in INHS_SITES.values():
         assert 38.5 < site.lat < 41.5 and -91.7 < site.lng < -89.0, site
         assert site.state in {"IL", "MO", "IA"}
+
+
+# ── Index fetch: an empty index is retried, then an error ─────────────────────
+
+class _Page:
+    def __init__(self, text: str, status: int = 200):
+        self.text, self.status_code = text, status
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+def test_index_with_links_returns_them_first_try():
+    from huntstack_scrapers.parsers.inhs_forbes_pdf import fetch_index_box_ids
+    calls = []
+    page = _Page('<a href="https://uofi.box.com/s/abc123">x</a><a href="https://uofi.box.com/s/def456">y</a>')
+    got = fetch_index_box_ids({}, wait=0, get=lambda *a, **k: calls.append(1) or page)
+    assert got == ["abc123", "def456"] and len(calls) == 1
+
+
+def test_empty_index_is_retried_then_succeeds():
+    from huntstack_scrapers.parsers.inhs_forbes_pdf import fetch_index_box_ids
+    pages = iter([_Page("<title>Busy</title>"), _Page('<a href="https://uofi.box.com/s/abc123">x</a>')])
+    assert fetch_index_box_ids({}, wait=0, get=lambda *a, **k: next(pages)) == ["abc123"]
+
+
+def test_index_empty_every_time_raises():
+    import pytest
+    from huntstack_scrapers.parsers.inhs_forbes_pdf import fetch_index_box_ids
+    calls = []
+    with pytest.raises(RuntimeError, match="no inventory files after 3 attempts"):
+        fetch_index_box_ids({}, attempts=3, wait=0, get=lambda *a, **k: calls.append(1) or _Page("<html></html>"))
+    assert len(calls) == 3
+
+
+def test_failed_index_fails_both_rivers(monkeypatch):
+    """Nothing is cached when the index fails, so the second river's source raises too."""
+    import pytest
+    from huntstack_scrapers.parsers import inhs_forbes_pdf as m
+
+    def boom(*a, **k):
+        raise RuntimeError("INHS index listed no inventory files after 3 attempts")
+    monkeypatch.setattr(m, "_results_cache", None)
+    monkeypatch.setattr(m, "fetch_index_box_ids", boom)
+    for _ in range(2):
+        with pytest.raises(RuntimeError):
+            m._collect_all()
+    assert m._results_cache is None

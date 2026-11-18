@@ -304,6 +304,32 @@ def extract_box_ids(index_html: str) -> list[str]:
     return seen
 
 
+INDEX_ATTEMPTS = 3
+INDEX_RETRY_SECONDS = 20
+
+
+def fetch_index_box_ids(headers: dict[str, str], attempts: int = INDEX_ATTEMPTS,
+                        wait: float = INDEX_RETRY_SECONDS, get=requests.get) -> list[str]:
+    """The index's inventory links. A 200 page with no links (seen once from a GitHub runner on
+    2026-11-18; the next run a minute later listed all 83) is retried, then raised: the index
+    has listed dozens of files every season, so an empty one is an outage, not a quiet week."""
+    for attempt in range(1, attempts + 1):
+        index = get(FORBES_INDEX_URL, timeout=30, headers=headers)
+        index.raise_for_status()
+        box_ids = extract_box_ids(index.text)
+        if box_ids:
+            return box_ids
+        title = re.search(r"<title>(.*?)</title>", index.text, re.IGNORECASE | re.DOTALL)
+        page_title = title.group(1).strip()[:80] if title else None
+        log.warning(
+            f"INHS index attempt {attempt}/{attempts}: HTTP {index.status_code}, {len(index.text):,} bytes, "
+            f"title {page_title!r}, no inventory links"
+        )
+        if attempt < attempts:
+            time.sleep(wait)
+    raise RuntimeError(f"INHS index listed no inventory files after {attempts} attempts ({FORBES_INDEX_URL})")
+
+
 # Weekly runs re-store site counts from the last SITE_DAYS only (the river totals are small
 # and re-stored in full); backfill_inhs_sites.py sets None to load every flight on the index.
 SITE_DAYS: int | None = 45
@@ -319,11 +345,11 @@ def _collect_all() -> dict[str, list[tuple[ParseResult, str, str]]]:
         return _results_cache
 
     headers = {"User-Agent": USER_AGENT}
+    # The index first: if it fails, nothing is cached, so the other river's source fails too
+    # instead of quietly reading an empty cache
+    box_ids = fetch_index_box_ids(headers)
     _results_cache = {river: [] for river in RIVER_SOURCES}
     site_counts: dict[str, list[tuple[SiteCount, str]]] = {river: [] for river in RIVER_SOURCES}
-    index = requests.get(FORBES_INDEX_URL, timeout=30, headers=headers)
-    index.raise_for_status()
-    box_ids = extract_box_ids(index.text)
     log.info(f"INHS index lists {len(box_ids)} inventory files")
 
     for box_id in box_ids:
