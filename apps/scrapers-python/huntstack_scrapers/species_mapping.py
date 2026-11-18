@@ -210,7 +210,9 @@ def resolve_species_slug(name: str) -> str | None:
     if name.strip() in REFUGE_SURVEY_MAPPING:
         return None  # Explicitly mapped to None (skip)
 
-    return None
+    # Then ignoring case: refuge sheets change capitalization ("Lesser scaup" on Washita's
+    # 2026 page, "Lesser Scaup" before)
+    return _REFUGE_LOWER.get(normalized)
 
 
 _WATERFOWL_WORDS = re.compile(
@@ -237,9 +239,12 @@ def is_unknown_species_name(name: str) -> bool:
     return not (
         stripped in MWI_COLUMN_MAPPING
         or stripped in REFUGE_SURVEY_MAPPING
+        or stripped.lower() in _REFUGE_LOWER
         or stripped.lower() in SPECIES_ALIASES
     )
 
+
+_REFUGE_LOWER: dict[str, str | None] = {k.lower(): v for k, v in REFUGE_SURVEY_MAPPING.items()}
 
 _KNOWN_SLUGS: frozenset[str] = frozenset(
     v for m in (SPECIES_ALIASES, MWI_COLUMN_MAPPING, REFUGE_SURVEY_MAPPING) for v in m.values() if v

@@ -151,3 +151,17 @@ class TestCurrentWaterfowlSeason:
     def test_label_format(self):
         assert current_waterfowl_season_label(datetime(2026, 7, 20)) == "2025-2026"
         assert current_waterfowl_season_label(datetime(2026, 10, 15)) == "2026-2027"
+
+
+def test_two_digit_year_date():
+    from huntstack_scrapers.parsers.base import parse_survey_date
+    assert parse_survey_date("Weekly Waterfowl Survey 11/4/26 OBSERVERS") == "2026-11-04"
+    assert parse_survey_date("survey 1/13/2026, entered 1/14/26") == "2026-01-13"  # four-digit wins
+    assert parse_survey_date("version 1/2/345") is None
+
+
+def test_refuge_names_ignore_case():
+    from huntstack_scrapers.species_mapping import is_unknown_species_name, resolve_species_slug
+    assert resolve_species_slug("Lesser scaup") == "scaup"
+    assert not is_unknown_species_name("Hooded merganser")
+    assert not is_unknown_species_name("Common goldeneye")

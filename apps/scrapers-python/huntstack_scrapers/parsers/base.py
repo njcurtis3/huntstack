@@ -48,6 +48,8 @@ DATE_PATTERNS = [
     # "1/13/2026" standalone — also matches dates at the start of content,
     # since .search() finds the first occurrence regardless of position.
     re.compile(r"(\d{1,2}/\d{1,2}/\d{4})"),
+    # "11/4/26": Salt Plains' page since Nov 2026 (last, so a four-digit date wins)
+    re.compile(r"(?<![\d/])(\d{1,2}/\d{1,2}/\d{2})(?![\d/])"),
 ]
 
 
@@ -57,7 +59,7 @@ def parse_survey_date(text: str) -> str | None:
         match = pattern.search(text)
         if match:
             date_str = match.group(1)
-            for fmt in ("%m/%d/%Y", "%B %d, %Y", "%B %d %Y"):
+            for fmt in ("%m/%d/%Y", "%m/%d/%y", "%B %d, %Y", "%B %d %Y"):
                 try:
                     dt = datetime.strptime(date_str.replace(",", ""), fmt)
                     return dt.strftime("%Y-%m-%d")

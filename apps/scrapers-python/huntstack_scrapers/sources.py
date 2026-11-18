@@ -33,7 +33,7 @@ WATERFOWL_SOURCES = [
     {
         "name": "Washita National Wildlife Refuge",
         "state_code": "OK",
-        "url": "https://www.fws.gov/refuge/washita/latest-waterfowl-survey",
+        "url": "https://www.fws.gov/locations/washita-national-wildlife-refuge/latest-waterfowl-survey",  # moved Nov 2026 (old /refuge/washita/... is 404)
         "parser": parse_fws_refuge_page,
         "source_type": "html",
         "survey_type": "weekly",

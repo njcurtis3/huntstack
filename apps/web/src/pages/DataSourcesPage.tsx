@@ -23,7 +23,7 @@ const REFUGE_COUNT_SOURCES: SourceGroup = {
   sources: [
     {
       name: 'Washita National Wildlife Refuge (OK)',
-      url: 'https://www.fws.gov/refuge/washita/latest-waterfowl-survey',
+      url: 'https://www.fws.gov/locations/washita-national-wildlife-refuge/latest-waterfowl-survey',
     },
     {
       name: 'Salt Plains National Wildlife Refuge (OK)',
