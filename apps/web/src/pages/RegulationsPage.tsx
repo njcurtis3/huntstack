@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ChevronRight, ChevronDown, FileText, AlertCircle, ExternalLink, Loader2, MessageSquare, X, ZoomIn, ZoomOut, RotateCcw, LocateFixed, Map as MapIcon, CalendarPlus } from 'lucide-react'
+import { ChevronRight, ChevronDown, FileText, AlertCircle, ExternalLink, Loader2, MessageSquare, X, ZoomIn, ZoomOut, RotateCcw, LocateFixed, Map as MapIcon, CalendarPlus, Search } from 'lucide-react'
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps'
 import { api } from '../lib/api'
 import { useThemeStore } from '../stores/themeStore'
@@ -763,6 +763,137 @@ function AddToCalendar({ seasons, state, stateName, zone, zones, agency, year }:
   )
 }
 
+// ─── Search one state's rules, seasons and licenses ───
+
+const escapeRe = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const searchWords = (q: string) => q.toLowerCase().split(/\s+/).filter(w => w.length >= 2)
+
+// Words a hunter types that the rules spell another way. Each typed word matches any of its group
+const SAME_AS: string[][] = [
+  ['steel', 'nontoxic', 'non-toxic', 'bismuth', 'tungsten'],
+  ['boat', 'boats', 'vessel', 'motor', 'outboard'],
+  ['bait', 'baiting', 'baited'],
+  ['call', 'calls', 'caller', 'callers'],
+  ['blind', 'blinds'],
+  ['dog', 'dogs', 'retriever'],
+  ['hours', 'sunrise', 'sunset'],
+  ['limit', 'limits', 'bag', 'possession'],
+  ['kid', 'kids', 'youth', 'junior'],
+]
+/** What a typed word matches: itself, its singular, and its group above */
+function wordAlts(w: string): string[] {
+  const singular = w.length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.slice(0, -1) : w
+  const group = SAME_AS.find(g => g.includes(w) || g.includes(singular)) ?? []
+  return [...new Set([singular, ...group])]
+}
+
+/** The words wrapped in <mark>, the rest left as text */
+function Highlight({ text, words }: { text: string; words: string[] }) {
+  if (words.length === 0) return <>{text}</>
+  const re = new RegExp(`\\b(${words.flatMap(wordAlts).sort((a, b) => b.length - a.length).map(escapeRe).join('|')})`, 'gi')
+  return <>{text.split(re).map((part, i) => i % 2 === 1
+    ? <mark key={i} className="rounded px-0.5 bg-amber-200 text-earth-900 dark:bg-amber-400/30 dark:text-inherit">{part}</mark>
+    : part)}</>
+}
+/** About 220 characters around the first match, so a long rule shows where the word is */
+function snippet(text: string, words: string[]): string {
+  const lower = text.toLowerCase()
+  const at = Math.min(...words.map(w => lower.search(wordRe(w))).filter(i => i >= 0))
+  if (!Number.isFinite(at) || text.length <= 220) return text.length <= 220 ? text : `${text.slice(0, 217)}…`
+  const from = Math.max(0, at - 80)
+  const piece = text.slice(from, from + 220)
+  return `${from > 0 ? '…' : ''}${piece}${from + 220 < text.length ? '…' : ''}`
+}
+/** A typed word found at the start of a word in the text ("hip" is not inside "shipment") */
+const wordRe = (w: string) => new RegExp(`\\b(${wordAlts(w).map(escapeRe).join('|')})`, 'i')
+const matchesAll = (hay: string, words: string[]) => words.every(w => wordRe(w).test(hay))
+
+function SearchResults({ query, stateName, regs, seasons, licenses, formatCategory, onClear }: {
+  query: string; stateName: string; regs: Regulation[]; seasons: Season[]; licenses: License[]
+  formatCategory: (c: string) => string; onClear: () => void
+}) {
+  const words = searchWords(query)
+  const ruleHits = regs.filter(r => matchesAll(`${r.title} ${r.summary ?? ''} ${r.content} ${r.category}`, words))
+  const seasonHits = uniqueSeasons(seasons).filter(x => matchesAll(`${x.name} ${x.restrictions ?? ''} ${(x.bagLimit as { notes?: string } | null)?.notes ?? ''} ${(x.units ?? []).join(' ')}`, words))
+  const licenseHits = licenses.filter(l => matchesAll(`${l.name} ${l.description ?? ''} ${l.licenseType}`, words))
+  const total = ruleHits.length + seasonHits.length + licenseHits.length
+  const ink = { color: `rgb(var(--color-text-primary))` }
+  const sub = { color: `rgb(var(--color-text-secondary))` }
+  const dim = { color: `rgb(var(--color-text-tertiary))` }
+  const Heading = ({ children, n }: { children: string; n: number }) => (
+    <h3 className="text-sm font-semibold mb-2" style={ink}>{children} <span className="font-normal" style={dim}>({n})</span></h3>
+  )
+  return (
+    <section aria-live="polite" className="mb-8 space-y-6">
+      <p className="text-sm" style={sub}>
+        {total === 0 ? <>Nothing in our {stateName} data matches “{query.trim()}”.</> : <>{total} match{total === 1 ? '' : 'es'} for “{query.trim()}”.</>}{' '}
+        <button type="button" onClick={onClear} className="text-accent-500 hover:underline">Clear search</button>
+      </p>
+      {/* Our rule text is a summary; the AI also reads the agency's documents and the web */}
+      <p className="text-sm" style={sub}>
+        <Link to={`/chat?q=${encodeURIComponent(`${stateName} waterfowl hunting: ${query.trim()}`)}`} className="inline-flex items-center gap-1.5 text-accent-500 hover:underline">
+          <MessageSquare className="w-4 h-4" /> Ask AI about “{query.trim()}” in {stateName}
+        </Link>
+      </p>
+      {ruleHits.length > 0 && (
+        <div>
+          <Heading n={ruleHits.length}>Rules</Heading>
+          <ul className="card divide-y" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+            {ruleHits.map(r => (
+              <li key={r.id} className="px-5 py-3">
+                <div className="flex items-start justify-between gap-4">
+                  <p className="font-medium text-sm" style={ink}><Highlight text={r.title} words={words} /></p>
+                  {r.sourceUrl && (
+                    <a href={r.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-accent-500 hover:underline text-xs flex items-center gap-1 flex-shrink-0">
+                      Source <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
+                </div>
+                <p className="text-xs mt-0.5" style={dim}>{formatCategory(r.category)}</p>
+                <p className="text-sm mt-1" style={sub}><Highlight text={snippet(r.summary && matchesAll(r.summary, words.slice(0, 1)) ? r.summary : r.content || r.summary || '', words)} words={words} /></p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {seasonHits.length > 0 && (
+        <div>
+          <Heading n={seasonHits.length}>Seasons</Heading>
+          <ul className="card divide-y" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+            {seasonHits.map(x => (
+              <li key={x.id} className="px-5 py-3 text-sm">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+                  <p className="font-medium" style={ink}><Highlight text={x.name} words={words} /></p>
+                  <p style={sub}>{seasonRange(x)}{bagLine(x.bagLimit) ? ` · ${bagLine(x.bagLimit)}` : ''}</p>
+                </div>
+                {(x.restrictions || (x.bagLimit as { notes?: string } | null)?.notes) && (
+                  <p className="mt-1" style={sub}><Highlight text={snippet(x.restrictions || (x.bagLimit as { notes?: string }).notes || '', words)} words={words} /></p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {licenseHits.length > 0 && (
+        <div>
+          <Heading n={licenseHits.length}>Licenses</Heading>
+          <ul className="card divide-y" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+            {licenseHits.map(l => (
+              <li key={l.id} className="px-5 py-3 text-sm">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-4">
+                  <p className="font-medium" style={ink}><Highlight text={l.name} words={words} /></p>
+                  <p style={sub}>{[l.priceResident != null && `${money(l.priceResident)} resident`, l.priceNonResident != null && `${money(l.priceNonResident)} non-resident`].filter(Boolean).join(' · ') || 'Price not listed'}</p>
+                </div>
+                {l.description && <p className="mt-1" style={sub}><Highlight text={snippet(l.description, words)} words={words} /></p>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  )
+}
+
 function SeasonGroups({ seasons, zone, openAll = false }: { seasons: Season[]; zone: string; openAll?: boolean }) {
   const inZone = useMemo(() => seasonsInZone(seasons, zone), [seasons, zone])
   const [openGroups, setOpenGroups] = useState<Set<string>>(() =>
@@ -823,33 +954,9 @@ function SeasonGroups({ seasons, zone, openAll = false }: { seasons: Season[]; z
   )
 }
 
-function getDuckSeason(seasons: Season[]): Season | null {
-  return seasons.find(s => {
-    const n = `${s.name} ${s.seasonType || ''}`.toLowerCase()
-    return n.includes('duck') || n.includes('waterfowl') || n.includes('mallard')
-  }) || null
-}
 
-function getSnowGooseSeason(seasons: Season[]): Season | null {
-  return seasons.find(s => {
-    const n = `${s.name} ${s.seasonType || ''}`.toLowerCase()
-    return n.includes('snow') || n.includes('light goose') || n.includes('conservation order')
-  }) || null
-}
 
-function findLicense(licenses: License[], keywords: string[]): License | null {
-  return licenses.find(l => {
-    const n = `${l.name} ${l.licenseType || ''} ${l.description || ''}`.toLowerCase()
-    return keywords.every(kw => n.includes(kw.toLowerCase()))
-  }) || null
-}
 
-function formatDateRange(season: Season | null): string {
-  if (!season) return '—'
-  const start = toCalendarDate(season.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  const end = toCalendarDate(season.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  return `${start} – ${end}`
-}
 
 function formatShootingHours(hours: unknown): string {
   if (!hours) return '—'
@@ -863,46 +970,101 @@ function formatShootingHours(hours: unknown): string {
   return '—'
 }
 
+const shortDate = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+const seasonRange = (x: Season) => {
+  const a = toCalendarDate(x.startDate), b = toCalendarDate(x.endDate)
+  return a.getTime() === b.getTime() ? shortDate(a) : `${shortDate(a)} – ${shortDate(b)}`
+}
+/** The zone a season row belongs to, "" when statewide */
+const zoneOf = (x: Season) => (x.units ?? []).find(z => !isStatewideZone(z)) ?? ''
+const uniqueSeasons = (list: Season[]) => [...new Map(list.map(x => [`${x.name}|${x.startDate}|${x.endDate}`, x])).values()]
+
+/** The regular duck season's splits, one line per zone: "North Zone: Oct 31 – Dec 29" */
+const isRegularDuck = (x: Season) => isMainSeason(x) && classifySeason(x) === 'duck' && !/teal|dusky|mottled|wood duck|merganser/i.test(x.name)
+function datesByZone(list: Season[]): string {
+  const byZone = new Map<string, Season[]>()
+  for (const x of uniqueSeasons(list)) byZone.set(zoneOf(x), [...(byZone.get(zoneOf(x)) ?? []), x])
+  if (byZone.size === 0) return '—'
+  return [...byZone.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([zone, parts]) => {
+      const ranges = parts.sort((a, b) => toCalendarDate(a.startDate).getTime() - toCalendarDate(b.startDate).getTime()).map(seasonRange).join(', ')
+      return zone && byZone.size > 1 ? `${zone}: ${ranges}` : ranges
+    }).join('\n')
+}
+/** "6 a day", or "1–3 a day by zone" when the zones differ */
+function dailyLimit(list: Season[]): string {
+  const days = [...new Set(list.map(x => (x.bagLimit as { daily?: number } | null)?.daily).filter((n): n is number => n != null))].sort((a, b) => a - b)
+  if (days.length === 0) return list.length ? 'No daily limit listed' : '—'
+  return days.length === 1 ? `${days[0]} a day` : `${days[0]}–${days[days.length - 1]} a day, by season or zone`
+}
+const goose = (re: RegExp) => (list: Season[]) => list.filter(x => isMainSeason(x) && !/conservation/i.test(x.name) && re.test(x.name))
+const darkGeese = goose(/canada|dark gee|dark goose/i)
+const lightGeese = goose(/light gee|light goose|snow goose/i)
+const whiteFronts = goose(/white-?front|specklebelly/i)
+
+/** Open today, by group: "Ducks, Geese", with "(some zones)" when not every zone is open */
+function openTodayLine(seasons: Season[]): string {
+  const today = todayLocal()
+  const main = uniqueSeasons(seasons).filter(isMainSeason)
+  const zones = zonesOf(main)
+  const parts: string[] = []
+  for (const { key, label } of GROUP_CONFIG) {
+    if (key === 'special') continue
+    const group = main.filter(x => classifySeason(x) === key)
+    const open = group.filter(x => isOpenOn(x, today))
+    if (open.length === 0) continue
+    const someZones = zones.length > 1 && zones.some(z => !seasonsInZone(open, z).some(x => classifySeason(x) === key))
+    parts.push(`${label}${someZones ? ' (some zones)' : ''}`)
+  }
+  return parts.length ? parts.join(', ') : 'Nothing open'
+}
+
+const money = (n: number) => `$${n % 1 === 0 ? n : n.toFixed(2)}`
+function licenseCell(licenses: License[], who: Residency, slotKey: string): string {
+  const slot = BUY_SLOTS.find(x => x.key === slotKey)!
+  const lic = pick(licenses, who, slot.test)
+  if (!lic) return 'Not in our data'
+  const price = priceFor(lic, who)
+  return price != null ? `${money(price)} (${lic.name})` : `Price not listed (${lic.name})`
+}
+/** The What-you-need-to-buy total for a non-resident: "At least" when a price is missing */
+function nonResidentTotal(licenses: License[]): string {
+  const picks = BUY_SLOTS.map(slot => pick(licenses, 'nonresident', slot.test))
+  const prices = picks.map(l => (l ? priceFor(l, 'nonresident') : null))
+  const known = prices.filter((n): n is number => n != null)
+  if (known.length === 0) return 'Prices not listed'
+  const total = known.reduce((a, b) => a + b, 0)
+  return known.length === prices.length ? money(total) : `At least ${money(total)}`
+}
+
 function buildCompareRows(stateCodes: string[], dataMap: Record<string, StateCompareData>): CompareRow[] {
-  function makeRow(label: string, getValue: (code: string) => string): CompareRow {
+  function makeRow(label: string, getValue: (d: StateCompareData) => string): CompareRow {
     const values: Record<string, string> = {}
     for (const code of stateCodes) {
       const d = dataMap[code]
-      values[code] = !d || d.loading ? '…' : d.error ? 'Error' : getValue(code)
+      values[code] = !d || d.loading ? '…' : d.error ? 'Error' : getValue(d)
     }
     const settled = Object.values(values).filter(v => v !== '…' && v !== 'Error' && v !== '—')
     return { label, values, differs: new Set(settled).size > 1 }
   }
+  const duck = (d: StateCompareData) => d.seasons.filter(isRegularDuck)
 
   return [
-    makeRow('Duck Season', code => formatDateRange(getDuckSeason(dataMap[code]?.seasons || []))),
-    makeRow('Daily Bag Limit', code => {
-      const season = getDuckSeason(dataMap[code]?.seasons || [])
-      const bl = season?.bagLimit as { daily?: number } | null
-      return bl?.daily != null ? `${bl.daily}/day` : '—'
-    }),
-    makeRow('Shooting Hours', code => formatShootingHours(getDuckSeason(dataMap[code]?.seasons || [])?.shootingHours)),
-    makeRow('Snow/Light Goose Season', code => formatDateRange(getSnowGooseSeason(dataMap[code]?.seasons || []))),
-    makeRow('Resident License', code => {
-      const lic = findLicense(dataMap[code]?.licenses || [], ['hunting'])
-        || findLicense(dataMap[code]?.licenses || [], ['resident'])
-      return lic?.priceResident != null ? `$${lic.priceResident.toFixed(2)}` : '—'
-    }),
-    makeRow('Non-Resident License', code => {
-      const lic = findLicense(dataMap[code]?.licenses || [], ['hunting'])
-        || findLicense(dataMap[code]?.licenses || [], ['non-resident'])
-      return lic?.priceNonResident != null ? `$${lic.priceNonResident.toFixed(2)}` : '—'
-    }),
-    makeRow('Federal Duck Stamp', code => {
-      const lic = findLicense(dataMap[code]?.licenses || [], ['duck', 'stamp'])
-        || findLicense(dataMap[code]?.licenses || [], ['federal', 'stamp'])
-      return lic?.priceResident != null ? `$${lic.priceResident.toFixed(2)}` : '—'
-    }),
-    makeRow('State Waterfowl Stamp', code => {
-      const lic = findLicense(dataMap[code]?.licenses || [], ['state', 'waterfowl'])
-        || findLicense(dataMap[code]?.licenses || [], ['state', 'duck'])
-      return lic?.priceResident != null ? `$${lic.priceResident.toFixed(2)}` : '—'
-    }),
+    makeRow('Open today', d => d.seasons.length ? openTodayLine(d.seasons) : '—'),
+    makeRow('Duck season', d => datesByZone(duck(d))),
+    makeRow('Duck limit', d => dailyLimit(duck(d))),
+    makeRow('Shooting hours', d => formatShootingHours(duck(d)[0]?.shootingHours)),
+    makeRow('Teal season', d => datesByZone(d.seasons.filter(x => /teal/i.test(x.name) && !/youth/i.test(x.name)))),
+    makeRow('Dark (Canada) goose limit', d => dailyLimit(darkGeese(d.seasons))),
+    makeRow('White-fronted goose limit', d => dailyLimit(whiteFronts(d.seasons))),
+    makeRow('Light goose limit', d => dailyLimit(lightGeese(d.seasons))),
+    makeRow('Light goose conservation order', d => datesByZone(d.seasons.filter(x => /conservation order/i.test(x.name)))),
+    makeRow('Hunting license, resident', d => licenseCell(d.licenses, 'resident', 'license')),
+    makeRow('Hunting license, non-resident', d => licenseCell(d.licenses, 'nonresident', 'license')),
+    makeRow('State waterfowl license or stamp, non-resident', d => licenseCell(d.licenses, 'nonresident', 'state')),
+    makeRow('Federal Duck Stamp', d => licenseCell(d.licenses, 'nonresident', 'federal')),
+    makeRow('Total to hunt ducks, non-resident', d => nonResidentTotal(d.licenses)),
   ]
 }
 
@@ -1000,7 +1162,7 @@ function CompareTable({ stateCodes, statesList }: { stateCodes: string[], states
                   <td key={code} className="p-4" style={{ color: `rgb(var(--color-text-primary))` }}>
                     {dataMap[code]?.loading
                       ? <span style={{ color: `rgb(var(--color-text-tertiary))` }}>…</span>
-                      : <span>{row.values[code]}</span>
+                      : <span className="whitespace-pre-line">{row.values[code]}</span>
                     }
                   </td>
                 ))}
@@ -1019,7 +1181,7 @@ function CompareTable({ stateCodes, statesList }: { stateCodes: string[], states
         }}
       >
         <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
-        Highlighted rows have differing values across states
+        Highlighted rows have differing values across states. A price we don't have says so; nothing is guessed.
       </div>
     </div>
   )
@@ -1057,6 +1219,13 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
     setSearchParams(p => { const n = new URLSearchParams(p); if (z) n.set('zone', z); else n.delete('zone'); return n }, { replace: true })
   }
   const zoneSeasons = useMemo(() => seasonsInZone(seasonsList, zone), [seasonsList, zone])
+  // "steel shot", "decoys": every rule, season and license, as you type
+  const [query, setQuery] = useState(() => searchParams.get('q') ?? '')
+  const searching = searchWords(query).length > 0
+  const changeQuery = (q: string) => {
+    setQuery(q)
+    setSearchParams(p => { const n = new URLSearchParams(p); if (q.trim()) n.set('q', q); else n.delete('q'); return n }, { replace: true })
+  }
 
   const regsByCategory = useMemo(() => {
     const filtered = selectedCategory === 'all' ? regs : regs.filter(r => r.category === selectedCategory)
@@ -1204,8 +1373,27 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
         <SeasonSummary state={stateCode} stateName={stateName} seasons={zoneSeasons} licenses={licensesList} zone={zone} zones={zones} onZone={setZone} />
       )}
 
+      {/* Search */}
+      <div className="relative mb-4">
+        <label htmlFor="state-search" className="sr-only">Search {stateName} rules, seasons and licenses</label>
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: `rgb(var(--color-text-tertiary))` }} />
+        <input
+          id="state-search"
+          type="search"
+          value={query}
+          onChange={e => changeQuery(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Escape') changeQuery('') }}
+          placeholder={`Search ${stateName} rules, seasons and licenses`}
+          className="input w-full pl-9 min-h-11"
+          autoComplete="off"
+        />
+      </div>
+      {searching && (
+        <SearchResults query={query} stateName={stateName} regs={regs} seasons={seasonsList} licenses={licensesList} formatCategory={formatCategory} onClear={() => changeQuery('')} />
+      )}
+
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3 mb-8">
+      <div className={`flex flex-wrap items-center gap-3 mb-8 ${searching ? 'hidden' : ''}`}>
         <select
           value={selectedYear}
           onChange={e => { setSelectedYear(Number(e.target.value)); setSelectedCategory('all') }}
@@ -1232,7 +1420,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
       </div>
 
       {/* Seasons first: dates and limits are what most visitors came for */}
-      {selectedCategory === 'all' && seasonsList.length > 0 && (
+      {!searching && selectedCategory === 'all' && seasonsList.length > 0 && (
         <div className="space-y-4 mb-8">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <h2 className="text-xl font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>
@@ -1247,7 +1435,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
       )}
 
       {/* Regulations */}
-      {filteredRegs.length > 0 && (
+      {!searching && filteredRegs.length > 0 && (
         <div className="space-y-2 mb-8">
           <h2 className="text-xl font-semibold mb-4" style={{ color: `rgb(var(--color-text-primary))` }}>
             Regulations <span className="text-sm font-normal ml-2" style={{ color: `rgb(var(--color-text-tertiary))` }}>({filteredRegs.length} total)</span>
@@ -1294,7 +1482,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
       )}
 
       {/* Licenses */}
-      {(selectedCategory === 'all' || selectedCategory === 'licenses') && licensesList.length > 0 && (
+      {!searching && (selectedCategory === 'all' || selectedCategory === 'licenses') && licensesList.length > 0 && (
         <div id="licenses" className="space-y-2 mb-8 scroll-mt-20">
           <h2 className="text-xl font-semibold mb-4" style={{ color: `rgb(var(--color-text-primary))` }}>
             License Requirements <span className="text-sm font-normal ml-2" style={{ color: `rgb(var(--color-text-tertiary))` }}>({licensesList.length} total)</span>
@@ -1365,7 +1553,7 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
       )}
 
       {/* Empty state */}
-      {filteredRegs.length === 0 && seasonsList.length === 0 && licensesList.length === 0 && (
+      {!searching && filteredRegs.length === 0 && seasonsList.length === 0 && licensesList.length === 0 && (
         <div className="text-center py-12 rounded-md" style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}>
           <FileText className="w-12 h-12 mx-auto mb-3" style={{ color: `rgb(var(--color-text-tertiary))` }} />
           <p style={{ color: `rgb(var(--color-text-secondary))` }}>No regulation data available for {stateName} yet.</p>
@@ -1396,14 +1584,27 @@ function StateCoverageLine({ hasSeasons, hasLicenses, seasonLabel }: { hasSeason
 
 export function RegulationsPage() {
   const { state } = useParams()
+  // "?compare=AR,LA,MO" opens Compare with those states; changes are written back for sharing
+  const [listParams, setListParams] = useSearchParams()
+  const linkedCompare = listParams.get('compare')
   const [statesList, setStatesList] = useState<StateInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [selectedState, setSelectedState] = useState('')
   const [regCounts, setRegCounts] = useState<StateRegCounts>({})
 
-  const [compareMode, setCompareMode] = useState(false)
-  const [compareStates, setCompareStates] = useState<Set<string>>(new Set())
+  const [compareMode, setCompareMode] = useState(linkedCompare !== null)
+  const [compareStates, setCompareStates] = useState<Set<string>>(() =>
+    new Set((linkedCompare ?? '').toUpperCase().split(',').filter(c => /^[A-Z]{2}$/.test(c)).slice(0, 4)))
+  useEffect(() => {
+    if (state) return
+    setListParams(p => {
+      const n = new URLSearchParams(p)
+      if (compareMode) n.set('compare', [...compareStates].join(','))
+      else n.delete('compare')
+      return n
+    }, { replace: true })
+  }, [compareMode, compareStates, state, setListParams])
 
   const [mapZoom, setMapZoom] = useState(1)
   const [mapCenter, setMapCenter] = useState<[number, number]>([0, 0])
