@@ -214,31 +214,181 @@ function SeasonTable({ seasons }: { seasons: Season[] }) {
 
 const isStatewideZone = (z: string) => /statewide/i.test(z)
 
-function SeasonGroups({ seasons, openAll = false }: { seasons: Season[]; openAll?: boolean }) {
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(openAll ? GROUP_CONFIG.map(g => g.key) : []))
-  // "Is it open in my zone this weekend?" Pick a zone and see only its seasons
-  const [zone, setZone] = useState('')
+/** The state's zones, statewide left out ("North Zone", "South Zone") */
+function zonesOf(seasons: Season[]): string[] {
+  const all = new Set<string>()
+  for (const s of seasons) for (const z of s.units ?? []) if (!isStatewideZone(z)) all.add(z)
+  return [...all].sort()
+}
 
-  const zones = useMemo(() => {
-    const all = new Set<string>()
-    for (const s of seasons) for (const z of s.units ?? []) if (!isStatewideZone(z)) all.add(z)
-    return [...all].sort()
-  }, [seasons])
+/** The seasons that apply in a zone: its own plus the statewide ones. No zone, all of them */
+function seasonsInZone(seasons: Season[], zone: string): Season[] {
+  if (!zone) return seasons
+  return seasons.filter(s => !s.units || s.units.length === 0 || s.units.some(z => z === zone || isStatewideZone(z)))
+}
 
-  const inZone = useMemo(() => {
-    if (!zone) return seasons
-    return seasons.filter(s => !s.units || s.units.length === 0 || s.units.some(z => z === zone || isStatewideZone(z)))
-  }, [seasons, zone])
+/** A bag limit inside the season ("Scaup (first 45 days)"), not a season of its own */
+const SUB_LIMIT = /^(scaup|pintail|canvasback|mallard|redhead)\b/i
+
+/** Regular seasons, the ones a hunter plans around: no falconry, youth days or bag sub-limits */
+function isMainSeason(s: Season): boolean {
+  return classifySeason(s) !== 'special' && !SUB_LIMIT.test(s.name)
+}
+
+/** Which season groups open on arrival: the ones in season today, else the next to open */
+function groupsInSeason(seasons: Season[], today: Date): Set<string> {
+  const main = seasons.filter(isMainSeason)
+  const open = main.filter(s => isOpenOn(s, today))
+  if (open.length > 0) return new Set(open.map(classifySeason))
+  const next = main
+    .filter(s => toCalendarDate(s.startDate) > today)
+    .sort((a, b) => toCalendarDate(a.startDate).getTime() - toCalendarDate(b.startDate).getTime())[0]
+  return new Set(next ? [classifySeason(next)] : [])
+}
+
+function ZonePicker({ zones, zone, onZone }: { zones: string[]; zone: string; onZone: (z: string) => void }) {
+  if (zones.length < 2) return null
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label htmlFor="season-zone" className="text-sm font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>
+        Your zone
+      </label>
+      <select id="season-zone" className="input w-auto max-w-full" value={zone} onChange={e => onZone(e.target.value)}>
+        <option value="">All zones</option>
+        {zones.map(z => <option key={z} value={z}>{z}</option>)}
+      </select>
+    </div>
+  )
+}
+
+/** "today", "tomorrow", "in 3 days" */
+function inDays(today: Date, day: Date): string {
+  const n = Math.round((day.getTime() - today.getTime()) / 86_400_000)
+  return n <= 0 ? 'today' : n === 1 ? 'tomorrow' : `in ${n} days`
+}
+/** Days left through the last day, counting today */
+function daysLeftThrough(today: Date, last: Date): string {
+  const n = Math.round((last.getTime() - today.getTime()) / 86_400_000) + 1
+  return n <= 1 ? 'last day' : `${n} days left`
+}
+const fmtDay = (d: Date) => d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+
+function bagLine(bl: unknown): string | null {
+  const b = bl as { daily?: number; possession?: number } | null
+  if (!b || b.daily == null) return null
+  return `${b.daily} a day${b.possession != null ? ` (${b.possession} in possession)` : ''}`
+}
+
+/** The state's basic hunting license, the one every hunter buys first */
+function baseLicense(licenses: License[]): License | null {
+  return licenses.find(l =>
+    l.licenseType === 'base' && !l.isResidentOnly
+    && (l.priceResident != null || l.priceNonResident != null)
+    && !/youth|senior|native|day|package|combo|sportsman|lifetime|fishing/i.test(l.name)) ?? null
+}
+
+/**
+ * The answer most visitors came for, above everything else: what is open today, what opens or
+ * closes next, the duck limit and hours, and what the basic license costs. This season only.
+ */
+const OPEN_SHOWN = 6
+
+function SeasonSummary({ seasons, licenses, zone, zones, onZone }: {
+  seasons: Season[]; licenses: License[]; zone: string; zones: string[]; onZone: (z: string) => void
+}) {
+  const today = todayLocal()
+  // Each season once: some states carry a row twice
+  const unique = [...new Map(seasons.map(s => [`${s.name}|${s.startDate}|${s.endDate}`, s])).values()]
+  const main = unique.filter(isMainSeason)
+  const openToday = main.filter(s => isOpenOn(s, today))
+  const openNames = [...new Set(openToday.map(s => s.name))]
+  const changes = [
+    ...openToday.map(s => ({ s, kind: 'closes' as const, day: toCalendarDate(s.endDate) })),
+    ...main.filter(s => toCalendarDate(s.startDate) > today).map(s => ({ s, kind: 'opens' as const, day: toCalendarDate(s.startDate) })),
+  ].sort((a, b) => a.day.getTime() - b.day.getTime()).slice(0, 3)
+
+  const ducks = main.filter(s => classifySeason(s) === 'duck' && !/teal/i.test(s.name))
+  const duck = ducks.find(s => isOpenOn(s, today))
+    ?? ducks.filter(s => toCalendarDate(s.startDate) > today).sort((a, b) => toCalendarDate(a.startDate).getTime() - toCalendarDate(b.startDate).getTime())[0]
+    ?? ducks[0]
+  const duckBag = duck ? bagLine(duck.bagLimit) : null
+  const hours = duck ? formatShootingHours(duck.shootingHours) : '—'
+  const license = baseLicense(licenses)
+  const money = (n: number | null) => n == null ? null : `$${n % 1 === 0 ? n : n.toFixed(2)}`
+
+  const label = 'text-xs font-semibold uppercase tracking-wide'
+  const labelStyle = { color: `rgb(var(--color-text-tertiary))` }
+  const body = { color: `rgb(var(--color-text-primary))` }
+  return (
+    <section aria-labelledby="season-summary" className="card p-5 mb-8 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="season-summary" className="text-lg font-semibold" style={body}>
+          {zone ? `Today in ${zone}` : 'Today'} <span className="text-sm font-normal" style={labelStyle}>{fmtDay(today)}</span>
+        </h2>
+        <ZonePicker zones={zones} zone={zone} onZone={onZone} />
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <p className={label} style={labelStyle}>Open today</p>
+          {openToday.length > 0 ? (
+            <ul className="mt-1 space-y-0.5 text-sm font-medium text-forest-700 dark:text-forest-400">
+              {openNames.slice(0, OPEN_SHOWN).map(n => <li key={n}>{n}</li>)}
+              {openNames.length > OPEN_SHOWN && (
+                <li className="font-normal" style={labelStyle}>
+                  and {openNames.length - OPEN_SHOWN} more{zones.length > 1 && !zone ? '. Pick your zone to narrow it' : ''}
+                </li>
+              )}
+            </ul>
+          ) : (
+            <p className="mt-1 text-sm" style={body}>Nothing is open{zone ? ` in ${zone}` : ''} today.</p>
+          )}
+        </div>
+        {changes.length > 0 && (
+          <div>
+            <p className={label} style={labelStyle}>Coming up</p>
+            <ul className="mt-1 space-y-1 text-sm" style={body}>
+              {changes.map(({ s, kind, day }) => (
+                <li key={`${kind}|${s.id}`}>
+                  <span className="font-medium">{s.name}</span>{' '}
+                  {kind === 'opens'
+                    ? <>opens {fmtDay(day)} <span style={labelStyle}>({inDays(today, day)})</span></>
+                    : <>runs through {fmtDay(day)} <span style={labelStyle}>({daysLeftThrough(today, day)})</span></>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {duck && (duckBag || hours !== '—') && (
+          <div>
+            <p className={label} style={labelStyle}>Ducks</p>
+            {duckBag && <p className="mt-1 text-sm" style={body}><span className="font-medium">{duckBag}</span></p>}
+            {hours !== '—' && <p className="text-sm" style={body}>Shooting hours: {hours}</p>}
+            <p className="text-xs mt-0.5" style={labelStyle}>From {duck.name}</p>
+          </div>
+        )}
+        {license && (
+          <div>
+            <p className={label} style={labelStyle}>{license.name}</p>
+            <p className="mt-1 text-sm" style={body}>
+              {[money(license.priceResident) && `${money(license.priceResident)} resident`, money(license.priceNonResident) && `${money(license.priceNonResident)} non-resident`].filter(Boolean).join(' · ')}
+            </p>
+            <a href="#licenses" className="text-xs text-accent-500 hover:underline">Every license and stamp</a>
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function SeasonGroups({ seasons, zone, openAll = false }: { seasons: Season[]; zone: string; openAll?: boolean }) {
+  const inZone = useMemo(() => seasonsInZone(seasons, zone), [seasons, zone])
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() =>
+    openAll ? new Set(GROUP_CONFIG.map(g => g.key)) : groupsInSeason(inZone, todayLocal()))
 
   const grouped = useMemo(() => {
     const map: Record<string, Season[]> = { duck: [], goose: [], dove: [], other: [], special: [] }
     for (const s of inZone) map[classifySeason(s)].push(s)
     return map
-  }, [inZone])
-
-  const openToday = useMemo(() => {
-    const today = todayLocal()
-    return inZone.filter(s => isOpenOn(s, today) && classifySeason(s) !== 'special')
   }, [inZone])
 
   const toggle = (key: string) => setOpenGroups(prev => {
@@ -250,22 +400,6 @@ function SeasonGroups({ seasons, openAll = false }: { seasons: Season[]; openAll
 
   return (
     <div className="space-y-3">
-      {zones.length > 1 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <label htmlFor="season-zone" className="text-sm font-medium" style={{ color: `rgb(var(--color-text-secondary))` }}>
-            Your zone
-          </label>
-          <select id="season-zone" className="input w-auto max-w-full" value={zone} onChange={e => setZone(e.target.value)}>
-            <option value="">All zones</option>
-            {zones.map(z => <option key={z} value={z}>{z}</option>)}
-          </select>
-        </div>
-      )}
-      <p className="text-sm" style={{ color: `rgb(var(--color-text-secondary))` }}>
-        {openToday.length > 0
-          ? <><span className="font-semibold text-forest-700 dark:text-forest-400">Open today{zone ? ` in ${zone}` : ''}:</span> {[...new Set(openToday.map(s => s.name))].join(', ')}</>
-          : `Nothing is open today${zone ? ` in ${zone}` : ''}.`}
-      </p>
       {GROUP_CONFIG.map(({ key, label }) => {
         const group = grouped[key]
         if (!group || group.length === 0) return null
@@ -519,6 +653,10 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
   const [selectedYear, setSelectedYear] = useState<number>(SEASON_YEAR)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [expandedLicenseTypes, setExpandedLicenseTypes] = useState<Set<string>>(new Set())
+  // "Is it open in my zone this weekend?" One zone for the summary and the season tables
+  const [zone, setZone] = useState('')
+  const zones = useMemo(() => zonesOf(seasonsList), [seasonsList])
+  const zoneSeasons = useMemo(() => seasonsInZone(seasonsList, zone), [seasonsList, zone])
 
   const regsByCategory = useMemo(() => {
     const filtered = selectedCategory === 'all' ? regs : regs.filter(r => r.category === selectedCategory)
@@ -661,6 +799,11 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
         </div>
       </div>
 
+      {/* What is open now: this season only */}
+      {selectedYear === SEASON_YEAR && seasonsList.length > 0 && (
+        <SeasonSummary seasons={zoneSeasons} licenses={licensesList} zone={zone} zones={zones} onZone={setZone} />
+      )}
+
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-8">
         <select
@@ -687,6 +830,15 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
           </div>
         )}
       </div>
+
+      {/* Seasons first: dates and limits are what most visitors came for */}
+      {selectedCategory === 'all' && seasonsList.length > 0 && (
+        <div className="space-y-4 mb-8">
+          <h2 className="text-xl font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>Seasons</h2>
+          {selectedYear !== SEASON_YEAR && <ZonePicker zones={zones} zone={zone} onZone={setZone} />}
+          <SeasonGroups key={selectedYear} seasons={seasonsList} zone={zone} openAll={expandAll} />
+        </div>
+      )}
 
       {/* Regulations */}
       {filteredRegs.length > 0 && (
@@ -735,17 +887,9 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
         </div>
       )}
 
-      {/* Seasons */}
-      {selectedCategory === 'all' && seasonsList.length > 0 && (
-        <div className="space-y-6 mb-8">
-          <h2 className="text-xl font-semibold" style={{ color: `rgb(var(--color-text-primary))` }}>Seasons</h2>
-          <SeasonGroups seasons={seasonsList} openAll={expandAll} />
-        </div>
-      )}
-
       {/* Licenses */}
       {(selectedCategory === 'all' || selectedCategory === 'licenses') && licensesList.length > 0 && (
-        <div className="space-y-2 mb-8">
+        <div id="licenses" className="space-y-2 mb-8 scroll-mt-20">
           <h2 className="text-xl font-semibold mb-4" style={{ color: `rgb(var(--color-text-primary))` }}>
             License Requirements <span className="text-sm font-normal ml-2" style={{ color: `rgb(var(--color-text-tertiary))` }}>({licensesList.length} total)</span>
           </h2>
