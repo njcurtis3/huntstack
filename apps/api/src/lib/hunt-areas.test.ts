@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Place } from '../data/places.js'
 import type { PublicLand } from '../data/public-lands.js'
 import {
-  clusterPoints, directionFrom, distanceKm, isSightingsOnly, mapLands, nameArea, publicLandsNear, rankAreas, sameUnit, scoreArea, summarizeArea, type AreaPoint,
+  clusterPoints, directionFrom, distanceKm, isSightingsOnly, mapLands, nameArea, zonesAt, publicLandsNear, rankAreas, sameUnit, scoreArea, summarizeArea, type AreaPoint,
 } from './hunt-areas.js'
 
 function pt(id: string, lat: number, lng: number, birds: number, extra: Partial<AreaPoint> = {}): AreaPoint {
@@ -158,5 +158,22 @@ describe('mapLands', () => {
   it('needs the name and the place to match: a closed unit far away removes nothing', () => {
     const got = mapLands([{ name: 'Clarence Cannon NWR', lat: 30, lng: -100, access: 'closed', note: null }], lands)
     expect(got).toHaveLength(3)
+  })
+})
+
+describe('zonesAt', () => {
+  it('finds the zone an area sits in from the Map shapes', () => {
+    expect(zonesAt(30.45, -91.15, 'LA')).toContain('East Zone') // Baton Rouge
+    expect(zonesAt(30.23, -93.22, 'LA')).toContain('West Zone') // Lake Charles
+    expect(zonesAt(35.22, -101.83, 'TX')).toEqual(expect.arrayContaining(['High Plains Mallard Management Unit', 'Western Zone']))
+    expect(zonesAt(40.3, -90.06, 'IL')).toContain('Central Zone') // Havana, on the Illinois River
+    expect(zonesAt(41.3, -91.1, 'IA')).toContain('South Zone') // Wapello
+  })
+  it("only looks at the area's own state, and a point outside every shape has none", () => {
+    expect(zonesAt(32.78, -96.8, 'LA')).toBeNull() // Dallas is not in Louisiana
+    expect(zonesAt(25, -60, 'TX')).toBeNull()
+  })
+  it('includes Statewide so statewide seasons still match', () => {
+    expect(zonesAt(34.75, -92.29, 'AR')).toEqual(['Statewide'])
   })
 })

@@ -8,6 +8,7 @@
 
 import { PLACES, type Place } from '../data/places.js'
 import { PUBLIC_LANDS, type PublicLand } from '../data/public-lands.js'
+import { ZONE_SHAPES, type ZoneShape } from '../data/zones.js'
 
 /** One piece of evidence at a point */
 export interface AreaPoint {
@@ -237,6 +238,26 @@ export interface NearbyLand {
  * as well as distance, so a 30,000-acre WMA ten miles off comes before a 40-acre natural area
  * next door. PAD-US records public access, not hunting rules.
  */
+function inRing(lng: number, lat: number, ring: number[][]): boolean {
+  let inside = false
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j]
+    if ((yi > lat) !== (yj > lat) && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
+/**
+ * The season zone names (seasons.units) at a point, from the Map's zone shapes
+ * (data/zones.ts): "South Zone", "Eastern Zone", "Statewide". Only the area's own state's
+ * shapes count; a point outside them all (a border, open water) has no zones.
+ */
+export function zonesAt(lat: number, lng: number, state: string, shapes: readonly ZoneShape[] = ZONE_SHAPES): string[] | null {
+  const hit = shapes.find(([, st, , polys]) => st === state
+    && polys.some(([outer, ...holes]) => inRing(lng, lat, outer) && !holes.some(h => inRing(lng, lat, h))))
+  return hit ? hit[2] : null
+}
+
 export function publicLandsNear(
   lat: number, lng: number, radiusKm: number, max = 6, lands: readonly PublicLand[] = PUBLIC_LANDS,
 ): NearbyLand[] {

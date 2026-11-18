@@ -14,7 +14,7 @@
 // Auth: X-eBirdApiToken header (set EBIRD_API_KEY in .env)
 
 import { BoundedCache } from './cache.js'
-import { STALE_LIMIT_MS, loadSaved, save } from './ebird-store.js'
+import { STALE_LIMIT_MS, loadSaved, loadSavedPrefix, save } from './ebird-store.js'
 
 const EBIRD_BASE = 'https://api.ebird.org/v2'
 const GEO_TTL      = 6 * 60 * 60 * 1000  // 6 hours  — per-refuge geo queries
@@ -132,6 +132,7 @@ export const STATE_FLYWAY: Record<string, string> = {
   TX: 'central', NM: 'central', KS: 'central', OK: 'central',
   AR: 'mississippi', LA: 'mississippi', MO: 'mississippi',
   IL: 'mississippi', // INHS Forbes aerial inventory; not in the default eBird state list
+  IA: 'mississippi', // added 2026-11-18: without it Iowa had only its INHS river sites in Where to Hunt
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -373,6 +374,17 @@ const inFlight = new Map<string, Promise<EBirdObservation[]>>()
 /** eBird codes per slug, primary code first (EBIRD_SPECIES order) */
 function codesFor(slug: string): string[] {
   return Object.entries(EBIRD_SPECIES).filter(([, v]) => v.slug === slug).map(([code]) => code)
+}
+
+/**
+ * After a restart: every saved per-species answer still inside its TTL, loaded into memory in one
+ * query. Without it the first page asked for 9 states x 18 species one key at a time, three at a
+ * time, and took 9-11 s. Returns how many were loaded.
+ */
+export async function primeSpeciesCache(): Promise<number> {
+  const saved = await loadSavedPrefix<EBirdObservation[]>('ebird:sp2:', SPECIES_TTL)
+  for (const { key, data, fetchedAt } of saved) speciesCache.set(key, data, ttlLeft(fetchedAt, SPECIES_TTL))
+  return saved.length
 }
 
 async function fetchSpeciesObs(apiKey: string, state: string, code: string, daysBack: number, fresh = false): Promise<EBirdObservation[]> {

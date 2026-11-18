@@ -49,6 +49,26 @@ export async function loadSaved<T>(key: string, maxAgeMs: number): Promise<Saved
   }
 }
 
+/** Every saved answer whose key starts with prefix (no % or _ in it) and is younger than maxAgeMs, in one query */
+export async function loadSavedPrefix<T>(prefix: string, maxAgeMs: number): Promise<Array<SavedAnswer<T> & { key: string }>> {
+  if (unavailable()) return []
+  try {
+    const rows = await getDb().execute(sql`
+      SELECT key, data, fetched_at FROM ebird_cache
+      WHERE key LIKE ${prefix + '%'}
+        AND fetched_at > now() - make_interval(secs => ${maxAgeMs / 1000})
+    `) as unknown as Array<{ key: string; data: unknown; fetched_at: string | Date }>
+    return rows.map(r => ({
+      key: r.key,
+      data: (typeof r.data === 'string' ? JSON.parse(r.data) : r.data) as T,
+      fetchedAt: new Date(r.fetched_at),
+    }))
+  } catch (error) {
+    noteError(error)
+    return []
+  }
+}
+
 /** Save a fresh answer; never waited on by a page and never throws */
 export function save(key: string, data: unknown): void {
   if (unavailable()) return

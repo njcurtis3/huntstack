@@ -2,7 +2,7 @@
 // counts, eBird reports, hunter reports), groups it into areas named after a nearby town, and
 // ranks them with the season and the weather push.
 
-import { FastifyPluginAsync } from 'fastify'
+import type { FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { decodePoint } from '../lib/jsonb.js'
@@ -13,7 +13,7 @@ import { getPushFactorsForStates, pushFactorAt } from '../lib/weather.js'
 import { STATE_FLYWAY, getEBirdHotspots } from '../lib/ebird.js'
 import { BoundedCache } from '../lib/cache.js'
 import {
-  AREA_RADIUS_KM, clusterPoints, distanceKm, isSightingsOnly, mapLands, nameArea, publicLandsNear, rankAreas, sameUnit, scoreArea, summarizeArea,
+  AREA_RADIUS_KM, clusterPoints, distanceKm, isSightingsOnly, mapLands, nameArea, zonesAt, publicLandsNear, rankAreas, sameUnit, scoreArea, summarizeArea,
   type AreaPoint, type AreaSeason, type CheckedPlace, type MapLand,
 } from '../lib/hunt-areas.js'
 import { findOpenSeason, huntZonesOf, seasonDisplayName, seasonYearOf, type SeasonRow } from './hunt.js'
@@ -32,6 +32,10 @@ const BUCKET_BIRDS: Record<string, number> = { '1-10': 5, '10-50': 30, '50-200':
 
 const cache = new BoundedCache<unknown>(50)
 const CACHE_MS = 15 * 60 * 1000
+const WARM_EVERY_MS = 12 * 60 * 1000
+const WARM_HEADER = 'x-huntstack-warm'
+// Per process, so only this server's own app.inject() calls carry it
+const WARM_TOKEN = Math.random().toString(36).slice(2) + Date.now().toString(36)
 // The public land list changes only with a yearly data file or a new access check
 const landsCache = new BoundedCache<{ lands: MapLand[]; source: string }>(1)
 const LANDS_CACHE_MS = 6 * 60 * 60 * 1000
@@ -59,6 +63,38 @@ function areaTitle(town: ReturnType<typeof nameArea>, fallback: string): string 
   if (!town) return fallback
   const place = `${town.town}, ${town.state}`
   return town.distanceKm <= 8 ? `Near ${place}` : `${miles(town.distanceKm)} mi ${town.direction} of ${place}`
+}
+
+/** YYYY-MM-DD in a time zone (the Map asks for the visitor's local day, Where to Hunt the UTC day) */
+function dayIn(timeZone: string, at = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at)
+}
+
+/**
+ * Keep the two answers the site asks for computed, so no visitor waits for a cold one: Where to
+ * Hunt's default search (every state, today) and the Map's best 3 per state (today). "Today" is
+ * both the UTC day and the Central day, which differ in the evening. Recomputed every 12 minutes,
+ * inside the 15-minute cache. Production only, or WARM_HUNT_AREAS=1.
+ */
+export function warmHuntAreas(app: FastifyInstance): void {
+  if (process.env.NODE_ENV !== 'production' && process.env.WARM_HUNT_AREAS !== '1') return
+  const run = async () => {
+    const days = [...new Set([dayIn('UTC'), dayIn('America/Chicago')])]
+    for (const day of days) {
+      for (const url of [`/api/hunt/areas?states=${AREA_STATES.join(',')}&date=${day}`, `/api/hunt/areas?date=${day}&perState=3`]) {
+        const started = Date.now()
+        try {
+          const res = await app.inject({ method: 'GET', url, headers: { [WARM_HEADER]: WARM_TOKEN } })
+          if (res.statusCode !== 200) app.log.warn(`hunt areas warm ${url}: HTTP ${res.statusCode}`)
+          else app.log.info(`hunt areas warm ${url}: ${Date.now() - started} ms`)
+        } catch (err) {
+          app.log.warn({ err }, `hunt areas warm ${url} failed`)
+        }
+      }
+    }
+  }
+  void run()
+  setInterval(() => void run(), WARM_EVERY_MS).unref()
 }
 
 export const huntAreasRoutes: FastifyPluginAsync = async (app) => {
@@ -89,7 +125,9 @@ export const huntAreasRoutes: FastifyPluginAsync = async (app) => {
     const speciesSlug = q.species?.trim() || null
 
     const cacheKey = `${states.join(',')}|${speciesSlug ?? '*'}|${targetDay}|${perState ?? 'top'}`
-    const cached = cache.get(cacheKey)
+    // warmHuntAreas() recomputes through here before the answer expires; nobody else skips the cache
+    const warming = request.headers[WARM_HEADER] === WARM_TOKEN
+    const cached = warming ? null : cache.get(cacheKey)
     if (cached) return cached
 
     const db = getDb()
@@ -258,8 +296,13 @@ export const huntAreasRoutes: FastifyPluginAsync = async (app) => {
     const scored = groups.map(points => {
       const summary = summarizeArea(points)
       const town = nameArea(summary.lat, summary.lng, summary.state)
+      // A survey site's hand-checked zones first; otherwise the zone the area sits in, from the
+      // Map's zone shapes (most areas are eBird places, which carry no zones of their own)
       const zonesSet = new Set(points.flatMap(p => p.zones ?? []))
-      const zones = zonesSet.size ? [...zonesSet] : null
+      // (an area centred on a river can fall outside its state's shape: then its biggest place's)
+      const zones = zonesSet.size ? [...zonesSet]
+        : zonesAt(summary.lat, summary.lng, summary.state)
+          ?? [...points].sort((x, y) => y.birds - x.birds).map(p => zonesAt(p.lat, p.lng, summary.state)).find(z => z) ?? null
 
       // Season: the species asked for, or ducks and geese
       const checks = speciesSlug

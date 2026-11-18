@@ -31,7 +31,7 @@ import { speciesRoutes } from './routes/species.js'
 import { refugeRoutes } from './routes/refuges.js'
 import { weatherRoutes } from './routes/weather.js'
 import { huntRoutes } from './routes/hunt.js'
-import { huntAreasRoutes } from './routes/hunt-areas.js'
+import { huntAreasRoutes, warmHuntAreas } from './routes/hunt-areas.js'
 import { migrationRoutes } from './routes/migration.js'
 import { geoRoutes } from './routes/geo.js'
 import { fieldReportsRoutes } from './routes/field-reports.js'
@@ -39,7 +39,7 @@ import { meRoutes } from './routes/me.js'
 import { adminRoutes } from './routes/admin.js'
 import { accountRoutes, billingWebhookRoutes } from './routes/account.js'
 import { startStateActivityRefresh } from './lib/ebird-activity.js'
-import { STATE_FLYWAY } from './lib/ebird.js'
+import { STATE_FLYWAY, primeSpeciesCache } from './lib/ebird.js'
 
 const app = Fastify({
   logger: {
@@ -170,8 +170,14 @@ const start = async () => {
       if (docsEnabled) {
         app.log.info(`API docs available at http://${host}:${port}/docs`)
       }
-      // eBird statewide activity: warm the cache and save the day's snapshot in the background
-      startStateActivityRefresh(Object.keys(STATE_FLYWAY))
+      // eBird: load the saved answers in one query, then keep statewide activity fresh and the
+      // site's Where to Hunt answers computed, all in the background
+      void primeSpeciesCache()
+        .then(n => app.log.info(`eBird: ${n} saved answers loaded`))
+        .finally(() => {
+          startStateActivityRefresh(Object.keys(STATE_FLYWAY))
+          warmHuntAreas(app)
+        })
       return
     } catch (err: unknown) {
       const isAddrInUse = (err as NodeJS.ErrnoException).code === 'EADDRINUSE'
