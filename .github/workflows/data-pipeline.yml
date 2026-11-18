@@ -10,10 +10,17 @@ name: Data pipeline
 #   LLM_API_KEY            required: reads LDWF's PDFs (OpenRouter key from .env)
 #   SCRAPER_ALERT_WEBHOOK  optional: Slack/Discord webhook for warnings and failures
 # A failed job fails this workflow, and GitHub emails the owner about it.
+#
+# In season the INHS aerial inventory (Illinois River + central Mississippi, the IL/MO/IA sites)
+# is also checked Tuesday to Friday. INHS flies about weekly and posts a few days later, so a
+# Monday-only check left the site up to a week behind. A named job always runs (due or not), and
+# its run counts toward the weekly due check, so Monday's run may skip INHS after a Friday check;
+# the Tuesday check covers a weekend or Monday post.
 
 on:
   schedule:
     - cron: '0 12 * * 1'   # Mondays 12:00 UTC = 6am Central (7am during daylight time)
+    - cron: '0 17 * 9-12,1 2-5'   # Sep-Jan, Tue-Fri 17:00 UTC (11am Central): INHS only, see above
   workflow_dispatch:
     inputs:
       targets:
@@ -80,7 +87,8 @@ jobs:
           LLM_MODEL: meta-llama/llama-3.3-70b-instruct
           SCRAPER_ALERT_WEBHOOK: ${{ secrets.SCRAPER_ALERT_WEBHOOK }}
           EBIRD_API_KEY: ${{ secrets.EBIRD_API_KEY }}
-          TARGETS: ${{ github.event.inputs.targets || 'all' }}
+          # The Tue-Fri schedule runs the two INHS jobs; the Monday schedule and a manual run default to all
+          TARGETS: ${{ github.event.inputs.targets || (github.event.schedule == '0 17 * 9-12,1 2-5' && 'counts:*inhs*' || 'all') }}
           FORCE: ${{ github.event.inputs.force == 'true' && '--force' || '' }}
           DRY_RUN: ${{ github.event.inputs.dry_run == 'true' && '--dry-run' || '' }}
           PYTHONUNBUFFERED: '1'
