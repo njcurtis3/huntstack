@@ -418,7 +418,8 @@ function pick(licenses: License[], who: Residency, test: (l: License) => boolean
 
 const BUY_SLOTS: { key: string; label: string; test: (l: License) => boolean }[] = [
   { key: 'license', label: 'Hunting license', test: l => /^(base|license)$/.test(l.licenseType) && /hunting|sportsman|small game|conservation license/i.test(l.name) && !/waterfowl|stamp|hip\b/i.test(l.name) },
-  { key: 'state', label: 'State waterfowl license or stamp', test: l => !/federal/i.test(l.name) && /waterfowl (stamp|license|permit|hunting license)|state duck stamp|migratory game bird endorsement|^waterfowl license$/i.test(l.name) },
+  // MO calls it the Migratory Bird Hunting Permit, IA the Migratory Game Bird Fee
+  { key: 'state', label: 'State waterfowl license or stamp', test: l => !/federal|harvest|\bhip\b/i.test(l.name) && /waterfowl (stamp|license|permit|hunting license)|state duck stamp|migratory game bird (endorsement|fee)|migratory bird hunting permit|^waterfowl license$/i.test(l.name) },
   { key: 'hip', label: 'HIP certification', test: l => /\bhip\b|harvest information/i.test(l.name) },
   { key: 'federal', label: 'Federal Duck Stamp', test: l => /federal/i.test(l.name) && /duck stamp|migratory bird hunting/i.test(l.name) },
 ]
@@ -461,7 +462,7 @@ function WhatToBuy({ licenses, stateName, agencyUrl }: { licenses: License[]; st
                 <p style={ink}>{lic ? lic.name : 'Not in our data. Check with the state'}</p>
               </div>
               <div className="text-right flex-shrink-0">
-                <p className="font-medium" style={price != null ? ink : dim}>{lic ? (price != null ? money(price) : 'Price not listed') : '—'}</p>
+                <p className="font-medium" style={price != null ? ink : dim}>{lic ? (price === 0 ? 'Free' : price != null ? money(price) : 'Price not listed') : '—'}</p>
                 {lic?.purchaseUrl && (
                   <a href={lic.purchaseUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-accent-500 hover:underline inline-flex items-center gap-1">
                     Buy <ExternalLink className="w-3 h-3" />
@@ -524,7 +525,7 @@ function baseLicense(licenses: License[]): License | null {
   return licenses.find(l =>
     l.licenseType === 'base' && !l.isResidentOnly
     && (l.priceResident != null || l.priceNonResident != null)
-    && !/youth|senior|native|day|package|combo|sportsman|lifetime|fishing/i.test(l.name)) ?? null
+    && !/youth|senior|native|day|daily|package|combo|sportsman|lifetime|fishing/i.test(l.name)) ?? null
 }
 
 /**
