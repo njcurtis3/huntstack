@@ -69,6 +69,47 @@ type Season = {
   restrictions: string | null
   /** Zone names the season applies to, e.g. ["High Plains Mallard Management Unit"] */
   units?: string[] | null
+  speciesId?: string | null
+  /** Set by mergeSpeciesRows when the species in one season have different limits */
+  bySpecies?: { species: string; bagLimit: unknown }[]
+}
+
+/**
+ * The database keeps one season row per species: "Light Geese" once for snow geese and once for
+ * Ross's geese, teal once per teal. That is right for the species pages and the Map, but a hunter
+ * reads it as the same season twice. Rows with the same name, dates and zones become one. When
+ * their limits differ (New Mexico's "Geese": Canada 5, white-fronted 10, light 20 a day) the
+ * season keeps the largest as its limit and lists each species' own limit.
+ */
+function mergeSpeciesRows(seasons: Season[], speciesNames: Map<string, string>): Season[] {
+  const groups = new Map<string, Season[]>()
+  for (const x of seasons) {
+    const key = `${x.name}|${x.startDate}|${x.endDate}|${(x.units ?? []).join(',')}`
+    groups.set(key, [...(groups.get(key) ?? []), x])
+  }
+  const daily = (x: Season) => (x.bagLimit as { daily?: number } | null)?.daily ?? -1
+  return [...groups.values()].map(rows => {
+    if (rows.length === 1) return rows[0]
+    const bags = new Map<string, Season[]>()
+    for (const x of rows) bags.set(JSON.stringify(x.bagLimit ?? null), [...(bags.get(JSON.stringify(x.bagLimit ?? null)) ?? []), x])
+    const base = [...rows].sort((a, b) => daily(b) - daily(a))[0]
+    if (bags.size === 1) return base
+    const name = (id: string | null | undefined) => (id && speciesNames.get(id)) || 'Other species'
+    const bySpecies = [...bags.values()]
+      .map(same => ({ species: [...new Set(same.map(x => name(x.speciesId)))].join(' and '), bagLimit: same[0].bagLimit, d: daily(same[0]) }))
+      .sort((a, b) => a.d - b.d)
+      .map(({ species, bagLimit }) => ({ species, bagLimit }))
+    return { ...base, bySpecies }
+  })
+}
+
+let speciesNamesCache: Promise<Map<string, string>> | null = null
+/** Waterfowl species names by id, for the per-species limits above (empty if the call fails) */
+function loadSpeciesNames(): Promise<Map<string, string>> {
+  speciesNamesCache ??= api.getSpecies({ category: 'waterfowl' })
+    .then(r => new Map(r.species.map(x => [x.id, x.name])))
+    .catch(() => { speciesNamesCache = null; return new Map<string, string>() })
+  return speciesNamesCache
 }
 
 type License = {
@@ -202,7 +243,13 @@ function SeasonTable({ seasons }: { seasons: Season[] }) {
                 {' – '}
                 {toCalendarDate(season.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
               </td>
-              <td className="p-3 align-top" style={{ color: `rgb(var(--color-text-secondary))` }}>{bagFmt(season.bagLimit)}</td>
+              <td className="p-3 align-top" style={{ color: `rgb(var(--color-text-secondary))` }}>
+                {season.bySpecies ? (
+                  <ul className="space-y-0.5">
+                    {season.bySpecies.map(b => <li key={b.species}><span style={{ color: `rgb(var(--color-text-primary))` }}>{b.species}:</span> {bagFmt(b.bagLimit)}</li>)}
+                  </ul>
+                ) : bagFmt(season.bagLimit)}
+              </td>
               <td className="p-3 align-top hidden md:table-cell" style={{ color: `rgb(var(--color-text-secondary))` }}>{season.restrictions || '-'}</td>
             </tr>
           )
@@ -490,7 +537,7 @@ function SeasonSummary({ state, stateName, seasons, licenses, zone, zones, onZon
   state: string; stateName: string; seasons: Season[]; licenses: License[]; zone: string; zones: string[]; onZone: (z: string) => void
 }) {
   const today = todayLocal()
-  // Each season once: some states carry a row twice
+  // Each season once (mergeSpeciesRows already joins the per-species rows; this is a safety net)
   const unique = [...new Map(seasons.map(s => [`${s.name}|${s.startDate}|${s.endDate}`, s])).values()]
   const main = unique.filter(isMainSeason)
   const openToday = main.filter(s => isOpenOn(s, today))
@@ -1079,11 +1126,12 @@ function CompareTable({ stateCodes, statesList }: { stateCodes: string[], states
       Promise.all([
         api.getStateSeasons(code, { year: SEASON_YEAR }),
         api.getStateLicenses(code),
-      ]).then(([seasonsResp, licensesResp]) => {
+        loadSpeciesNames(),
+      ]).then(([seasonsResp, licensesResp, speciesNames]) => {
         setDataMap(prev => ({
           ...prev,
           [code]: {
-            seasons: seasonsResp.seasons as Season[],
+            seasons: mergeSpeciesRows(seasonsResp.seasons as Season[], speciesNames),
             licenses: licensesResp.licenses as License[],
             loading: false,
             error: null,
@@ -1252,14 +1300,15 @@ function StateDetailView({ stateCode }: { stateCode: string }) {
       setLoading(true)
       setError(null)
       try {
-        const [regData, seasonsData, licensesData] = await Promise.all([
+        const [regData, seasonsData, licensesData, speciesNames] = await Promise.all([
           api.getStateRegulations(stateCode, { year: selectedYear }),
           api.getStateSeasons(stateCode, { year: selectedYear }),
           api.getStateLicenses(stateCode),
+          loadSpeciesNames(),
         ])
         setStateInfo(regData.state as StateInfo)
         setRegs(regData.regulations as Regulation[])
-        setSeasonsList(seasonsData.seasons as Season[])
+        setSeasonsList(mergeSpeciesRows(seasonsData.seasons as Season[], speciesNames))
         setLicensesList(licensesData.licenses as License[])
         if (expandAll) {
           setExpandedCategories(new Set((regData.regulations as Regulation[]).map(r => r.category)))
