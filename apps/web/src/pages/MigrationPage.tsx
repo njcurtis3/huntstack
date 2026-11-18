@@ -6,7 +6,7 @@ import {
   Loader2, AlertCircle, Bird, X, TrendingUp, TrendingDown, Minus, Sparkles,
   Wind, Thermometer, Zap, AlertTriangle, ChevronDown, ChevronUp, RefreshCw,
   Send, Bot, User, MessageSquare, MapPin, Navigation, Share2,
-  Map as MapIcon, LayoutDashboard, Egg, FileText, Users, ListOrdered, Route, History,
+  Map as MapIcon, LayoutDashboard, Egg, FileText, Users, ListOrdered, Route, History, Info,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
@@ -22,7 +22,7 @@ import {
   type AnomalyType, type MigrationIndexResult, type MigrationStatus,
 } from '../lib/migrationStats'
 import {
-  FLYWAY_STATE_ORDER, PUSH_SCORE_LABELS, STATE_CENTROIDS, STATUS_HEX, computeFlowDirection, enrichCounts, groupRefuges, groupStates,
+  partialCountNote, FLYWAY_STATE_ORDER, PUSH_SCORE_LABELS, STATE_CENTROIDS, STATUS_HEX, computeFlowDirection, enrichCounts, groupRefuges, groupStates,
   overallPushScoreOf, sortCounts, type FlowDirection, type RefugeGroup as RefugeGroupOf, type StateGroup as StateGroupOf,
 } from '../lib/migrationGroups'
 import { SurveyZoneBreakdown } from '../components/SurveyZoneBreakdown'
@@ -2782,6 +2782,13 @@ export function MigrationPage() {
                             <AlertCircle className="w-3 h-3" />
                             {isEarlierSeason(sg.latestDate) ? 'Last season’s data' : 'No survey in the last 4 weeks'}
                             {` (newest: ${oldSurveyLabel(sg.latestDate)}) — not in current totals`}
+                          </div>
+                        )}
+                        {/* Partial total: the state's statewide survey isn't in, or there is none */}
+                        {partialCountNote(sg) && (
+                          <div className="flex items-center gap-1.5 text-xs font-medium text-earth-600 dark:text-earth-400 bg-earth-100 dark:bg-earth-800/40 px-5 py-1.5">
+                            <Info className="w-3 h-3 flex-shrink-0" />
+                            {partialCountNote(sg)}
                           </div>
                         )}
                         {/* State-level anomaly banner */}

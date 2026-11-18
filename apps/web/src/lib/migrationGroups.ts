@@ -234,6 +234,39 @@ export type StateGroup<T> = {
   refuges: RefugeGroup<T>[]
 }
 
+/**
+ * The statewide agency survey each state's count waits on. Until it is in, a state's card is a
+ * few refuges and eBird places (Texas: about 1,000 birds), which reads as "no ducks in Texas".
+ * `site` names the survey's own row on the card (AGFC, LDWF fly in season); a state without one
+ * only gets the January midwinter survey, whose numbers never land on this card (USFWS's
+ * "Statewide MWI" rows and TPWD's survey are annual and feed the Historical MWI chart).
+ */
+const STATEWIDE_SURVEY: Record<string, { survey: string; site?: string }> = {
+  TX: { survey: 'midwinter survey' },
+  OK: { survey: 'midwinter survey' },
+  KS: { survey: 'midwinter survey' },
+  NM: { survey: 'midwinter survey' },
+  AR: { survey: 'AGFC aerial survey', site: 'Arkansas - AGFC Aerial Survey' },
+  LA: { survey: 'LDWF aerial survey', site: 'Louisiana - LDWF Aerial Survey' },
+}
+
+/** States counted only at survey sites (INHS flights, refuges); no statewide survey is loaded */
+const SITE_COUNTS_ONLY = new Set(['IL', 'MO', 'IA'])
+
+/**
+ * The note a current state card needs because its total is not the whole state: waiting on the
+ * statewide survey, or site counts only. Null when the card has its statewide survey.
+ */
+export function partialCountNote(sg: StateGroup<unknown>): string | null {
+  if (sg.allStale) return null
+  const sites = sg.refugeCount === 1 ? 'one site' : `${sg.refugeCount} sites`
+  if (SITE_COUNTS_ONLY.has(sg.state)) return `Site counts only, not a statewide survey. This total is ${sites}.`
+  const s = STATEWIDE_SURVEY[sg.state]
+  if (!s) return null
+  if (s.site && sg.refuges.some(r => r.refugeName === s.site && !r.isStale)) return null
+  return `Waiting for ${s.survey} counts. This total is ${sites}, not the whole state.`
+}
+
 /** One group per state, busiest current state first. */
 export function groupStates<T extends Enriched>(refugeGroups: RefugeGroup<T>[], nameOf: (code: string) => string): StateGroup<T>[] {
   const map = new Map<string, RefugeGroup<T>[]>()
