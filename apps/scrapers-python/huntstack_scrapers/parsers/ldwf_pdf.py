@@ -9,8 +9,10 @@ Source: https://www.wlf.louisiana.gov/page/aerial-waterfowl-surveys
 
 Previously used hand-written regex with two different format variants
 (Format A: 2023+ numbers-then-species, Format B: 2019-2022 same-line).
-Now uses LLM extraction (extractors/llm.py) which handles both formats
-naturally without explicit branching logic.
+Then the LLM (extractors/llm.py), which shifted species a row and stored total rows as
+species in most surveys before Dec 2024. Since 2026-11-18 Table 1 is read by position again
+(read_ldwf_table), every layout from 2019 on, checked against the table's own total rows; the
+LLM is only the fallback.
 
 URL discovery: file names change between seasons ("waterdec2024.pdf",
 "Louisiana_Aerial_Waterfowl_Survey_December_2024.pdf"), so we read the list LDWF's own
@@ -92,18 +94,119 @@ def _page_text(pdf_bytes: bytes) -> str:
         return ""
 
 
+# ── Table 1, read by position (no LLM) ──
+# Rows are a species label and its numbers: SW, SE, Little River Basin (or Catahoula), TOTALS.
+# Layouts vary by year and even by row: numbers on the label's line ("MALLARD 64,000 21,000
+# 3,000 88,000"), on the line above it, or split across both (Jan 2022: "1,000 ** 23,000" then
+# "MALLARD 22,000"). A label takes its own numbers plus an unused numbers line just above it,
+# and its total is the largest of them, since TOTALS is never smaller than a region. "*" or
+# "**" is under 1,000 (0 here, as in LDWF's own totals); a row with no numbers is 0.
+_TABLE_SPECIES = {
+    "MALLARD": "Mallard", "MOTTLED": "Mottled Duck", "GADWALL": "Gadwall", "WIGEON": "American Wigeon",
+    "GW TEAL": "Green-winged Teal", "BW TEAL": "Blue-winged Teal", "SHOVELER": "Northern Shoveler",
+    "PINTAIL": "Northern Pintail", "SCAUP": "Scaup", "RINGNECKED": "Ring-necked Duck",
+    "CANVASBACK": "Canvasback", "REDHEAD": "Redhead",
+}
+_DIVERS = {"Scaup", "Ring-necked Duck", "Canvasback", "Redhead"}
+_TABLE_LABELS = sorted([*_TABLE_SPECIES, "DABBLERS", "DIVERS", "TOTAL DUCKS"], key=len, reverse=True)
+_CELL = re.compile(r"^(\d{1,3}(?:,\.?\d{3})+\*?|\d+\*?|\*+)$")  # "2,.000" and "89,000*" occur
+_REPORT_DATE = re.compile(
+    r"^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})$", re.IGNORECASE)
+
+
+def _cells(s: str) -> list[str] | None:
+    toks = s.split()
+    return toks if toks and all(_CELL.match(t) for t in toks) else None
+
+
+def _row_total(cells: list[str]) -> int:
+    nums = [int(c.rstrip("*").replace(",", "").replace(".", "")) for c in cells if not c.startswith("*")]
+    return max(nums) if nums else 0
+
+
+def read_ldwf_table(text: str) -> tuple[dict[str, int], int] | None:
+    """Table 1's species totals and TOTAL DUCKS, or None unless the species add up exactly to the
+    table's own TOTAL DABBLERS, TOTAL DIVERS and TOTAL DUCKS rows. Species under 1,000 are left
+    out. An empty table (a survey LDWF didn't complete) returns ({}, 0).
+
+    Checked 2026-11-18 on all 32 coastal reports from Jan 2019 to Nov 2026: every one adds up.
+    """
+    lines = [l.strip() for l in text.splitlines()]
+    start = next((i for i, l in enumerate(lines) if l.startswith("SPECIES")), None)
+    if start is None:
+        return None
+    rows: dict[str, int] = {}
+    pending: list[str] | None = None
+    for l in lines[start + 1:]:
+        if l.startswith(("COOTS", "COMMENTS")) or (l.startswith("*") and _cells(l) is None):
+            break
+        cells = _cells(l)
+        if cells is not None:
+            if pending is not None:
+                return None  # two numbers lines in a row: not a layout this reader knows
+            pending = cells
+            continue
+        if l == "TOTAL":
+            continue
+        if l.startswith("TOTAL ") and not l.startswith("TOTAL DUCKS") and _cells(l[6:]) is not None:
+            if pending is not None:
+                return None
+            pending = _cells(l[6:])
+            continue
+        label = next((n for n in _TABLE_LABELS if l == n or l.startswith(n + " ")), None)
+        if label is None:
+            continue  # header lines ("LAKE", "Basin")
+        own = l[len(label):].split()
+        if own and _cells(" ".join(own)) is None:
+            return None
+        rows[_TABLE_SPECIES.get(label, label)] = _row_total(own + (pending or []))
+        pending = None
+    if not {"DABBLERS", "DIVERS", "TOTAL DUCKS"} <= rows.keys():
+        return None
+    species = {k: v for k, v in rows.items() if k in _TABLE_SPECIES.values()}
+    dabblers = sum(v for k, v in species.items() if k not in _DIVERS)
+    divers = sum(v for k, v in species.items() if k in _DIVERS)
+    if (rows["DABBLERS"], rows["DIVERS"], rows["TOTAL DUCKS"]) != (dabblers, divers, dabblers + divers):
+        return None
+    return {k: v for k, v in species.items() if v > 0}, rows["TOTAL DUCKS"]
+
+
+def ldwf_report_date(text: str) -> str | None:
+    """The report's date, on its own line under the authors ("January 17, 2025", "Jan. 23, 2025")"""
+    for line in text.splitlines():
+        m = _REPORT_DATE.match(line.strip())
+        if m:
+            month = _MONTHS[m.group(1).lower()[:3]]
+            return f"{int(m.group(3)):04d}-{month:02d}-{int(m.group(2)):02d}"
+    return None
+
+
 def parse_ldwf_pdf(pdf_bytes: bytes) -> ParseResult | None:
     """
-    Extract statewide species totals from an LDWF aerial survey PDF using LLM.
+    Statewide species totals from an LDWF aerial survey PDF.
 
-    Reads page 0 only — Table 1 with species counts by region and TOTALS column.
-    The LLM is instructed to use the TOTALS (last column) for each species.
+    Table 1 is read by position first (read_ldwf_table): it must add up to the table's own
+    total rows, and when it does it is stored as checked. An empty table is a survey LDWF
+    didn't complete (Sept 2024, Hurricane Francine) and stores nothing.
 
-    The species must add up to the table's TOTAL DUCKS. A read that doesn't is retried once
-    and then dropped (None), so a misread is never stored; the run logs it as a warning.
-    When the total can't be found (older layouts), the read is kept and that is logged.
+    Otherwise the LLM reads page 0, and the species must add up to the table's TOTAL DUCKS.
+    A read that doesn't is retried once and then dropped (None), so a misread is never stored;
+    the run logs it as a warning. When the total can't be found, the read is kept and logged.
+    An LLM read can add up and still be wrong (Sept 2025: 70,000 of the 101,000 blue-winged
+    teal stored as green-winged), which is why the table comes first.
     """
-    expected = ldwf_total_ducks(_page_text(pdf_bytes))
+    text = _page_text(pdf_bytes)
+    table = read_ldwf_table(text)
+    date = ldwf_report_date(text)
+    if table is not None and date:
+        species, total = table
+        if total == 0:
+            log.info(f"LDWF {date}: Table 1 has no ducks (survey not completed); nothing stored")
+            return None
+        return ParseResult(survey_date=date, species_counts=species, survey_type="aerial_monthly",
+                           verified_total=total)
+    log.info(f"LDWF {date}: Table 1 could not be read by position; using the LLM")
+    expected = ldwf_total_ducks(text)
     got = None
     for attempt in range(1, _ATTEMPTS + 1):
         result = extract_counts_from_pdf_bytes(
