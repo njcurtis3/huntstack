@@ -87,14 +87,16 @@ type FeatureCollection<G, P = Record<string, unknown>> = {
 type Base = 'map' | 'satellite'
 type LayerKey = 'areas' | 'zones' | 'lands' | 'flow' | 'pressure' | 'spikes' | 'sites' | 'hotspots' | 'ebird' | 'reports'
 
-// Out of the box the map answers "where" and "is it open": the ranked areas, season zones and
-// survey sites with their spikes. The rest is a tap away under Layers, and a viewer's own choice
-// is kept (per browser) for next time. All eight layers on at once buried the map in dots.
+// Out of the box (owner's choice, 2026-11-18): the ranked areas, season zones, migration flow and
+// pressure, survey sites with their spikes, and eBird activity (shaded until zoomed in). Public
+// land, the eBird areas HuntStack watches and hunter reports are a tap away under Layers. A
+// viewer's own choice is kept (per browser), saved only once they change a layer, so a new
+// default reaches everyone who hasn't. The key's version resets choices saved before that rule.
 const DEFAULT_LAYERS: Record<LayerKey, boolean> = {
-  areas: true, zones: true, sites: true, spikes: true,
-  lands: false, flow: false, pressure: false, hotspots: false, ebird: false, reports: false,
+  areas: true, zones: true, flow: true, pressure: true, spikes: true, sites: true, hotspots: true,
+  lands: false, ebird: false, reports: false,
 }
-const LAYERS_KEY = 'huntstack-map-layers'
+const LAYERS_KEY = 'huntstack-map-layers-v2'
 function savedLayers(): Record<LayerKey, boolean> {
   try {
     const saved = JSON.parse(localStorage.getItem(LAYERS_KEY) ?? 'null')
@@ -303,10 +305,11 @@ export default function MapPage() {
 
   const { resolvedTheme } = useThemeStore()
   const [base, setBase] = useState<Base>('map')
-  const [layers, setLayers] = useState<Record<LayerKey, boolean>>(savedLayers)
-  useEffect(() => {
-    try { localStorage.setItem(LAYERS_KEY, JSON.stringify(layers)) } catch { /* not saved */ }
-  }, [layers])
+  const [layers, setLayersState] = useState<Record<LayerKey, boolean>>(savedLayers)
+  const setLayers = (next: Record<LayerKey, boolean>) => {
+    setLayersState(next)
+    try { localStorage.setItem(LAYERS_KEY, JSON.stringify(next)) } catch { /* not saved */ }
+  }
   const [selection, setSelection] = useState<Selection | null>(null)
   const [panelOpen, setPanelOpen] = useState(false) // phone: layers and legend
 
