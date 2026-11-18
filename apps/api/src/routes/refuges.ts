@@ -8,6 +8,10 @@ import { BoundedCache } from '../lib/cache.js'
 import { surveyChange } from '../lib/survey-change.js'
 
 const coverageCache = new BoundedCache<{ sites: number; states: Array<{ state: string; sites: number }> }>(1)
+// The dashboard query takes ~3 s and its counts change a few times a week (survey loads), so each
+// flyway/species answer is kept briefly: the Map and Migration pages ask for it on every visit
+const DASHBOARD_CACHE_MS = 5 * 60_000
+const dashboardCache = new BoundedCache<unknown>(20)
 
 export const refugeRoutes: FastifyPluginAsync = async (app) => {
   // List wildlife refuges
@@ -230,6 +234,9 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
       flyway?: string
       species?: string
     }
+    const cacheKey = `${flyway ?? '*'}|${speciesSlug ?? '*'}`
+    const cached = dashboardCache.get(cacheKey)
+    if (cached) return cached
     const db = getDb()
 
     // Get latest counts with previous survey for delta computation
@@ -419,7 +426,7 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
       yearsInAverage: r.years as number,
     }))
 
-    return {
+    const result = {
       surveyZones,
       currentCounts: results.map(r => {
         const currentCount = r.count as number
@@ -450,5 +457,7 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
       quietEbirdPlaces,
       historicalTrends: historicalTrends as unknown as Array<Record<string, unknown>>,
     }
+    dashboardCache.set(cacheKey, result, DASHBOARD_CACHE_MS)
+    return result
   })
 }

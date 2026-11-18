@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Place } from '../data/places.js'
 import type { PublicLand } from '../data/public-lands.js'
 import {
-  clusterPoints, directionFrom, distanceKm, isSightingsOnly, nameArea, publicLandsNear, sameUnit, scoreArea, summarizeArea, type AreaPoint,
+  clusterPoints, directionFrom, distanceKm, isSightingsOnly, mapLands, nameArea, publicLandsNear, rankAreas, sameUnit, scoreArea, summarizeArea, type AreaPoint,
 } from './hunt-areas.js'
 
 function pt(id: string, lat: number, lng: number, birds: number, extra: Partial<AreaPoint> = {}): AreaPoint {
@@ -118,5 +118,45 @@ describe('isSightingsOnly', () => {
     expect(isSightingsOnly(ebirdOnly, 2)).toBe(false)
     expect(isSightingsOnly(summarizeArea([pt('refuge', 34, -91, 100)]), 0)).toBe(false)
     expect(isSightingsOnly(summarizeArea([pt('r', 34, -91, 30, { kind: 'report' })]), 0)).toBe(false)
+  })
+})
+
+describe('rankAreas', () => {
+  const sorted = [
+    { id: 'a', state: 'IL' }, { id: 'b', state: 'IL' }, { id: 'c', state: 'IL' },
+    { id: 'd', state: 'TX' }, { id: 'e', state: 'IL' }, { id: 'f', state: 'TX' },
+  ]
+  it('ranks overall and within each state', () => {
+    const r = rankAreas(sorted, 15)
+    expect(r.map(a => [a.id, a.rank, a.stateRank])).toEqual([
+      ['a', 1, 1], ['b', 2, 2], ['c', 3, 3], ['d', 4, 1], ['e', 5, 4], ['f', 6, 2],
+    ])
+  })
+  it('keeps the overall top max without perState', () => {
+    expect(rankAreas(sorted, 3).map(a => a.id)).toEqual(['a', 'b', 'c'])
+  })
+  it('keeps the best N of each state with perState, best first', () => {
+    expect(rankAreas(sorted, 3, 2).map(a => a.id)).toEqual(['a', 'b', 'd', 'f'])
+  })
+})
+
+describe('mapLands', () => {
+  const lands: PublicLand[] = [
+    ['Clarence Cannon National Wildlife Refuge', 'National wildlife refuge', 'U.S. Fish and Wildlife Service', 'MO', 'RA', 3750, 39.25, -90.78],
+    ['Ted Shanks Conservation Area', 'State wildlife area', 'Unknown', 'MO', 'OA', 6705, 39.52, -91.10],
+    ['Clarence Town Park', 'Local park', 'City', 'MO', 'OA', 40, 36.0, -94.0],
+  ]
+  it('drops a unit HuntStack found closed, keeps notes, and blanks an unknown manager', () => {
+    const got = mapLands([
+      { name: 'Clarence Cannon NWR', lat: 39.26, lng: -90.77, access: 'closed', note: 'Closed to migratory bird hunting' },
+      { name: 'Ted Shanks CA', lat: 39.5, lng: -91.1, access: 'public', note: 'Daily draw for blinds' },
+    ], lands)
+    expect(got.map(l => l[0])).toEqual(['Ted Shanks Conservation Area', 'Clarence Town Park'])
+    expect(got[0][2]).toBeNull()
+    expect(got[0][8]).toBe('Daily draw for blinds')
+  })
+  it('needs the name and the place to match: a closed unit far away removes nothing', () => {
+    const got = mapLands([{ name: 'Clarence Cannon NWR', lat: 30, lng: -100, access: 'closed', note: null }], lands)
+    expect(got).toHaveLength(3)
   })
 })

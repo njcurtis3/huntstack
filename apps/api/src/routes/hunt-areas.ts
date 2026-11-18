@@ -13,8 +13,8 @@ import { getPushFactorsForStates, pushFactorAt } from '../lib/weather.js'
 import { STATE_FLYWAY, getEBirdHotspots } from '../lib/ebird.js'
 import { BoundedCache } from '../lib/cache.js'
 import {
-  AREA_RADIUS_KM, clusterPoints, distanceKm, isSightingsOnly, nameArea, publicLandsNear, sameUnit, scoreArea, summarizeArea,
-  type AreaPoint, type AreaSeason,
+  AREA_RADIUS_KM, clusterPoints, distanceKm, isSightingsOnly, mapLands, nameArea, publicLandsNear, rankAreas, sameUnit, scoreArea, summarizeArea,
+  type AreaPoint, type AreaSeason, type CheckedPlace, type MapLand,
 } from '../lib/hunt-areas.js'
 import { findOpenSeason, huntZonesOf, seasonDisplayName, seasonYearOf, type SeasonRow } from './hunt.js'
 
@@ -32,6 +32,9 @@ const BUCKET_BIRDS: Record<string, number> = { '1-10': 5, '10-50': 30, '50-200':
 
 const cache = new BoundedCache<unknown>(50)
 const CACHE_MS = 15 * 60 * 1000
+// The public land list changes only with a yearly data file or a new access check
+const landsCache = new BoundedCache<{ lands: MapLand[]; source: string }>(1)
+const LANDS_CACHE_MS = 6 * 60 * 60 * 1000
 
 interface SurveyRow {
   location_id: string
@@ -69,11 +72,13 @@ export const huntAreasRoutes: FastifyPluginAsync = async (app) => {
           species: { type: 'string', description: 'Species slug (e.g. mallard). Default: all ducks and geese' },
           states: { type: 'string', description: 'Comma-separated state codes. Default: every covered state' },
           date: { type: 'string', description: 'Hunt date YYYY-MM-DD (for the season). Default: today' },
+          perState: { type: 'integer', minimum: 1, maximum: 5, description: 'Instead of the overall top 15, the best N areas in each state (the map uses 3)' },
         },
       },
     },
   }, async (request, reply) => {
-    const q = request.query as { species?: string; states?: string; date?: string }
+    const q = request.query as { species?: string; states?: string; date?: string; perState?: number }
+    const perState = q.perState ? Math.min(5, Math.max(1, Math.trunc(q.perState))) : undefined
     const target = q.date && /^\d{4}-\d{2}-\d{2}$/.test(q.date) ? new Date(`${q.date}T12:00:00Z`) : new Date()
     if (Number.isNaN(target.getTime())) return reply.status(400).send({ error: true, message: 'date must be YYYY-MM-DD' })
     const targetDay = target.toISOString().slice(0, 10)
@@ -83,7 +88,7 @@ export const huntAreasRoutes: FastifyPluginAsync = async (app) => {
     if (states.length === 0) return reply.status(400).send({ error: true, message: `states must include one of ${AREA_STATES.join(', ')}` })
     const speciesSlug = q.species?.trim() || null
 
-    const cacheKey = `${states.join(',')}|${speciesSlug ?? '*'}|${targetDay}`
+    const cacheKey = `${states.join(',')}|${speciesSlug ?? '*'}|${targetDay}|${perState ?? 'top'}`
     const cached = cache.get(cacheKey)
     if (cached) return cached
 
@@ -250,7 +255,7 @@ export const huntAreasRoutes: FastifyPluginAsync = async (app) => {
     const push = await getPushFactorsForStates([...pushCoords.keys()], pushCoords)
       .catch(() => ({ pushFactors: [], regionalPushFactors: [], highPushStates: [] }))
 
-    const areas = groups.map(points => {
+    const scored = groups.map(points => {
       const summary = summarizeArea(points)
       const town = nameArea(summary.lat, summary.lng, summary.state)
       const zonesSet = new Set(points.flatMap(p => p.zones ?? []))
@@ -364,8 +369,7 @@ export const huntAreasRoutes: FastifyPluginAsync = async (app) => {
       }
     })
       .sort((a, b) => b.score - a.score)
-      .slice(0, MAX_AREAS)
-      .map((a, i) => ({ rank: i + 1, ...a }))
+    const areas = rankAreas(scored, MAX_AREAS, perState)
 
     const result = {
       date: targetDay,
@@ -378,6 +382,34 @@ export const huntAreasRoutes: FastifyPluginAsync = async (app) => {
       sources: { surveys: sites.size, ebird: ebirdAvailable ? ebirdPoints.length : null, hunterReports: reportPoints.length },
     }
     cache.set(cacheKey, result, CACHE_MS)
+    return result
+  })
+
+  // Public land for the Map's layer: USGS PAD-US units in the covered states, as compact rows
+  app.get('/public-lands', {
+    schema: {
+      tags: ['hunt'],
+      summary: 'Public land units (USGS PAD-US) for the map, with HuntStack access checks applied',
+    },
+  }, async (_request, reply) => {
+    reply.header('Cache-Control', 'public, max-age=3600')
+    const cached = landsCache.get('all')
+    if (cached) return cached
+    const rows = await getDb().execute(sql`
+      SELECT name, center_point, metadata FROM locations
+      WHERE metadata->>'access' IS NOT NULL OR metadata->>'accessNote' IS NOT NULL
+    `) as unknown as Array<{ name: string; center_point: unknown; metadata: unknown }>
+    const checked: CheckedPlace[] = rows.flatMap(r => {
+      const at = decodePoint(r.center_point)
+      if (!at) return []
+      const a = accessOf(r.metadata)
+      return [{ name: r.name, lat: at.lat, lng: at.lng, access: a.access, note: a.note }]
+    })
+    const result = {
+      lands: mapLands(checked),
+      source: 'USGS Protected Areas Database (PAD-US) Public Access. Public access, not hunting rules.',
+    }
+    landsCache.set('all', result, LANDS_CACHE_MS)
     return result
   })
 }

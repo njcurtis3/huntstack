@@ -200,6 +200,21 @@ export function isSightingsOnly(summary: AreaSummary, publicLands: number): bool
   return summary.surveySites === 0 && summary.hunterReports === 0 && publicLands === 0
 }
 
+/**
+ * Rank areas (already sorted best first) overall and within their state. With perState, keep the
+ * best few of each state, still best first, for the map: across nine states the overall top 15
+ * were all on the Illinois and Mississippi river surveys, with nothing near a Texas hunter.
+ */
+export function rankAreas<T extends { state: string }>(sorted: T[], max: number, perState?: number): Array<T & { rank: number; stateRank: number }> {
+  const seen = new Map<string, number>()
+  const ranked = sorted.map((a, i) => {
+    const stateRank = (seen.get(a.state) ?? 0) + 1
+    seen.set(a.state, stateRank)
+    return { ...a, rank: i + 1, stateRank }
+  })
+  return perState ? ranked.filter(a => a.stateRank <= perState) : ranked.slice(0, max)
+}
+
 /** Public land listed for an area reaches this far past the area's own edge */
 export const PUBLIC_LAND_REACH_KM = 15
 
@@ -242,6 +257,33 @@ export function publicLandsNear(
     })
   }
   return found.sort((a, b) => a.rank - b.rank).slice(0, max).map(f => f.land)
+}
+
+/** A location HuntStack has checked itself (locations.metadata.access) */
+export interface CheckedPlace {
+  name: string
+  lat: number
+  lng: number
+  access: 'public' | 'limited' | 'closed' | 'private' | 'unknown'
+  note: string | null
+}
+
+/** [name, kind, manager | null, state, access, acres, lat, lng, HuntStack's note | null] */
+export type MapLand = [string, string, string | null, string, 'OA' | 'RA', number, number, number, string | null]
+
+/**
+ * Every PAD-US unit for the map, with HuntStack's own access checks applied the way Where to Hunt
+ * applies them: a unit we found closed to waterfowl hunting or private (Clarence Cannon NWR) is
+ * left out, and our note rides along. A check matches a unit by name within 30 km.
+ */
+export function mapLands(checked: readonly CheckedPlace[], lands: readonly PublicLand[] = PUBLIC_LANDS): MapLand[] {
+  const out: MapLand[] = []
+  for (const l of lands) {
+    const mine = checked.find(c => sameUnit(l[0], c.name) && distanceKm(l[6], l[7], c.lat, c.lng) <= 30)
+    if (mine && (mine.access === 'closed' || mine.access === 'private')) continue
+    out.push([l[0], l[1], l[2] === 'Unknown' ? null : l[2], l[3], l[4], l[5], l[6], l[7], mine?.note ?? null])
+  }
+  return out
 }
 
 /** Loose name match for listing a survey site and a public land unit once ("Loess Bluffs NWR") */
