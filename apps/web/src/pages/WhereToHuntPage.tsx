@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Loader2, Crosshair, TrendingUp, TrendingDown, Minus,
   CheckCircle2, XCircle, AlertCircle, Wind,
-  MapPin, Navigation, X as XIcon, ArrowUpDown, HelpCircle, Ban, Map as MapIcon,
+  MapPin, Navigation, X as XIcon, ArrowUpDown, HelpCircle, Ban, Map as MapIcon, ChevronDown,
 } from 'lucide-react'
 import { useSearchParams } from 'react-router-dom'
 import { api, type HuntArea, type HuntAreaLand, type HuntAreaPlace } from '../lib/api'
@@ -129,8 +129,29 @@ function LandRow({ land }: { land: HuntAreaLand }) {
   )
 }
 
-function AreaCard({ area, distMi }: { area: HuntArea; distMi: number | null }) {
+/** One-line summary shown while a card is collapsed: birds, change, season, top species */
+function AreaSummaryLine({ area }: { area: HuntArea }) {
+  const p = area.change?.percent
+  const changeCls = p === undefined ? '' : p >= 5 ? 'text-forest-600 dark:text-forest-400' : p <= -5 ? 'text-red-600 dark:text-red-400' : ''
+  const season = area.season.status === 'open' ? 'Season open' : area.season.status === 'closed' ? 'Season closed' : 'Season: check agency'
+  return (
+    <p className="text-sm mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5" style={secondary}>
+      <span className="font-mono font-medium tabular-nums" style={primary}>{area.birds.toLocaleString()} birds</span>
+      {p !== undefined && (
+        <span className={`font-medium ${changeCls}`} style={changeCls ? undefined : muted}>{p > 0 ? '+' : ''}{p}%</span>
+      )}
+      <span className={area.season.status === 'open' ? 'text-forest-700 dark:text-forest-400' : ''}
+        style={area.season.status === 'open' ? undefined : muted}>{season}</span>
+      {area.topSpecies[0] && <span style={muted}>Mostly {area.topSpecies[0].name.toLowerCase()}</span>}
+    </p>
+  )
+}
+
+function AreaCard({ area, distMi, open, onToggle }: {
+  area: HuntArea; distMi: number | null; open: boolean; onToggle: () => void
+}) {
   const [showAll, setShowAll] = useState(false)
+  const panelId = `area-${area.id}-details`
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${area.center.lat},${area.center.lng}`
   const places = showAll ? area.evidence : area.evidence.slice(0, 4)
   const seasonIcon = area.season.status === 'open'
@@ -140,9 +161,10 @@ function AreaCard({ area, distMi }: { area: HuntArea; distMi: number | null }) {
       : <HelpCircle className="w-4 h-4 flex-shrink-0 text-amber-600 dark:text-amber-400" />
 
   return (
-    <article className="py-6 border-b" style={border}>
-      {/* Header */}
-      <div className="flex items-start gap-3">
+    <article className={`border-b ${open ? 'py-6' : 'py-4'}`} style={border}>
+      {/* Header: the whole header opens and closes the card; the title button is the control
+          for keyboard and screen readers (its click bubbles up to the header, so no handler of its own) */}
+      <div className="flex items-start gap-3 cursor-pointer" onClick={onToggle}>
         <span
           className={`inline-flex w-7 pt-1 font-mono text-sm font-medium flex-shrink-0 ${area.rank <= 3 ? 'text-accent-600 dark:text-accent-400' : ''}`}
           style={area.rank <= 3 ? undefined : muted}
@@ -152,7 +174,13 @@ function AreaCard({ area, distMi }: { area: HuntArea; distMi: number | null }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <h3 className="font-semibold text-lg tracking-tight break-words" style={primary}>{area.title}</h3>
+              <h3 className="font-semibold text-lg tracking-tight break-words" style={primary}>
+                <button type="button" aria-expanded={open} aria-controls={panelId}
+                  className="text-left inline-flex items-start gap-1.5 rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500">
+                  <span>{area.title}</span>
+                  <ChevronDown className={`w-5 h-5 mt-1 flex-shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} style={muted} aria-hidden="true" />
+                </button>
+              </h3>
               <p className="text-xs mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1" style={muted}>
                 {area.county && <span>{area.county}</span>}
                 <span>{area.state}</span>
@@ -164,11 +192,13 @@ function AreaCard({ area, distMi }: { area: HuntArea; distMi: number | null }) {
                   </span>
                 )}
               </p>
+              {!open && <AreaSummaryLine area={area} />}
             </div>
             <a
               href={mapsUrl}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={e => e.stopPropagation()}
               className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1 flex-shrink-0"
               aria-label={`Open ${area.title} in Google Maps (new tab)`}
             >
@@ -176,7 +206,11 @@ function AreaCard({ area, distMi }: { area: HuntArea; distMi: number | null }) {
               Map
             </a>
           </div>
+        </div>
+      </div>
 
+      {open && (
+        <div id={panelId} className="pl-10">
           {/* Numbers */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-4">
             <div>
@@ -270,7 +304,7 @@ function AreaCard({ area, distMi }: { area: HuntArea; distMi: number | null }) {
             )}
           </div>
         </div>
-      </div>
+      )}
     </article>
   )
 }
@@ -293,6 +327,15 @@ export function WhereToHuntPage() {
   const [speciesOptions, setSpeciesOptions] = useState<SpeciesOption[]>([])
 
   const [areas, setAreas] = useState<HuntArea[] | null>(null)
+  // Result cards are collapsible: a new set of results opens the top one, the rest start closed
+  const [openAreas, setOpenAreas] = useState<Set<string>>(new Set())
+  useEffect(() => { setOpenAreas(new Set(areas?.[0] ? [areas[0].id] : [])) }, [areas])
+  const toggleArea = (id: string) => setOpenAreas(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
   const [totalAreas, setTotalAreas] = useState(0)
   const [statesWithoutSeasonData, setStatesWithoutSeasonData] = useState<string[]>([])
   const [ebirdMissing, setEbirdMissing] = useState(false)
@@ -625,10 +668,22 @@ export function WhereToHuntPage() {
                   </div>
                 )}
                 <span className="text-sm" style={muted}>{displayAreas.length} of {totalAreas} areas</span>
+                {openAreas.size < displayAreas.length ? (
+                  <button onClick={() => setOpenAreas(new Set(displayAreas.map(d => d.area.id)))} className="text-xs underline text-accent-600 dark:text-accent-400 py-1">
+                    Expand all
+                  </button>
+                ) : (
+                  <button onClick={() => setOpenAreas(new Set())} className="text-xs underline text-accent-600 dark:text-accent-400 py-1">
+                    Collapse all
+                  </button>
+                )}
               </div>
             </div>
             <div>
-              {displayAreas.map(({ area, distMi }) => <AreaCard key={area.id} area={area} distMi={distMi} />)}
+              {displayAreas.map(({ area, distMi }) => (
+                <AreaCard key={area.id} area={area} distMi={distMi}
+                  open={openAreas.has(area.id)} onToggle={() => toggleArea(area.id)} />
+              ))}
             </div>
             <p className="text-xs mt-4" style={muted}>
               Survey counts from refuges and state and university aerial surveys; community reports via eBird (Cornell Lab
