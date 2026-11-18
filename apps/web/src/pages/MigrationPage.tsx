@@ -1886,10 +1886,14 @@ export function MigrationPage() {
     }
     return rows
   }, [currentProgression])
-  // One color per state, shared by its line and its chip (the chips are a filtered list)
+  // One color per state, shared by its line and its chip (the chips are a filtered list). Set from
+  // every state, so a state keeps its color when it is picked on its own.
   const progressionColor = useMemo(() => new Map(
     (currentProgression?.states ?? []).map((s, i) => [s.stateCode, STATE_LINE_COLORS[i % STATE_LINE_COLORS.length]]),
   ), [currentProgression])
+  // A state picked at the top of the page narrows the chart to that state
+  const progressionStates = useMemo(() => (currentProgression?.states ?? [])
+    .filter(s => !selectedState || s.stateCode === selectedState), [currentProgression, selectedState])
 
   const sectionCards: SectionCard[] = [
     { id: 'map', title: 'State map', icon: MapIcon,
@@ -3183,15 +3187,27 @@ export function MigrationPage() {
                       Flyway Progression
                     </h2>
                     <p className="text-sm mt-0.5" style={{ color: `rgb(var(--color-text-tertiary))` }}>
-                      Each state&rsquo;s weekly count as a share of its highest this season, north to south. Dots are survey weeks; states survey on different schedules.
+                      {selectedState
+                        ? <>{STATE_CODE_TO_NAME[selectedState] ?? selectedState}&rsquo;s weekly count as a share of its highest this season. Dots are survey weeks.</>
+                        : <>Each state&rsquo;s weekly count as a share of its highest this season, north to south. Dots are survey weeks; states survey on different schedules.</>}
                     </p>
+                    {selectedState && (
+                      <button type="button" onClick={() => setSelectedState('')} className="mt-1 text-xs text-accent-500 hover:underline">
+                        Show all states
+                      </button>
+                    )}
                   </div>
                   <span className="text-xs font-medium px-2.5 py-1 rounded-md bg-earth-100 dark:bg-earth-800" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                     {currentProgression.seasonYear - 1}–{currentProgression.seasonYear} season
                   </span>
                 </div>
+                {progressionStates.length === 0 ? (
+                  <p className="text-sm py-10 text-center rounded-md" style={{ color: `rgb(var(--color-text-secondary))`, backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+                    No survey counts for {STATE_CODE_TO_NAME[selectedState] ?? selectedState} this season yet.
+                  </p>
+                ) : (
                 <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={progressionChartData}>
+                  <LineChart key={selectedState || 'all'} data={progressionChartData}>
                     <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} />
                     <XAxis
                       dataKey="label"
@@ -3217,7 +3233,7 @@ export function MigrationPage() {
                     />
                     {/* Recharts 3 sorts legend items alphabetically by default; keep north to south */}
                     <Legend itemSorter={null} />
-                    {currentProgression.states.map(state => (
+                    {progressionStates.map(state => (
                       <Line
                         key={state.stateCode}
                         type="monotone"
@@ -3236,13 +3252,14 @@ export function MigrationPage() {
                     ))}
                   </LineChart>
                 </ResponsiveContainer>
+                )}
                 {/* Peak week summary */}
-                {currentProgression.states.some(s => s.peakWeek) && (
+                {progressionStates.some(s => s.peakWeek) && (
                   <div className="mt-4 flex flex-wrap gap-3">
                     <p className="text-xs font-medium w-full" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                       Highest count so far this season:
                     </p>
-                    {currentProgression.states
+                    {progressionStates
                       .filter(s => s.peakWeek && s.peakCount > 0)
                       .map(s => (
                         <div
