@@ -60,6 +60,7 @@ const PAGE_TITLES: Array<[RegExp, string]> = [
   [/^\/outfitters/, 'Outfitters'],
   [/^\/map/, 'Map'],
   [/^\/data-sources/, 'Data Sources'],
+  [/^\/how-it-works/, 'How HuntStack Works'],
   [/^\/developers/, 'API'],
   [/^\/about/, 'About'],
   [/^\/contact/, 'Contact'],
@@ -468,6 +469,7 @@ export function Layout() {
             <div>
               <h3 className="eyebrow font-sans font-semibold tracking-wider mb-3">Resources</h3>
               <ul className="space-y-1 text-sm">
+                <li><Link to="/how-it-works" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">How HuntStack Works</Link></li>
                 <li><Link to="/data-sources" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">Data Sources</Link></li>
                 <li><Link to="/developers" className="inline-block py-1.5 text-earth-600 dark:text-earth-400 hover:text-earth-900 dark:hover:text-white">API</Link></li>
               </ul>

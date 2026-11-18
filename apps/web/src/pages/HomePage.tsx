@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, TrendingUp, MapPin, Send } from 'lucide-react'
+import { ArrowRight, TrendingUp, MapPin, Send, Compass } from 'lucide-react'
 
-// The home page is only the name, the search bar and the two main tools, centered on one screen.
+// The home page is only the name, the search bar, the two main tools and the guide to how they
+// decide, centered on one screen.
 export function HomePage() {
   const navigate = useNavigate()
   const [question, setQuestion] = useState('')
@@ -80,6 +81,22 @@ export function HomePage() {
             <ArrowRight className="ml-2 w-4 h-4" />
           </Link>
         </div>
+
+        {/* The guide: why HuntStack recommends what it does */}
+        <Link
+          to="/how-it-works"
+          className="group mt-8 w-full sm:w-auto flex items-center gap-3 rounded-md border px-4 py-3 text-left transition-colors hover:border-accent-500 dark:hover:border-accent-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-500"
+          style={{ backgroundColor: `rgb(var(--color-bg-elevated) / 0.85)`, borderColor: `rgb(var(--color-border-primary))` }}
+        >
+          <Compass className="w-5 h-5 flex-shrink-0 text-accent-600 dark:text-accent-400" aria-hidden="true" />
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-semibold">How does HuntStack pick where to hunt?</span>
+            <span className="block text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+              What the counts, labels and rankings mean, in plain English
+            </span>
+          </span>
+          <ArrowRight className="w-4 h-4 flex-shrink-0 transition-transform group-hover:translate-x-0.5" style={{ color: `rgb(var(--color-text-tertiary))` }} aria-hidden="true" />
+        </Link>
       </div>
     </section>
   )

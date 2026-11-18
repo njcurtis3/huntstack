@@ -10,6 +10,7 @@ import { MigrationReportPage } from './pages/MigrationReportPage'
 import { ChatPage } from './pages/ChatPage'
 import { WhereToHuntPage } from './pages/WhereToHuntPage'
 import { DataSourcesPage } from './pages/DataSourcesPage'
+import { HowItWorksPage } from './pages/HowItWorksPage'
 import { ApiPage } from './pages/ApiPage'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { TermsPage } from './pages/TermsPage'
@@ -84,6 +85,7 @@ function App() {
           <Route path="outfitters/:id" element={<OutfittersPage />} />
           <Route path="chat" element={<ChatPage />} />
           <Route path="data-sources" element={<DataSourcesPage />} />
+          <Route path="how-it-works" element={<HowItWorksPage />} />
           <Route path="developers" element={<ApiPage />} />
           <Route path="privacy" element={<PrivacyPage />} />
           <Route path="terms" element={<TermsPage />} />
