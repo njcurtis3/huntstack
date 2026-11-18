@@ -400,7 +400,7 @@ function ZoneControls({ state, stateName, zones, zone, onZone }: {
 
 type Residency = 'resident' | 'nonresident'
 const NONRES = /non-?resident/i
-const NOT_STANDARD = /youth|senior|65\+|lifetime|military|veteran|disabled|\d+-day|daily|native|combo|combination|package|fishing|preserve|3-year|collector|wma|breeder|endorsement \(|apprentice/i
+const NOT_STANDARD = /youth|senior|65\+|lifetime|military|veteran|disabled|\d+-day|\d+ days?\b|temporary|daily|native|combo|combination|package|fishing|preserve|3-year|collector|wma|breeder|endorsement \(|apprentice/i
 
 function priceFor(l: License, who: Residency): number | null {
   return who === 'resident' ? l.priceResident : l.priceNonResident
@@ -413,13 +413,17 @@ function forWho(l: License, who: Residency): boolean {
 }
 function pick(licenses: License[], who: Residency, test: (l: License) => boolean): License | null {
   const ok = licenses.filter(l => test(l) && forWho(l, who) && !NOT_STANDARD.test(l.name))
-  return ok.find(l => priceFor(l, who) != null) ?? ok[0] ?? null
+  // The cheapest priced one: a state lists its all-game license beside the small game license that
+  // covers ducks (AR $410 vs $110), and the rows come back in no fixed order
+  const priced = ok.filter(l => priceFor(l, who) != null).sort((a, b) => priceFor(a, who)! - priceFor(b, who)!)
+  return priced[0] ?? ok[0] ?? null
 }
 
 const BUY_SLOTS: { key: string; label: string; test: (l: License) => boolean }[] = [
   { key: 'license', label: 'Hunting license', test: l => /^(base|license)$/.test(l.licenseType) && /hunting|sportsman|small game|conservation license/i.test(l.name) && !/waterfowl|stamp|hip\b/i.test(l.name) },
-  // MO calls it the Migratory Bird Hunting Permit, IA the Migratory Game Bird Fee
-  { key: 'state', label: 'State waterfowl license or stamp', test: l => !/federal|harvest|\bhip\b/i.test(l.name) && /waterfowl (stamp|license|permit|hunting license)|state duck stamp|migratory game bird (endorsement|fee)|migratory bird hunting permit|^waterfowl license$/i.test(l.name) },
+  // MO calls it the Migratory Bird Hunting Permit, IA the Migratory Game Bird Fee; NM has no
+  // waterfowl stamp, and its required extra is the Habitat Management and Access Validation
+  { key: 'state', label: 'State waterfowl stamp or fee', test: l => !/federal|harvest|\bhip\b/i.test(l.name) && /waterfowl (stamp|license|permit|hunting license)|state duck stamp|migratory game bird (endorsement|fee)|migratory bird hunting permit|habitat management and access validation|^waterfowl license$/i.test(l.name) },
   { key: 'hip', label: 'HIP certification', test: l => /\bhip\b|harvest information/i.test(l.name) },
   { key: 'federal', label: 'Federal Duck Stamp', test: l => /federal/i.test(l.name) && /duck stamp|migratory bird hunting/i.test(l.name) },
 ]
@@ -520,12 +524,14 @@ function bagLine(bl: unknown): string | null {
   return `${b.daily} a day${b.possession != null ? ` (${b.possession} in possession)` : ''}`
 }
 
-/** The state's basic hunting license, the one every hunter buys first */
-function baseLicense(licenses: License[]): License | null {
-  return licenses.find(l =>
-    l.licenseType === 'base' && !l.isResidentOnly
-    && (l.priceResident != null || l.priceNonResident != null)
-    && !/youth|senior|native|day|daily|package|combo|sportsman|lifetime|fishing/i.test(l.name)) ?? null
+/** The hunting license a duck hunter buys, resident and non-resident: What you need to buy's pick */
+function baseLicense(licenses: License[]): { res: number | null; nonres: number | null } | null {
+  const slot = BUY_SLOTS[0]
+  const r = pick(licenses, 'resident', slot.test)
+  const n = pick(licenses, 'nonresident', slot.test)
+  const res = r ? priceFor(r, 'resident') : null
+  const nonres = n ? priceFor(n, 'nonresident') : null
+  return res == null && nonres == null ? null : { res, nonres }
 }
 
 /**
@@ -609,9 +615,9 @@ function SeasonSummary({ state, stateName, seasons, licenses, zone, zones, onZon
         )}
         {license && (
           <div>
-            <p className={label} style={labelStyle}>{license.name}</p>
+            <p className={label} style={labelStyle}>Hunting license</p>
             <p className="mt-1 text-sm" style={body}>
-              {[money(license.priceResident) && `${money(license.priceResident)} resident`, money(license.priceNonResident) && `${money(license.priceNonResident)} non-resident`].filter(Boolean).join(' · ')}
+              {[money(license.res) && `${money(license.res)} resident`, money(license.nonres) && `${money(license.nonres)} non-resident`].filter(Boolean).join(' · ')}
             </p>
             <a href="#what-to-buy" className="text-xs text-accent-500 hover:underline">What you need to buy</a>
           </div>
@@ -1110,7 +1116,7 @@ function buildCompareRows(stateCodes: string[], dataMap: Record<string, StateCom
     makeRow('Light goose conservation order', d => datesByZone(d.seasons.filter(x => /conservation order/i.test(x.name)))),
     makeRow('Hunting license, resident', d => licenseCell(d.licenses, 'resident', 'license')),
     makeRow('Hunting license, non-resident', d => licenseCell(d.licenses, 'nonresident', 'license')),
-    makeRow('State waterfowl license or stamp, non-resident', d => licenseCell(d.licenses, 'nonresident', 'state')),
+    makeRow('State waterfowl stamp or fee, non-resident', d => licenseCell(d.licenses, 'nonresident', 'state')),
     makeRow('Federal Duck Stamp', d => licenseCell(d.licenses, 'nonresident', 'federal')),
     makeRow('Total to hunt ducks, non-resident', d => nonResidentTotal(d.licenses)),
   ]
