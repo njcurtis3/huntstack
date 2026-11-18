@@ -3,8 +3,9 @@ import type { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
-import { ChevronLeft, ChevronRight, Layers, Lock, X, ExternalLink } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Layers, Lock, X, ExternalLink, Play, Pause } from 'lucide-react'
 import { api, safeHttpUrl } from '../lib/api'
+import type { HuntArea } from '../lib/api'
 import { getAccount, startCheckout } from '../lib/account'
 import { MAP_FREE_TAPS, mapTapsUsed, spendMapTap } from '../lib/mapAllowance'
 import { useAuthStore } from '../stores/authStore'
@@ -62,6 +63,16 @@ const FLOW_COLOR = { south: '#1f883d', north: '#0969da', both: '#bf8700' } as co
 const PUSH_COLOR = ['#8c959f', '#d4a72c', '#f97316', '#ef4444']
 const SPIKE_COLOR = '#cf222e'
 const DROP_COLOR = '#0969da'
+// Where to Hunt's ranked areas: numbered pins in the site's accent orange
+const AREA_COLOR = '#e2561b'
+const AREAS_PER_STATE = 3
+// Public land (PAD-US): tan, filled for open access, a ring for permit or seasonal access
+const LAND_COLOR = '#b5894a'
+// "Go to a town": rings for roughly 1, 2 and 3 hours' drive, as the crow flies
+const DRIVE_RINGS = [{ mi: 60, label: '1 hr' }, { mi: 120, label: '2 hr' }, { mi: 180, label: '3 hr' }] as const
+type MapLandRow = Awaited<ReturnType<typeof api.getPublicLands>>['lands'][number]
+type FocusPlace = { lat: number; lng: number; label: string }
+const AREA_PIN_LIFT = 11 // px
 // The Texas High Plains duck zone is scored on its own weather; its badge sits near Amarillo
 const REGION_POINTS: Record<string, [number, number]> = { 'TX-HP': [-101.8, 34.9] }
 
@@ -74,8 +85,30 @@ type FeatureCollection<G, P = Record<string, unknown>> = {
 }
 
 type Base = 'map' | 'satellite'
-type LayerKey = 'zones' | 'flow' | 'pressure' | 'spikes' | 'sites' | 'hotspots' | 'ebird' | 'reports'
+type LayerKey = 'areas' | 'zones' | 'lands' | 'flow' | 'pressure' | 'spikes' | 'sites' | 'hotspots' | 'ebird' | 'reports'
+
+// Out of the box the map answers "where" and "is it open": the ranked areas, season zones and
+// survey sites with their spikes. The rest is a tap away under Layers, and a viewer's own choice
+// is kept (per browser) for next time. All eight layers on at once buried the map in dots.
+const DEFAULT_LAYERS: Record<LayerKey, boolean> = {
+  areas: true, zones: true, sites: true, spikes: true,
+  lands: false, flow: false, pressure: false, hotspots: false, ebird: false, reports: false,
+}
+const LAYERS_KEY = 'huntstack-map-layers'
+function savedLayers(): Record<LayerKey, boolean> {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LAYERS_KEY) ?? 'null')
+    if (saved && typeof saved === 'object') {
+      const out = { ...DEFAULT_LAYERS }
+      for (const k of Object.keys(DEFAULT_LAYERS) as LayerKey[]) if (typeof saved[k] === 'boolean') out[k] = saved[k]
+      return out
+    }
+  } catch { /* storage blocked: defaults */ }
+  return { ...DEFAULT_LAYERS }
+}
 type Selection =
+  | { kind: 'area'; id: string }
+  | { kind: 'land'; id: string }
   | { kind: 'zone'; id: string }
   | { kind: 'state'; id: string }
   | { kind: 'site'; id: string }
@@ -270,9 +303,10 @@ export default function MapPage() {
 
   const { resolvedTheme } = useThemeStore()
   const [base, setBase] = useState<Base>('map')
-  const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
-    zones: true, flow: true, pressure: true, spikes: true, sites: true, hotspots: true, ebird: true, reports: true,
-  })
+  const [layers, setLayers] = useState<Record<LayerKey, boolean>>(savedLayers)
+  useEffect(() => {
+    try { localStorage.setItem(LAYERS_KEY, JSON.stringify(layers)) } catch { /* not saved */ }
+  }, [layers])
   const [selection, setSelection] = useState<Selection | null>(null)
   const [panelOpen, setPanelOpen] = useState(false) // phone: layers and legend
 
@@ -311,29 +345,78 @@ export default function MapPage() {
     queryFn: () => api.getMigrationDashboard(),
     staleTime: 5 * 60_000,
   })
+  // Layers that start off load only once they are turned on (or, for eBird, a zone is opened:
+  // its details list the state's eBird species)
   const reportsQ = useQuery({
     queryKey: ['field-reports', 7],
     queryFn: () => api.getFieldReports(7),
     staleTime: 60_000,
     retry: false,
+    enabled: layers.reports,
   })
+  const landsQ = useQuery({
+    queryKey: ['map-public-lands'],
+    queryFn: () => api.getPublicLands(),
+    staleTime: 60 * 60_000,
+    retry: false,
+    enabled: layers.lands,
+  })
+  const lands = useMemo((): MapLandRow[] => landsQ.data?.lands ?? [], [landsQ.data])
+
+  // Where to Hunt's best areas for the chosen day, the top 3 in each covered state (ducks and
+  // geese): the overall top 15 all sat on the Illinois and Mississippi river surveys
+  // The pins follow the day once it settles: playing the season (or holding an arrow) would
+  // otherwise ask for a new set of areas every frame. The last set stays up while the next loads.
+  const [playing, setPlaying] = useState(false)
+  const [areasDay, setAreasDay] = useState(day)
+  useEffect(() => {
+    if (playing) return
+    const t = setTimeout(() => setAreasDay(day), 400)
+    return () => clearTimeout(t)
+  }, [day, playing])
+  const areasQ = useQuery({
+    queryKey: ['map-areas', areasDay],
+    queryFn: () => api.getHuntAreas({ date: areasDay, perState: AREAS_PER_STATE }),
+    staleTime: 15 * 60_000,
+    retry: false,
+    placeholderData: previous => previous,
+  })
+  // Play the season: two days a step until the end of March
+  useEffect(() => {
+    if (!playing) return
+    const end = `${seasonYearOf(day) + 1}-03-31`
+    const t = setTimeout(() => {
+      if (day >= end) { setPlaying(false); return }
+      setDay(addDays(day, 2))
+    }, 140)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, day])
+  const togglePlay = () => {
+    if (playing) { setPlaying(false); return }
+    const year = seasonYearOf(day)
+    if (day < `${year}-09-01` || day >= `${year + 1}-03-31`) setDay(`${year}-09-01`)
+    setPlaying(true)
+  }
+  // "Go to a town"
+  const [focus, setFocus] = useState<FocusPlace | null>(null)
+  const [ringMi, setRingMi] = useState<number>(120)
+  const areas = useMemo((): HuntArea[] => areasQ.data?.areas ?? [], [areasQ.data])
 
   const ebirdQ = useQuery({
     queryKey: ['map-ebird'],
     queryFn: () => api.getEbirdMap(),
     staleTime: 10 * 60_000,
     retry: false,
+    enabled: layers.hotspots || selection?.kind === 'zone',
   })
 
-  // Migration pressure for the states with survey counts, asked the same way the Migration page asks
-  const pushStates = useMemo(() => {
-    const s = [...new Set((dashQ.data?.currentCounts ?? []).map(c => c.state))].sort()
-    return s.length > 0 ? s.join(',') : 'TX,NM,AR,LA,KS,OK,MO'
-  }, [dashQ.data])
+  // Migration pressure for every state the map covers. Asked at once rather than after the
+  // dashboard answers (it waited ~3 s for the dashboard before it even started)
+  const pushStates = useMemo(() => [...ZONE_STATES].sort().join(','), [])
   const pushQ = useQuery({
     queryKey: ['map-push', pushStates],
     queryFn: () => api.getMigrationPushFactors(pushStates),
-    enabled: dashQ.isSuccess,
     staleTime: 10 * 60_000,
     retry: false,
   })
@@ -458,6 +541,14 @@ export default function MapPage() {
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
     map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: false } }), 'top-right')
     map.on('style.load', () => setStyleReady(n => n + 1))
+    // Survey-site bubbles ("hs-cluster-<sites>" and "-s" when one has a spike) are drawn the
+    // first time the map asks for one, in the current theme's colors
+    map.on('styleimagemissing', e => {
+      const m = /^hs-cluster-(\d+)(-s)?$/.exec(e.id)
+      if (!m) return
+      const dark = themeRef.current === 'dark' && baseRef.current === 'map'
+      addIcon(map, e.id, 34, ctx => drawCluster(ctx, Number(m[1]), !!m[2], dark ? '#ecedee' : '#111315', dark ? '#111315' : '#ffffff'))
+    })
     // Compact credits open themselves on load; start them closed so they don't cover the map
     map.once('load', () => {
       containerRef.current?.querySelector('.maplibregl-compact-show')?.classList.remove('maplibregl-compact-show')
@@ -517,21 +608,28 @@ export default function MapPage() {
       paint: { 'line-color': '#e2561b', 'line-width': 3 },
     })
 
-    // eBird hotspots: every public place with a report of the chosen birds, sized by birds reported
+    // eBird hotspots: every public place with a report of the chosen birds. Zoomed out they are
+    // one shaded layer of bird activity (2,400 separate dots buried the map); zoomed in to a
+    // county or so, each hotspot is its own dot, sized by birds reported, to tap.
     map.addSource('hotspots', { type: 'geojson', data: emptyFc() })
     map.addLayer({
-      id: 'hotspots', type: 'circle', source: 'hotspots',
+      id: 'hotspots-heat', type: 'heatmap', source: 'hotspots', maxzoom: HOTSPOT_DOTS_ZOOM + 1.5,
+      filter: hotspotFilter(groupRef.current),
+      paint: hotspotHeatPaint(groupRef.current),
+    })
+    map.addLayer({
+      id: 'hotspots', type: 'circle', source: 'hotspots', minzoom: HOTSPOT_DOTS_ZOOM,
       filter: hotspotFilter(groupRef.current),
       paint: {
         'circle-radius': ['interpolate', ['linear'], ['sqrt', ['get', groupRef.current]], 0, 2.5, 10, 4, 40, 7, 100, 11],
         'circle-color': EBIRD_COLOR,
-        'circle-opacity': 0.7,
+        'circle-opacity': ['interpolate', ['linear'], ['zoom'], HOTSPOT_DOTS_ZOOM, 0.25, HOTSPOT_DOTS_ZOOM + 1, 0.7],
         'circle-stroke-color': paper,
         'circle-stroke-width': 0.75,
       },
     })
     map.addLayer({
-      id: 'hotspots-selected', type: 'circle', source: 'hotspots',
+      id: 'hotspots-selected', type: 'circle', source: 'hotspots', minzoom: HOTSPOT_DOTS_ZOOM,
       filter: ['==', ['get', 'id'], ''],
       paint: { 'circle-radius': 9, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#e2561b', 'circle-stroke-width': 3 },
     })
@@ -604,9 +702,26 @@ export default function MapPage() {
       },
     })
 
-    map.addSource('sites', { type: 'geojson', data: emptyFc() })
+    // Survey sites, grouped into one numbered bubble where they crowd together (the Illinois and
+    // Mississippi river sites sat on top of each other); a bubble splits as you zoom in, or when
+    // tapped. A bubble holding a spiking site carries a red dot.
+    map.addSource('sites', {
+      type: 'geojson', data: emptyFc(),
+      cluster: true, clusterRadius: 28, clusterMaxZoom: 8,
+      clusterProperties: { spikes: ['+', ['case', ['==', ['get', 'kind'], 'spike'], 1, 0]] },
+    })
+    map.addLayer({
+      id: 'sites-cluster', type: 'symbol', source: 'sites',
+      filter: ['has', 'point_count'],
+      layout: {
+        'icon-image': ['concat', 'hs-cluster-', ['to-string', ['get', 'point_count']], ['case', ['>', ['get', 'spikes'], 0], '-s', '']],
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
+      },
+    })
     map.addLayer({
       id: 'sites', type: 'circle', source: 'sites',
+      filter: ['!', ['has', 'point_count']],
       paint: {
         'circle-radius': ['interpolate', ['linear'], ['sqrt', ['get', 'total']], 0, 4, 100, 9, 400, 18, 800, 26],
         'circle-color': ['case', ['get', 'stale'], 'rgba(0,0,0,0)', ink],
@@ -616,10 +731,11 @@ export default function MapPage() {
         'circle-stroke-opacity': ['case', ['get', 'stale'], 0.6, 1],
       },
     })
-    // Count spikes and drops: a small badge on the upper right of the site's dot
-    map.addSource('spikes', { type: 'geojson', data: emptyFc() })
+    // Count spikes and drops: a small badge on the upper right of the site's dot (sites inside a
+    // bubble show theirs once the bubble splits)
     map.addLayer({
-      id: 'spikes', type: 'symbol', source: 'spikes',
+      id: 'spikes', type: 'symbol', source: 'sites',
+      filter: ['all', ['!', ['has', 'point_count']], ['has', 'kind']],
       layout: {
         'icon-image': ['concat', 'hs-anom-', ['get', 'kind']],
         'icon-offset': ['step', ['get', 'r'],
@@ -639,6 +755,61 @@ export default function MapPage() {
       paint: {
         'circle-radius': ['interpolate', ['linear'], ['sqrt', ['get', 'total']], 0, 7, 100, 12, 400, 21, 800, 29],
         'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#e2561b', 'circle-stroke-width': 3,
+      },
+    })
+    // Public land: tan dots sized by acres; open access filled, permit or seasonal a ring
+    map.addSource('lands', { type: 'geojson', data: emptyFc() })
+    map.addLayer({
+      id: 'lands', type: 'circle', source: 'lands',
+      paint: {
+        'circle-radius': ['interpolate', ['linear'], ['zoom'],
+          4, ['interpolate', ['linear'], ['sqrt', ['get', 'acres']], 0, 2, 100, 3.5, 250, 6],
+          9, ['interpolate', ['linear'], ['sqrt', ['get', 'acres']], 0, 4, 100, 8, 250, 14]],
+        'circle-color': ['case', ['get', 'open'], LAND_COLOR, 'rgba(0,0,0,0)'],
+        'circle-opacity': 0.85,
+        'circle-stroke-color': ['case', ['get', 'open'], paper, LAND_COLOR],
+        'circle-stroke-width': ['case', ['get', 'open'], 1, 2],
+      },
+    })
+    map.addLayer({
+      id: 'lands-selected', type: 'circle', source: 'lands',
+      filter: ['==', ['get', 'id'], ''],
+      paint: { 'circle-radius': 11, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#e2561b', 'circle-stroke-width': 3 },
+    })
+    // "Go to a town": the drive ring and the town's dot
+    map.addSource('focus', { type: 'geojson', data: emptyFc() })
+    map.addLayer({
+      id: 'focus-fill', type: 'fill', source: 'focus', filter: ['==', ['geometry-type'], 'Polygon'],
+      paint: { 'fill-color': ink, 'fill-opacity': 0.05 },
+    })
+    map.addLayer({
+      id: 'focus-ring', type: 'line', source: 'focus', filter: ['==', ['geometry-type'], 'Polygon'],
+      paint: { 'line-color': ink, 'line-width': 2, 'line-opacity': 0.8, 'line-dasharray': [2, 2] },
+    })
+    map.addLayer({
+      id: 'focus-center', type: 'circle', source: 'focus', filter: ['==', ['geometry-type'], 'Point'],
+      paint: { 'circle-radius': 6, 'circle-color': ink, 'circle-stroke-color': paper, 'circle-stroke-width': 2.5 },
+    })
+
+    // Where to Hunt's ranked areas, numbered, on top of everything
+    addAreaImages(map, paper)
+    map.addSource('areas', { type: 'geojson', data: emptyFc() })
+    map.addLayer({
+      id: 'areas-selected', type: 'circle', source: 'areas',
+      filter: ['==', ['get', 'id'], ''],
+      paint: { 'circle-radius': 16, 'circle-translate': [0, -20 - AREA_PIN_LIFT], 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': ink, 'circle-stroke-width': 3 },
+    })
+    map.addLayer({
+      id: 'areas', type: 'symbol', source: 'areas',
+      layout: {
+        'icon-image': ['concat', 'hs-area-', ['to-string', ['get', 'rank']]],
+        'icon-anchor': 'bottom',
+        // The tip rests on the top edge of the survey-site bubble below, which stays tappable
+        'icon-offset': [0, -AREA_PIN_LIFT],
+        // A state's #1 on top where pins overlap
+        'symbol-sort-key': ['get', 'rank'],
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': true,
       },
     })
     setInstalled(n => n + 1) // re-run the data effects below against the new layers
@@ -667,7 +838,8 @@ export default function MapPage() {
     const map = mapRef.current
     if (!map || !map.getSource('sites')) return
     ;(map.getSource('sites') as maplibregl.GeoJSONSource).setData(pointFc(sites.map(s => ({
-      lng: s.lng, lat: s.lat, props: { id: s.id, total: s.total, stale: s.isStale },
+      lng: s.lng, lat: s.lat,
+      props: { id: s.id, total: s.total, stale: s.isStale, ...(s.anomaly ? { kind: s.anomaly, r: siteRadius(s.total) } : {}) },
     }))))
     ;(map.getSource('ebird') as maplibregl.GeoJSONSource).setData(pointFc(ebirdAreas.map(p => ({
       lng: p.lng, lat: p.lat, props: { id: p.id, quiet: p.quiet },
@@ -680,10 +852,48 @@ export default function MapPage() {
     ;(map.getSource('reports') as maplibregl.GeoJSONSource).setData(pointFc(reportCells(reports).map(c => ({
       lng: c.lng, lat: c.lat, props: { id: c.id },
     }))))
-    ;(map.getSource('spikes') as maplibregl.GeoJSONSource).setData(pointFc(sites.filter(s => s.anomaly).map(s => ({
-      lng: s.lng, lat: s.lat, props: { id: s.id, kind: s.anomaly, r: siteRadius(s.total) },
-    }))))
   }, [sites, ebirdAreas, hotspots, reports, installed])
+
+  // Public land
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.getSource('lands')) return
+    ;(map.getSource('lands') as maplibregl.GeoJSONSource).setData(pointFc(lands.map((l, i) => ({
+      lng: l[7], lat: l[6], props: { id: String(i), acres: l[5] / 1000, open: l[4] === 'OA' },
+    }))))
+  }, [lands, installed])
+
+  // "Go to a town": the ring, the dot, and the view around them
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.getSource('focus')) return
+    const features: FeatureCollection<Point | Area>['features'] = []
+    if (focus) {
+      if (ringMi > 0) features.push({ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ringCoords(focus.lat, focus.lng, ringMi)] } })
+      features.push({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [focus.lng, focus.lat] } })
+    }
+    ;(map.getSource('focus') as maplibregl.GeoJSONSource).setData({ type: 'FeatureCollection', features } as never)
+  }, [focus, ringMi, installed])
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !focus) return
+    if (ringMi > 0) {
+      const ring = ringCoords(focus.lat, focus.lng, ringMi)
+      const lngs = ring.map(c => c[0]); const lats = ring.map(c => c[1])
+      map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 40, duration: 900 })
+    } else {
+      map.flyTo({ center: [focus.lng, focus.lat], zoom: 8.5, duration: 900 })
+    }
+  }, [focus, ringMi])
+
+  // Where to Hunt's areas for the chosen day
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.getSource('areas')) return
+    ;(map.getSource('areas') as maplibregl.GeoJSONSource).setData(pointFc(areas.map(a => ({
+      lng: a.center.lng, lat: a.center.lat, props: { id: a.id, rank: a.stateRank },
+    }))))
+  }, [areas, installed])
 
   // Migration layers.
   useEffect(() => {
@@ -706,6 +916,8 @@ export default function MapPage() {
     if (!map || !map.getLayer('hotspots')) return
     map.setFilter('hotspots', hotspotFilter(group))
     map.setPaintProperty('hotspots', 'circle-radius', ['interpolate', ['linear'], ['sqrt', ['get', group]], 0, 2.5, 10, 4, 40, 7, 100, 11])
+    map.setFilter('hotspots-heat', hotspotFilter(group))
+    map.setPaintProperty('hotspots-heat', 'heatmap-weight', hotspotHeatPaint(group)['heatmap-weight'])
   }, [group, installed])
 
   // Layer visibility.
@@ -715,6 +927,12 @@ export default function MapPage() {
     const vis = (on: boolean) => (on ? 'visible' : 'none')
     for (const id of ['zones-fill', 'zones-line', 'zones-line-nodates', 'zones-selected']) map.setLayoutProperty(id, 'visibility', vis(layers.zones))
     map.setLayoutProperty('sites', 'visibility', vis(layers.sites))
+    map.setLayoutProperty('sites-cluster', 'visibility', vis(layers.sites))
+    map.setLayoutProperty('areas', 'visibility', vis(layers.areas))
+    map.setLayoutProperty('areas-selected', 'visibility', vis(layers.areas))
+    map.setLayoutProperty('hotspots-heat', 'visibility', vis(layers.hotspots))
+    map.setLayoutProperty('lands', 'visibility', vis(layers.lands))
+    map.setLayoutProperty('lands-selected', 'visibility', vis(layers.lands))
     map.setLayoutProperty('points-selected', 'visibility', vis(layers.sites))
     map.setLayoutProperty('ebird', 'visibility', vis(layers.ebird))
     map.setLayoutProperty('ebird-selected', 'visibility', vis(layers.ebird))
@@ -733,11 +951,32 @@ export default function MapPage() {
     if (!map || !map.getLayer('zones-selected')) return
     const sel = (kind: Selection['kind']) => ['==', ['get', 'id'], selection?.kind === kind ? selection.id : ''] as maplibregl.FilterSpecification
     map.setFilter('zones-selected', sel('zone'))
+    map.setFilter('areas-selected', sel('area'))
+    map.setFilter('lands-selected', sel('land'))
     map.setFilter('points-selected', sel('site'))
     map.setFilter('ebird-selected', sel('ebird'))
     map.setFilter('hotspots-selected', sel('hotspot'))
     map.setFilter('states-selected', sel('state'))
   }, [selection, installed])
+
+  // Opening a thing's details: one free-tap allowance for the map and for lists beside it
+  const openDetails = (kind: Selection['kind'], id: string) => {
+    const gate = gateRef.current
+    if (gate.walled) return
+    // Tapping the thing already open is not a new tap
+    if (gate.metered && gate.selectionId !== `${kind}:${id}`) {
+      const spent = spendMapTap()
+      setTapsUsed(spent.used)
+      if (!spent.allowed) {
+        setWallHit(true)
+        return
+      }
+    }
+    setSelection({ kind, id } as Selection)
+    setPanelOpen(false)
+  }
+  const openDetailsRef = useRef(openDetails)
+  openDetailsRef.current = openDetails
 
   // Taps: the topmost thing under the finger wins: a report, a site (or its spike badge), a
   // state's pressure badge or marker, an eBird area, an eBird hotspot, then a zone (the order
@@ -746,38 +985,51 @@ export default function MapPage() {
     const map = mapRef.current
     if (!map) return
     const order: Array<[string, Selection['kind']]> = [
-      ['reports', 'report'], ['spikes', 'site'], ['sites', 'site'], ['pressure', 'state'], ['states', 'state'],
+      ['areas', 'area'], ['reports', 'report'], ['spikes', 'site'], ['sites', 'site'], ['lands', 'land'], ['pressure', 'state'], ['states', 'state'],
       ['ebird', 'ebird'], ['hotspots', 'hotspot'], ['zones-fill', 'zone'],
     ]
     const onClick = (e: maplibregl.MapMouseEvent) => {
       // Hotspot dots are small and close together, so they get only a little slack: with the
       // full 6px, a tap on a zone almost always landed on some dot instead
       const box = (pad: number): [maplibregl.PointLike, maplibregl.PointLike] => [[e.point.x - pad, e.point.y - pad], [e.point.x + pad, e.point.y + pad]]
+      const shown = (layer: string) => !!map.getLayer(layer) && map.getLayoutProperty(layer, 'visibility') !== 'none'
+      const select = (kind: Selection['kind'], id: string) => openDetailsRef.current(kind, id)
+      // Area pins and survey-site bubbles first, by what is drawn under the finger: a pin's head
+      // stands above its point (the map's own hit test only knows the point, so a tap on the
+      // bubble below a pin found the pin too), a bubble sits on its point. Nearest wins.
+      const dist = (coords: number[], up: number) => {
+        const at = map.project(coords as [number, number])
+        return Math.hypot(at.x - e.point.x, at.y - up - e.point.y)
+      }
+      const pins = shown('areas') ? map.queryRenderedFeatures(box(AREA_PIN_LIFT + 34), { layers: ['areas'] }) : []
+      const bubbles = shown('sites-cluster') ? map.queryRenderedFeatures(box(16), { layers: ['sites-cluster'] }) : []
+      const near = [
+        ...pins.map(f => ({ f, kind: 'area' as const, d: f.geometry.type === 'Point' ? dist(f.geometry.coordinates, AREA_PIN_LIFT + 20) : Infinity })),
+        ...bubbles.map(f => ({ f, kind: 'bubble' as const, d: f.geometry.type === 'Point' ? dist(f.geometry.coordinates, 0) : Infinity })),
+      ].filter(c => c.d <= 16).sort((a, b) => a.d - b.d)[0]
+      if (near?.kind === 'area') { select('area', String(near.f.properties?.id)); return }
+      if (near?.kind === 'bubble' && near.f.geometry.type === 'Point') {
+        // A bubble zooms in until it splits (not a details tap)
+        const center = near.f.geometry.coordinates as [number, number]
+        ;(map.getSource('sites') as maplibregl.GeoJSONSource)
+          .getClusterExpansionZoom(Number(near.f.properties?.cluster_id))
+          .then(zoom => map.easeTo({ center, zoom: zoom + 0.25 }))
+          .catch(() => map.easeTo({ center, zoom: map.getZoom() + 2 }))
+        return
+      }
       for (const [layer, kind] of order) {
-        if (!map.getLayer(layer) || map.getLayoutProperty(layer, 'visibility') === 'none') continue
+        if (kind === 'area' || !shown(layer)) continue
         const hit = map.queryRenderedFeatures(kind === 'zone' ? e.point : box(kind === 'hotspot' ? 2 : 6), { layers: [layer] })[0]
         if (hit) {
-          const id = String(hit.properties?.id)
-          const gate = gateRef.current
-          if (gate.walled) return
-          // Tapping the thing already open is not a new tap
-          if (gate.metered && gate.selectionId !== `${kind}:${id}`) {
-            const spent = spendMapTap()
-            setTapsUsed(spent.used)
-            if (!spent.allowed) {
-              setWallHit(true)
-              return
-            }
-          }
-          setSelection({ kind, id } as Selection)
-          setPanelOpen(false)
+          select(kind, String(hit.properties?.id))
           return
         }
       }
       setSelection(null)
     }
     const onMove = (e: maplibregl.MapMouseEvent) => {
-      const layersHere = ['reports', 'spikes', 'sites', 'pressure', 'states', 'ebird', 'hotspots', 'zones-fill'].filter(l => map.getLayer(l))
+      const layersHere = ['areas', 'sites-cluster', 'reports', 'spikes', 'sites', 'lands', 'pressure', 'states', 'ebird', 'hotspots', 'zones-fill']
+        .filter(l => map.getLayer(l) && map.getLayoutProperty(l, 'visibility') !== 'none')
       const hit = layersHere.length > 0 && map.queryRenderedFeatures(e.point, { layers: layersHere }).length > 0
       map.getCanvas().style.cursor = hit ? 'pointer' : ''
     }
@@ -800,6 +1052,14 @@ export default function MapPage() {
 
   const details = (() => {
     if (!selection) return null
+    if (selection.kind === 'area') {
+      const a = areas.find(x => x.id === selection.id)
+      return a ? <AreaDetails area={a} day={day} /> : null
+    }
+    if (selection.kind === 'land') {
+      const l = lands[Number(selection.id)]
+      return l ? <LandDetails land={l} /> : null
+    }
     if (selection.kind === 'zone') {
       const f = zones?.features.find(z => z.properties.id === selection.id)
       if (!f) return null
@@ -859,13 +1119,17 @@ export default function MapPage() {
           <p className="eyebrow mb-1.5">Season map</p>
           <h1 className="text-xl font-semibold tracking-tight" style={{ color: 'rgb(var(--color-text-primary))' }}>Map</h1>
           <p className="mt-1.5 text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-            Which zones are open on a given day, with migration, survey counts, eBird sightings and hunter reports on top.
+            The best areas to hunt on a given day, numbered, over the season zones open that day and the survey counts. More layers under Layers.
           </p>
         </div>
         <div className="p-5 space-y-6 border-b" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
           <GroupChips group={group} onChange={setGroup} />
           <DayControl day={day} today={today} onChange={setDay} />
-          <SeasonScrubber day={day} onChange={setDay} />
+          <SeasonScrubber day={day} onChange={setDay} playing={playing} onPlay={togglePlay} />
+          <ComingUp zones={zones} seasons={seasons} group={group} day={day} onPick={d => { setPlaying(false); setDay(d) }} />
+        </div>
+        <div className="p-5 border-b" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
+          <GoToPlace focus={focus} onFocus={setFocus} ringMi={ringMi} onRing={setRingMi} areas={areas} onPickArea={id => openDetails('area', id)} />
         </div>
         {details && (
           <div className="border-b" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
@@ -877,7 +1141,7 @@ export default function MapPage() {
         </div>
         <div className="p-5 space-y-6">
           <LayerToggles layers={layers} onChange={setLayers} base={base} onBase={setBase} />
-          <Legend />
+          <Legend layers={layers} />
           <Note />
         </div>
       </aside>
@@ -909,10 +1173,12 @@ export default function MapPage() {
               className="p-4 rounded-md border shadow-lg space-y-5 max-h-[60dvh] overflow-y-auto"
               style={{ backgroundColor: 'rgb(var(--color-bg-primary))', borderColor: 'rgb(var(--color-border-primary))' }}
             >
-              <SeasonScrubber day={day} onChange={setDay} />
+              <GoToPlace focus={focus} onFocus={setFocus} ringMi={ringMi} onRing={setRingMi} areas={areas} onPickArea={id => openDetails('area', id)} />
+              <SeasonScrubber day={day} onChange={setDay} playing={playing} onPlay={togglePlay} />
+              <ComingUp zones={zones} seasons={seasons} group={group} day={day} onPick={d => { setPlaying(false); setDay(d) }} />
               <MigrationSummary {...summaryProps} />
               <LayerToggles layers={layers} onChange={setLayers} base={base} onBase={setBase} />
-              <Legend />
+              <Legend layers={layers} />
               <Note />
             </div>
           )}
@@ -953,6 +1219,20 @@ export default function MapPage() {
 
 function noDatesFilter(states: string[]): maplibregl.ExpressionSpecification {
   return ['in', ['get', 'state'], ['literal', states]]
+}
+
+/** From this zoom (a few counties across) eBird hotspots are separate dots; below it, shading */
+const HOTSPOT_DOTS_ZOOM = 6.5
+
+function hotspotHeatPaint(group: BirdGroup) {
+  return {
+    'heatmap-weight': ['interpolate', ['linear'], ['sqrt', ['get', group]], 0, 0.1, 10, 0.4, 40, 1] as maplibregl.ExpressionSpecification,
+    'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 3, 0.5, HOTSPOT_DOTS_ZOOM, 1.2] as maplibregl.ExpressionSpecification,
+    'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 3, 8, HOTSPOT_DOTS_ZOOM, 22] as maplibregl.ExpressionSpecification,
+    'heatmap-color': ['interpolate', ['linear'], ['heatmap-density'],
+      0, 'rgba(130,80,223,0)', 0.2, 'rgba(130,80,223,0.25)', 0.5, 'rgba(130,80,223,0.5)', 1, 'rgba(160,110,245,0.8)'] as maplibregl.ExpressionSpecification,
+    'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], HOTSPOT_DOTS_ZOOM, 0.85, HOTSPOT_DOTS_ZOOM + 1.5, 0] as maplibregl.ExpressionSpecification,
+  }
 }
 
 function hotspotFilter(group: BirdGroup): maplibregl.FilterSpecification {
@@ -1015,6 +1295,58 @@ function addIcon(map: maplibregl.Map, id: string, size: number, draw: (ctx: Canv
   ctx.scale(ratio, ratio)
   draw(ctx)
   map.addImage(id, ctx.getImageData(0, 0, size * ratio, size * ratio), { pixelRatio: ratio })
+}
+
+/** A numbered survey-site bubble: how many sites it holds, a red dot if one has a spike */
+function drawCluster(ctx: CanvasRenderingContext2D, n: number, spike: boolean, ink: string, paper: string) {
+  ctx.beginPath()
+  ctx.arc(17, 17, 13, 0, Math.PI * 2)
+  ctx.fillStyle = ink
+  ctx.globalAlpha = 0.88
+  ctx.fill()
+  ctx.globalAlpha = 1
+  ctx.lineWidth = 2
+  ctx.strokeStyle = paper
+  ctx.stroke()
+  ctx.fillStyle = paper
+  ctx.font = `700 ${n >= 100 ? 10 : 12}px system-ui, -apple-system, "Segoe UI", sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(String(n), 17, 17.5)
+  if (spike) {
+    ctx.beginPath()
+    ctx.arc(28, 6, 5, 0, Math.PI * 2)
+    ctx.fillStyle = SPIKE_COLOR
+    ctx.fill()
+    ctx.lineWidth = 1.5
+    ctx.strokeStyle = paper
+    ctx.stroke()
+  }
+}
+
+/** Numbered pins for Where to Hunt's ranked areas, 1 to 20: a teardrop whose tip is the spot
+ * (anchored at the bottom), so it stands above the area's survey sites instead of covering them */
+function addAreaImages(map: maplibregl.Map, paper: string) {
+  for (let rank = 1; rank <= 20; rank++) {
+    addIcon(map, `hs-area-${rank}`, 34, ctx => {
+      ctx.beginPath()
+      ctx.moveTo(17, 32.5)
+      ctx.bezierCurveTo(13, 26, 5, 21, 5, 13.5)
+      ctx.arc(17, 13.5, 12, Math.PI, 0)
+      ctx.bezierCurveTo(29, 21, 21, 26, 17, 32.5)
+      ctx.closePath()
+      ctx.fillStyle = AREA_COLOR
+      ctx.fill()
+      ctx.lineWidth = 2
+      ctx.strokeStyle = paper
+      ctx.stroke()
+      ctx.fillStyle = '#ffffff'
+      ctx.font = `700 ${rank >= 10 ? 11 : 13}px system-ui, -apple-system, "Segoe UI", sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(String(rank), 17, 14)
+    })
+  }
 }
 
 function addMigrationImages(map: maplibregl.Map, paper: string) {
@@ -1173,7 +1505,7 @@ function DayControl({ day, today, onChange, compact }: { day: string; today: str
 }
 
 /** A slider across the season, September through March. */
-function SeasonScrubber({ day, onChange }: { day: string; onChange: (d: string) => void }) {
+function SeasonScrubber({ day, onChange, playing, onPlay }: { day: string; onChange: (d: string) => void; playing: boolean; onPlay: () => void }) {
   const year = seasonYearOf(day)
   const start = `${year}-09-01`
   const end = `${year + 1}-03-31`
@@ -1182,7 +1514,14 @@ function SeasonScrubber({ day, onChange }: { day: string; onChange: (d: string) 
   const inRange = offset >= 0 && offset <= span
   return (
     <div>
-      <label htmlFor="season-scrubber" className="eyebrow block mb-2">Through the season</label>
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <label htmlFor="season-scrubber" className="eyebrow">Through the season</label>
+        <button type="button" onClick={onPlay} aria-pressed={playing}
+          className="chip min-h-8 px-3 text-xs gap-1.5" aria-label={playing ? 'Pause the season' : 'Play the season'}>
+          {playing ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+          {playing ? 'Pause' : 'Play'}
+        </button>
+      </div>
       <input
         id="season-scrubber"
         type="range"
@@ -1206,12 +1545,14 @@ function LayerToggles({ layers, onChange, base, onBase }: {
   onBase: (b: Base) => void
 }) {
   const rows: Array<[LayerKey, string]> = [
+    ['areas', 'Best areas to hunt (top 3 in each state)'],
     ['zones', 'Season zones'],
+    ['lands', 'Public land (wildlife areas, refuges, Corps land)'],
     ['flow', 'Migration status and flyway flow'],
     ['pressure', 'Migration pressure (weather push)'],
     ['spikes', 'Count spikes and drops'],
     ['sites', 'Survey sites'],
-    ['hotspots', 'eBird hotspots (last 14 days)'],
+    ['hotspots', 'eBird hotspots (last 14 days; shaded until you zoom in)'],
     ['ebird', 'eBird areas HuntStack watches'],
     ['reports', 'Hunter reports (last 7 days)'],
   ]
@@ -1242,7 +1583,8 @@ function LayerToggles({ layers, onChange, base, onBase }: {
   )
 }
 
-function Legend() {
+/** The map key, for the layers that are on */
+function Legend({ layers }: { layers: Record<LayerKey, boolean> }) {
   const { resolvedTheme } = useThemeStore()
   const t = resolvedTheme === 'dark' ? FILL.dark : FILL.light
   const swatch = (color: string, opacity: number) => (
@@ -1255,10 +1597,21 @@ function Legend() {
     <div>
       <p className="eyebrow mb-2">Map key</p>
       <ul className="space-y-2">
+        {layers.areas && row(
+          <span className="inline-flex w-5 h-5 rounded-full shrink-0 items-center justify-center text-[11px] font-bold text-white" style={{ backgroundColor: AREA_COLOR }}>1</span>,
+          'Best areas to hunt on this day: 1 to 3 in each state (tap for why)',
+        )}
+        {layers.zones && <>
         {row(swatch(t.open, 0.6), 'Regular season open')}
         {row(swatch(t.special, 0.6), 'Special season only (teal, youth, veterans, falconry)')}
         {row(swatch(t.closed, 0.35), 'Closed')}
         {row(<span className="inline-block w-4 h-4 rounded-sm border-2 border-dashed shrink-0" style={{ borderColor: 'rgb(var(--color-text-tertiary))' }} />, 'Zone outline only: no season dates in HuntStack yet')}
+        </>}
+        {layers.lands && <>
+        {row(<span className="inline-block w-3.5 h-3.5 mx-0.5 rounded-full shrink-0" style={{ backgroundColor: LAND_COLOR }} />, 'Public land, open access (sized by acres)')}
+        {row(<span className="inline-block w-3.5 h-3.5 mx-0.5 rounded-full shrink-0 border-2" style={{ borderColor: LAND_COLOR }} />, 'Public land, by permit or seasonal')}
+        </>}
+        {layers.flow && <>
         <li className="text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
           <span className="flex items-center gap-2.5">
             <span className="flex gap-0.5 shrink-0">
@@ -1279,26 +1632,38 @@ function Legend() {
           </svg>,
           'Flyway flow: green south, blue north, gold both ways',
         )}
-        {row(
+        </>}
+        {layers.pressure && row(
           <svg width="16" height="16" viewBox="0 0 24 24" className="shrink-0" aria-hidden="true">
             <circle cx="12" cy="12" r="11" fill={PUSH_COLOR[2]} />
             <path d="M6 8 H15 M5 12 H18 M7 16 H14" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
           </svg>,
           'Migration pressure: gray calm, then gold, orange, red',
         )}
-        {row(
+        {layers.spikes && layers.sites && row(
           <span className="flex gap-0.5 shrink-0">
             <svg width="14" height="14" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="8.5" fill={SPIKE_COLOR} /><path d="M9 13 V5 M6 8 L9 5 L12 8" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
             <svg width="14" height="14" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="8.5" fill={DROP_COLOR} /><path d="M9 5 V13 M6 10 L9 13 L12 10" stroke="#fff" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" /></svg>
           </span>,
           'Count spike (up 30%+) or drop (down 40%+) at a survey site',
         )}
+        {layers.sites && <>
         {row(<span className="inline-block w-4 h-4 rounded-full shrink-0 bg-earth-900 dark:bg-earth-100" />, 'Survey site, sized by latest count')}
         {row(<span className="inline-block w-4 h-4 rounded-full shrink-0 border-2 border-earth-500" />, 'Survey site, older survey')}
-        {row(<span className="inline-block w-3 h-3 mx-0.5 rounded-full shrink-0" style={{ backgroundColor: EBIRD_COLOR, opacity: 0.75 }} />, 'eBird hotspot, sized by birds reported (birder sightings, not a survey)')}
+        {row(
+          <span className="inline-flex w-5 h-5 rounded-full shrink-0 items-center justify-center text-[10px] font-bold bg-earth-900 text-white dark:bg-earth-100 dark:text-earth-900">8</span>,
+          'Survey sites close together (tap or zoom in to split; a red dot means one has a spike)',
+        )}
+        </>}
+        {layers.hotspots && <>
+        {row(<span className="inline-block w-4 h-4 rounded-full shrink-0" style={{ background: `radial-gradient(circle, ${EBIRD_COLOR} 0%, ${EBIRD_COLOR}55 55%, transparent 75%)` }} />, 'eBird activity, zoomed out (birder sightings, not a survey)')}
+        {row(<span className="inline-block w-3 h-3 mx-0.5 rounded-full shrink-0" style={{ backgroundColor: EBIRD_COLOR, opacity: 0.75 }} />, 'eBird hotspot when zoomed in, sized by birds reported')}
+        </>}
+        {layers.ebird && <>
         {row(<span className="inline-block w-4 h-4 rounded-full shrink-0 border-[2.5px]" style={{ borderColor: EBIRD_COLOR }} />, 'eBird area HuntStack watches')}
         {row(<span className="inline-block w-4 h-4 rounded-full shrink-0 border-[1.5px]" style={{ borderColor: EBIRD_COLOR, opacity: 0.5 }} />, 'eBird area, nothing reported in 14 days')}
-        {row(<span className="inline-block w-3 h-3 mx-0.5 rounded-full shrink-0" style={{ backgroundColor: REPORT_COLOR }} />, 'Hunter report (unverified)')}
+        </>}
+        {layers.reports && row(<span className="inline-block w-3 h-3 mx-0.5 rounded-full shrink-0" style={{ backgroundColor: REPORT_COLOR }} />, 'Hunter report (unverified)')}
       </ul>
     </div>
   )
@@ -1429,7 +1794,9 @@ function ZoneDetails({ zone, seasons, group, day, children }: { zone: ZoneProper
       </div>
       {(change.closes || change.opens) && (
         <p className="text-sm mb-4" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-          {change.closes ? `Regular season runs through ${fmtDay(change.closes, { month: 'short', day: 'numeric' })}` : `Regular season opens ${fmtDay(change.opens!, { month: 'short', day: 'numeric' })}`}
+          {change.closes
+            ? `Regular season runs through ${fmtDay(change.closes)} (${daysLeft(day, change.closes)})`
+            : `Regular season opens ${fmtDay(change.opens!)} (${daysUntil(day, change.opens!)})`}
         </p>
       )}
       {mine.length === 0 ? (
@@ -1777,6 +2144,252 @@ function SiteDetails({ site, day, ebird }: { site: Site; day: string; ebird: Cou
       <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold">
         <Link to={`/where-to-hunt?${hunt}`} className="text-accent-600 dark:text-accent-400 hover:underline underline-offset-4">Where to Hunt in {site.state} →</Link>
         <Link to="/migration" className="text-accent-600 dark:text-accent-400 hover:underline underline-offset-4">Migration →</Link>
+      </div>
+    </div>
+  )
+}
+
+/** "today", "tomorrow", "in 3 days" from `from` to `to` (calendar days) */
+function daysUntil(from: string, to: string): string {
+  const n = Math.round((parseCalendarDate(to).getTime() - parseCalendarDate(from).getTime()) / 86_400_000)
+  return n <= 0 ? 'today' : n === 1 ? 'tomorrow' : `in ${n} days`
+}
+/** Days left through `last`, counting `from` itself */
+function daysLeft(from: string, last: string): string {
+  const n = Math.round((parseCalendarDate(last).getTime() - parseCalendarDate(from).getTime()) / 86_400_000) + 1
+  return n <= 1 ? 'last day' : `${n} days left`
+}
+
+const COMING_DAYS = 10
+
+/** Regular seasons opening or closing in the next 10 days, one line per state, date and change */
+function ComingUp({ zones, seasons, group, day, onPick }: {
+  zones: { features: Array<{ properties: ZoneProperties }> } | undefined
+  seasons: MapSeason[]; group: BirdGroup; day: string; onPick: (d: string) => void
+}) {
+  const items = useMemo(() => {
+    const limit = addDays(day, COMING_DAYS)
+    const byKey = new Map<string, { state: string; kind: 'opens' | 'closes'; date: string; zones: Set<string> }>()
+    for (const f of zones?.features ?? []) {
+      const ch = nextChange(dedupeSeasons(seasonsForZone(seasons, f.properties, group)), day)
+      const kind = ch.opens ? 'opens' : ch.closes ? 'closes' : null
+      const date = ch.opens ?? ch.closes
+      if (!kind || !date || date > limit) continue
+      const key = `${f.properties.state}|${kind}|${date}`
+      const e = byKey.get(key) ?? { state: f.properties.state, kind, date, zones: new Set<string>() }
+      e.zones.add(group === 'duck' ? f.properties.duckZone : f.properties.gooseZone)
+      byKey.set(key, e)
+    }
+    return [...byKey.values()].sort((a, b) => a.date.localeCompare(b.date) || a.state.localeCompare(b.state)).slice(0, 6)
+  }, [zones, seasons, group, day])
+  return (
+    <div>
+      <p className="eyebrow mb-2">Coming up, {group === 'duck' ? 'ducks' : 'geese'}</p>
+      {items.length === 0 ? (
+        <p className="text-sm" style={{ color: 'rgb(var(--color-text-tertiary))' }}>No regular season opens or closes in the next {COMING_DAYS} days.</p>
+      ) : (
+        <ul className="space-y-1">
+          {items.map(it => {
+            const zonesText = [...it.zones].filter(z => z !== 'Statewide')
+            const when = it.kind === 'opens' ? daysUntil(day, it.date) : daysLeft(day, it.date)
+            return (
+              <li key={`${it.state}|${it.kind}|${it.date}`}>
+                <button type="button" onClick={() => onPick(it.kind === 'opens' ? it.date : addDays(it.date, 1))}
+                  className="w-full text-left text-sm py-1 rounded-sm hover:underline underline-offset-4" style={{ color: 'rgb(var(--color-text-secondary))' }}
+                  title={it.kind === 'opens' ? 'Show the map on opening day' : 'Show the map the day after it closes'}>
+                  <span className="font-semibold" style={{ color: 'rgb(var(--color-text-primary))' }}>{STATE_NAMES[it.state] ?? it.state}</span>
+                  {zonesText.length > 0 && zonesText.length <= 2 ? ` (${zonesText.join(', ')})` : zonesText.length > 2 ? ` (${zonesText.length} zones)` : ''}
+                  {' '}{it.kind === 'opens' ? 'opens' : 'closes after'} {fmtDay(it.date)}{' '}
+                  <span className={it.kind === 'opens' ? 'text-forest-600 dark:text-forest-400' : ''}>· {when}</span>
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/** Points around a circle of `mi` miles, for the drive ring */
+function ringCoords(lat: number, lng: number, mi: number): [number, number][] {
+  const km = mi * 1.609344
+  const out: [number, number][] = []
+  for (let i = 0; i <= 72; i++) {
+    const a = (i / 72) * Math.PI * 2
+    const dLat = (km / 111.32) * Math.cos(a)
+    const dLng = (km / (111.32 * Math.cos(lat * Math.PI / 180))) * Math.sin(a)
+    out.push([lng + dLng, lat + dLat])
+  }
+  return out
+}
+
+function milesBetween(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const r = Math.PI / 180
+  const a = Math.sin((lat2 - lat1) * r / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin((lng2 - lng1) * r / 2) ** 2
+  return 3958.8 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+/** "Go to a town": find a town or zip, fly there, draw a drive ring, list the areas inside it */
+function GoToPlace({ focus, onFocus, ringMi, onRing, areas, onPickArea }: {
+  focus: FocusPlace | null; onFocus: (f: FocusPlace | null) => void
+  ringMi: number; onRing: (mi: number) => void
+  areas: HuntArea[]; onPickArea: (id: string) => void
+}) {
+  const [q, setQ] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const go = async () => {
+    const text = q.trim()
+    if (!text) return
+    setBusy(true); setError(null)
+    const found = /^\d{5}$/.test(text) ? await api.geocodeZip(text) : await api.geocodeCity(text)
+    setBusy(false)
+    if (!found) { setError('Not found. Try "Stuttgart, AR" or a zip code.'); return }
+    onFocus({ lat: found.lat, lng: found.lng, label: found.city ? `${found.city}${found.state ? `, ${found.state}` : ''}` : text })
+  }
+  const nearby = focus
+    ? areas.map(a => ({ a, mi: milesBetween(focus.lat, focus.lng, a.center.lat, a.center.lng) }))
+      .filter(x => ringMi === 0 || x.mi <= ringMi).sort((x, y) => x.mi - y.mi).slice(0, 5)
+    : []
+  return (
+    <div>
+      <label htmlFor="map-goto" className="eyebrow block mb-2">Go to a town</label>
+      <form className="flex gap-1.5" onSubmit={e => { e.preventDefault(); void go() }}>
+        <input id="map-goto" value={q} onChange={e => setQ(e.target.value)} placeholder="Town or zip" className="input flex-1 min-w-0 min-h-10" maxLength={80} />
+        <button type="submit" className="btn-secondary min-h-10 px-3" disabled={busy || !q.trim()}>{busy ? '…' : 'Go'}</button>
+      </form>
+      {error && <p className="text-xs mt-1.5 text-red-600 dark:text-red-400">{error}</p>}
+      <div role="radiogroup" aria-label="Drive ring" className="flex flex-wrap gap-1.5 mt-2">
+        {[{ mi: 0, label: 'No ring' }, ...DRIVE_RINGS].map(r => (
+          <button key={r.mi} type="button" role="radio" aria-checked={ringMi === r.mi} onClick={() => onRing(r.mi)}
+            className={`chip min-h-8 px-2.5 text-xs ${ringMi === r.mi ? 'chip-on' : ''}`}>
+            {r.mi === 0 ? r.label : `${r.label} · ${r.mi} mi`}
+          </button>
+        ))}
+      </div>
+      {focus && (
+        <div className="mt-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold" style={{ color: 'rgb(var(--color-text-primary))' }}>{focus.label}</p>
+            <button type="button" onClick={() => onFocus(null)} className="text-xs underline" style={{ color: 'rgb(var(--color-text-tertiary))' }}>Clear</button>
+          </div>
+          {ringMi > 0 && <p className="text-xs mt-0.5" style={{ color: 'rgb(var(--color-text-tertiary))' }}>Ring is straight-line miles; driving takes longer on back roads.</p>}
+          {nearby.length === 0 ? (
+            <p className="text-sm mt-2" style={{ color: 'rgb(var(--color-text-secondary))' }}>None of the map&rsquo;s areas are inside the ring. Try a bigger ring.</p>
+          ) : (
+            <ul className="mt-2 space-y-0.5">
+              {nearby.map(({ a, mi }) => (
+                <li key={a.id}>
+                  <button type="button" onClick={() => onPickArea(a.id)} className="w-full text-left text-sm py-1 flex items-baseline gap-2 hover:underline underline-offset-4">
+                    <span className="inline-flex w-5 h-5 rounded-full shrink-0 items-center justify-center text-[11px] font-bold text-white self-center" style={{ backgroundColor: AREA_COLOR }}>{a.stateRank}</span>
+                    <span className="min-w-0 flex-1" style={{ color: 'rgb(var(--color-text-primary))' }}>{a.title}</span>
+                    <span className="font-mono text-xs shrink-0" style={{ color: 'rgb(var(--color-text-tertiary))' }}>{Math.round(mi)} mi</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** A public land unit from PAD-US */
+function LandDetails({ land }: { land: MapLandRow }) {
+  const [name, kind, manager, state, access, acres, lat, lng, note] = land
+  const secondary = { color: 'rgb(var(--color-text-secondary))' }
+  return (
+    <div>
+      <Heading eyebrow={`${STATE_NAMES[state] ?? state} · ${kind}`} title={name} />
+      <ul className="text-sm space-y-1 mb-4" style={secondary}>
+        {manager && <li>Managed by {manager}</li>}
+        <li>{fmtNum(acres)} acres</li>
+        <li className="font-medium" style={{ color: access === 'OA' ? undefined : LAND_COLOR }}>
+          {access === 'OA' ? 'Open to the public' : 'Public access by permit or seasonal'}
+        </li>
+      </ul>
+      {note && (
+        <p className="text-sm mb-4 p-3 rounded-md border" style={{ borderColor: 'rgb(var(--color-border-primary))', color: 'rgb(var(--color-text-primary))' }}>
+          <span className="font-semibold">HuntStack checked: </span>{note}
+        </p>
+      )}
+      <p className="text-xs mb-4" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
+        From the USGS Protected Areas Database. It records public access, not hunting rules: units have zones,
+        permit draws, closed days and refuge sanctuaries. Check the managing agency before you go.
+      </p>
+      <a href={`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`} target="_blank" rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 text-sm font-semibold text-accent-600 dark:text-accent-400 hover:underline underline-offset-4">
+        Open in Google Maps <ExternalLink className="w-3.5 h-3.5" />
+      </a>
+    </div>
+  )
+}
+
+/** One of Where to Hunt's ranked areas, in the map's details panel */
+function AreaDetails({ area, day }: { area: HuntArea; day: string }) {
+  const hunt = new URLSearchParams({ states: area.state, go: '1' })
+  if (day !== isoDay(new Date())) hunt.set('date', day)
+  const p = area.change?.percent
+  const muted = { color: 'rgb(var(--color-text-tertiary))' }
+  const secondary = { color: 'rgb(var(--color-text-secondary))' }
+  return (
+    <div>
+      <Heading eyebrow={`#${area.stateRank} in ${STATE_NAMES[area.state] ?? area.state} · #${area.rank} overall${area.county ? ` · ${area.county}` : ''}`} title={area.title} />
+      <div className="flex items-baseline gap-3 mb-1">
+        <span className="font-mono text-2xl font-medium" style={{ color: 'rgb(var(--color-text-primary))' }}>{fmtNum(area.birds)}</span>
+        <span className="text-sm" style={secondary}>birds counted nearby</span>
+        {p !== undefined && (
+          <span className={`font-mono text-sm ${p >= 0 ? 'text-forest-600 dark:text-forest-400' : 'text-accent-600 dark:text-accent-400'}`}>{p >= 0 ? '+' : ''}{p}%</span>
+        )}
+      </div>
+      <p className="text-sm mb-4" style={secondary}>
+        {area.latestDate ? `Latest count ${fmtDay(area.latestDate, { month: 'short', day: 'numeric' })}` : 'Sightings only'}
+        {p !== undefined ? ' · change since the previous surveys' : ''}
+      </p>
+      <p className="eyebrow mb-1">Season on {fmtDay(day)}</p>
+      <div className="text-sm mb-4" style={secondary}>
+        {area.season.status === 'open' ? area.season.lines.map(l => <p key={l}>{l}</p>)
+          : area.season.status === 'closed' ? <p>Closed on this date</p> : <p>No season dates: check the state agency</p>}
+      </div>
+      {area.topSpecies.length > 0 && (
+        <>
+          <p className="eyebrow mb-1">Most counted</p>
+          <ul className="border-t mb-4" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
+            {area.topSpecies.slice(0, 3).map(sp => (
+              <li key={sp.slug} className="py-1.5 border-b flex justify-between gap-3 text-sm" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
+                <span style={{ color: 'rgb(var(--color-text-primary))' }}>{sp.name}</span>
+                <span className="font-mono" style={secondary}>{fmtNum(sp.count)}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      {area.reasons.length > 0 && (
+        <>
+          <p className="eyebrow mb-1">Why it ranks here</p>
+          <ul className="text-sm list-disc pl-5 space-y-0.5 mb-4" style={secondary}>
+            {area.reasons.map(r => <li key={r}>{r}</li>)}
+          </ul>
+        </>
+      )}
+      {area.publicLands.length > 0 && (
+        <>
+          <p className="eyebrow mb-1">Public land nearby</p>
+          <ul className="text-sm space-y-1 mb-1" style={secondary}>
+            {area.publicLands.slice(0, 3).map(l => (
+              <li key={l.name} className="flex justify-between gap-3">
+                <span style={{ color: 'rgb(var(--color-text-primary))' }}>{l.name}</span>
+                <span className="font-mono text-xs shrink-0" style={muted}>{Math.round(l.distanceKm * 0.621371)} mi {l.direction}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs mb-4" style={muted}>Public access, not hunting rules: check the managing agency.</p>
+        </>
+      )}
+      <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm font-semibold">
+        <Link to={`/where-to-hunt?${hunt}`} className="text-accent-600 dark:text-accent-400 hover:underline underline-offset-4">Full details in Where to Hunt →</Link>
       </div>
     </div>
   )

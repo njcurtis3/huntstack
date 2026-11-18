@@ -116,6 +116,8 @@ export type HuntAreaLand = {
 /** One area on Where to Hunt (GET /api/hunt/areas) */
 export type HuntArea = {
   rank: number
+  /** Rank among the areas in its own state */
+  stateRank: number
   id: string
   score: number
   /** "Near Stuttgart, AR" or "12 mi SE of Stuttgart, AR" */
@@ -835,8 +837,16 @@ class ApiClient {
 
   // Hunt Recommendations
   /** Where to Hunt: areas ranked by birds counted nearby, trend, season and weather */
-  async getHuntAreas(options?: { species?: string; states?: string; date?: string }) {
+  async getHuntAreas(options?: { species?: string; states?: string; date?: string; perState?: number }) {
     return this.request<HuntAreasResponse>('/api/hunt/areas', { params: options })
+  }
+
+  /** PAD-US public land for the map: [name, kind, manager, state, 'OA' | 'RA', acres, lat, lng, HuntStack note] */
+  async getPublicLands() {
+    return this.request<{
+      lands: Array<[string, string, string | null, string, 'OA' | 'RA', number, number, number, string | null]>
+      source: string
+    }>('/api/hunt/public-lands')
   }
 
   async getHuntRecommendations(options?: {
