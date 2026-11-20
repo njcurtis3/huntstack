@@ -138,7 +138,8 @@ export function HowItWorksPage() {
           <Terms items={[
             ['Arkansas, Louisiana', <>
               Statewide aerial survey estimates during the season (Arkansas a few flights from December
-              to January, Louisiana monthly). These totals cover the whole state.
+              to January, Louisiana monthly). These totals cover the whole state. Louisiana’s card also
+              compares the newest survey with the same month in earlier years, back to 2004.
             </>],
             ['Illinois, Missouri, Iowa', <>
               Weekly aerial counts along the Illinois and Mississippi rivers, plus refuge counts. Very

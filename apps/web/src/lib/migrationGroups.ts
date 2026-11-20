@@ -351,3 +351,28 @@ export function flowLegs(stateGroups: Array<{ state: string; dominantStatus: Mig
   }
   return legs
 }
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+  'September', 'October', 'November', 'December']
+
+function roughBirds(n: number): string {
+  return n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')} million` : `${Math.round(n / 1000) * 1000}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
+
+/**
+ * A current monthly statewide survey against its own long-term average for that month:
+ * "51% below the November average of 1.4 million (19 surveys, 2004–2025)". Null for a stale
+ * site, or when the average belongs to a different survey than the one the card shows.
+ */
+export function longTermNote(
+  group: { refugeId: string; latestDate: string; isStale: boolean },
+  averages: Array<{ locationId: string; surveyDate: string; total: number; avgTotal: number; surveysInAverage: number; firstYear: number; lastYear: number }>,
+): string | null {
+  if (group.isStale) return null
+  const a = averages.find(x => x.locationId === group.refugeId)
+  if (!a || a.avgTotal <= 0 || a.surveyDate !== group.latestDate.slice(0, 10)) return null
+  const month = MONTH_NAMES[Number(a.surveyDate.slice(5, 7)) - 1]
+  const pct = Math.round(((a.total - a.avgTotal) / a.avgTotal) * 100)
+  const vs = Math.abs(pct) < 10 ? 'About' : `${Math.abs(pct)}% ${pct > 0 ? 'above' : 'below'}`
+  return `${vs} the ${month} average of ${roughBirds(a.avgTotal)} (${a.surveysInAverage} surveys, ${a.firstYear}–${a.lastYear})`
+}

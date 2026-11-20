@@ -24,6 +24,20 @@ export type SurveyZone = {
   yearsInAverage: number
 }
 
+/**
+ * A monthly statewide survey's newest total against the same month in earlier years (LDWF,
+ * Sept 2004 on). The newest survey is never in its own average.
+ */
+export type SurveyAverage = {
+  locationId: string
+  surveyDate: string
+  total: number
+  avgTotal: number
+  surveysInAverage: number
+  firstYear: number
+  lastYear: number
+}
+
 /** One hunter report as the public API serves it: the map cell's center, never the exact point. */
 export type FieldReportPublic = {
   id: string
@@ -440,6 +454,7 @@ class ApiClient {
   }) {
     return this.request<{
       surveyZones?: SurveyZone[]
+      surveyAverages?: SurveyAverage[]
       currentCounts: Array<{
         refugeId: string
         refugeName: string

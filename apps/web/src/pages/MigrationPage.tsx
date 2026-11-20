@@ -14,7 +14,7 @@ import {
 } from 'recharts'
 import { ComposableMap, Geographies, Geography, Annotation } from 'react-simple-maps'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { api, type FieldReportPublic, type SurveyZone } from '../lib/api'
+import { api, type FieldReportPublic, type SurveyAverage, type SurveyZone } from '../lib/api'
 import { AccountError } from '../lib/account'
 import { isEarlierSeason, oldSurveyLabel, parseCalendarDate } from '../lib/dates'
 import {
@@ -22,7 +22,7 @@ import {
   type AnomalyType, type MigrationIndexResult, type MigrationStatus,
 } from '../lib/migrationStats'
 import {
-  partialCountNote, FLYWAY_STATE_ORDER, PUSH_SCORE_LABELS, STATE_CENTROIDS, STATUS_HEX, computeFlowDirection, enrichCounts, groupRefuges, groupStates,
+  longTermNote, partialCountNote, FLYWAY_STATE_ORDER, PUSH_SCORE_LABELS, STATE_CENTROIDS, STATUS_HEX, computeFlowDirection, enrichCounts, groupRefuges, groupStates,
   overallPushScoreOf, sortCounts, type FlowDirection, type RefugeGroup as RefugeGroupOf, type StateGroup as StateGroupOf,
 } from '../lib/migrationGroups'
 import { SurveyZoneBreakdown } from '../components/SurveyZoneBreakdown'
@@ -1168,6 +1168,7 @@ export function MigrationPage() {
   const [quietPlaces, setQuietPlaces] = useState<QuietPlace[]>([])
   const [historicalTrends, setHistoricalTrends] = useState<HistoricalTrend[]>([])
   const [surveyZones, setSurveyZones] = useState<SurveyZone[]>([])
+  const [surveyAverages, setSurveyAverages] = useState<SurveyAverage[]>([])
   const [speciesOptions, setSpeciesOptions] = useState<SpeciesOption[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -1282,6 +1283,7 @@ export function MigrationPage() {
         setQuietPlaces(dashboardData.quietEbirdPlaces ?? [])
         setHistoricalTrends(dashboardData.historicalTrends)
         setSurveyZones(dashboardData.surveyZones ?? [])
+        setSurveyAverages(dashboardData.surveyAverages ?? [])
         setSpeciesOptions(speciesData.species.map(s => ({ slug: s.slug, name: s.name })))
       } catch (err) {
         if (cancelled) return
@@ -2949,6 +2951,12 @@ export function MigrationPage() {
                                             total birds · {group.speciesCount} species tracked
                                           </span>
                                         </div>
+                                        {(() => {
+                                          const note = longTermNote(group, surveyAverages)
+                                          return note && (
+                                            <p className="text-xs mt-1" style={{ color: `rgb(var(--color-text-secondary))` }}>{note}</p>
+                                          )
+                                        })()}
                                         <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                                           <span className="text-xs" style={{ color: `rgb(var(--color-text-tertiary))` }}>
                                             {group.isStale
