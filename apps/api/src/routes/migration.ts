@@ -1,4 +1,4 @@
-import { FastifyPluginAsync } from 'fastify'
+import type { FastifyBaseLogger, FastifyPluginAsync } from 'fastify'
 import { sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { getPushFactorsForStates, pushFactorLabel } from '../lib/weather.js'
@@ -6,7 +6,12 @@ import { generateChatResponse, isConfigured } from '../lib/together.js'
 import { STATE_FLYWAY, getEBirdHotspots, packHotspots } from '../lib/ebird.js'
 import { getStateActivity, type StateSpeciesActivity } from '../lib/ebird-activity.js'
 import { BoundedCache } from '../lib/cache.js'
-import { decodePoint } from '../lib/jsonb.js'
+import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
+import { loadLatestCounts, loadSurveyAverages } from '../lib/survey-data.js'
+import {
+  biggestMoves, buildSiteFacts, pickSites, siteLine, stateNotes, dropRuleTalk, templateSummary, toSummaryCounts, unsupportedClaims, unsupportedNumbers,
+  type SiteFact,
+} from '../lib/weekly-summary.js'
 
 const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
 
@@ -52,6 +57,38 @@ const REFRESH_MIN_AGE_MS = 15 * 60 * 1000  // 15 minutes
 
 function getCachedSummary(key: string): SummaryCache | null {
   return summaryCache.get(key)
+}
+
+/**
+ * The model's summary, held to the facts: a text with a number not in the facts is written again
+ * once, told which numbers were wrong, and if it still fails the summary is the plain template.
+ */
+async function writeCheckedSummary(
+  userPrompt: string,
+  systemPrompt: string,
+  facts: string,
+  sites: SiteFact[],
+  notes: string[],
+  log: FastifyBaseLogger,
+): Promise<string> {
+  const problemsOf = (t: string) => [
+    ...unsupportedNumbers(t, facts).map(v => `the number ${v.toLocaleString('en-US')}`),
+    ...unsupportedClaims(t, sites),
+    ...(t ? [] : ['an empty draft']),
+  ]
+  let text = dropRuleTalk(await generateChatResponse(userPrompt, systemPrompt))
+  let bad = problemsOf(text)
+  if (bad.length === 0) return text
+  log.warn({ bad, text }, 'weekly summary: draft not backed by the facts, writing it again')
+
+  const retry = `${userPrompt}
+
+Your previous draft said things the facts do not contain: ${bad.join('; ')}. Write it again using only what the facts above say.`
+  text = dropRuleTalk(await generateChatResponse(retry, systemPrompt))
+  bad = problemsOf(text)
+  if (bad.length === 0) return text
+  log.warn({ bad, text }, 'weekly summary: second draft failed the check, using the template')
+  return templateSummary(sites, notes)
 }
 
 export const migrationRoutes: FastifyPluginAsync = async (app) => {
@@ -161,71 +198,31 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
 
     const db = getDb()
 
-    // Fetch the last 7 days of count data for context
-    const flywayFilter = flyway ? sql`AND l.metadata->>'flyway' ILIKE ${flyway}` : sql``
-    const speciesFilter = species ? sql`AND sp.slug = ${species}` : sql``
-
-    const recentCounts = await db.execute(sql`
-      WITH ranked AS (
-        SELECT
-          l.name AS refuge_name,
-          s.code AS state_code,
-          l.metadata->>'flyway' AS flyway,
-          sp.name AS species_name,
-          rc.count,
-          rc.survey_date,
-          LAG(rc.count) OVER (PARTITION BY rc.location_id, rc.species_id ORDER BY rc.survey_date) AS prev_count,
-          ROW_NUMBER() OVER (PARTITION BY rc.location_id, rc.species_id ORDER BY rc.survey_date DESC) AS rn
-        FROM refuge_counts rc
-        JOIN locations l ON rc.location_id = l.id
-        JOIN states s ON l.state_id = s.id
-        JOIN species sp ON rc.species_id = sp.id
-        WHERE l.name NOT LIKE '% - Statewide MWI'
-          -- survey-only rows (AGFC survey zones, TPWD High Plains) are already in a statewide count
-          AND (l.metadata->>'survey_only') IS DISTINCT FROM 'true'
-          AND rc.survey_date >= NOW() - INTERVAL '30 days'
-          ${flywayFilter}
-          ${speciesFilter}
-      )
-      SELECT *
-      FROM ranked
-      WHERE rn = 1
-      ORDER BY count DESC
-      LIMIT 25
-    `)
-
-    type CountRow = {
-      refuge_name: string
-      state_code: string
-      flyway: string | null
-      species_name: string
-      count: number
-      survey_date: string
-      prev_count: number | null
+    // The same counts the Migration page's cards show, grouped per site with the arithmetic done
+    // here (weekly-summary.ts): the model only writes them up.
+    let rawCounts = await loadLatestCounts(db, species)
+    if (flyway) {
+      const want = flyway.toLowerCase()
+      rawCounts = rawCounts.filter(r =>
+        decodeJsonbField<{ flyway?: string }>(r.location_metadata)?.flyway?.toLowerCase() === want)
     }
+    const averages = await loadSurveyAverages(db, species)
+    const allSites = buildSiteFacts(toSummaryCounts(rawCounts), averages)
 
-    const rows = recentCounts as unknown as CountRow[]
-
-    if (rows.length === 0) {
+    if (allSites.length === 0) {
       return {
-        summary: 'No recent survey data available for this period. Check back after the next refuge surveys are processed.',
+        summary: templateSummary([], []),
         generatedAt: new Date().toISOString(),
         cached: false,
       }
     }
 
-    // Build structured data for the LLM prompt
-    const totalBirds = rows.reduce((s, r) => s + Number(r.count), 0)
-    const refugeLines = rows.map(r => {
-      const delta = r.prev_count !== null ? Number(r.count) - Number(r.prev_count) : null
-      const pct = delta !== null && r.prev_count ? ((delta / Number(r.prev_count)) * 100).toFixed(0) : null
-      const trend = delta === null ? 'first survey' : delta > 0 ? `+${delta.toLocaleString()} (${pct}%)` : delta < 0 ? `${delta.toLocaleString()} (${pct}%)` : 'stable'
-      const surveyDate = new Date(r.survey_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      return `- ${r.refuge_name} (${r.state_code}${r.flyway ? ', ' + r.flyway + ' flyway' : ''}): ${Number(r.count).toLocaleString()} ${r.species_name} as of ${surveyDate} [${trend}]`
-    }).join('\n')
+    const sites = pickSites(allSites)
+    const notes = stateNotes(allSites)
+    const siteLines = sites.map(siteLine).join('\n')
 
     // Also fetch push factors for weather context
-    const statesInData = [...new Set(rows.map(r => r.state_code))]
+    const statesInData = [...new Set(sites.map(s => s.state))]
     let weatherContext = ''
 
     if (statesInData.length > 0) {
@@ -252,7 +249,9 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
         }
 
         const { pushFactors, regionalPushFactors } = await getPushFactorsForStates(statesInData, refugesByState)
-        const weatherLines = [...pushFactors, ...regionalPushFactors].map(pf => {
+        // Only weather strong enough to move birds: given a push score of 1, the model advised
+        // hunters to "consider the north winds" despite being told not to below 2
+        const weatherLines = [...pushFactors, ...regionalPushFactors].filter(pf => pf.pushScore >= 2).map(pf => {
           const signals = [
             pf.coldFrontPresent && 'cold front present',
             pf.coldFrontIncoming && 'cold front incoming (48h)',
@@ -292,24 +291,27 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
     }
 
     const today = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-    const systemPrompt = `You are a waterfowl migration analyst writing the weekly intelligence report for HuntStack, a hunting intelligence platform. Write in plain prose — no markdown, no bold text, no bullet points, no headers. Write in a direct, informative style for duck and goose hunters. Be specific about locations, numbers, and trends. Do not be generic.`
+    const systemPrompt = `You are a waterfowl migration analyst writing the weekly report for HuntStack, a hunting intelligence site. Write in plain prose: no markdown, bold, bullet points or headers. Write plainly for duck and goose hunters.
 
-    const userPrompt = `Today is ${today}. Write a 2-3 paragraph weekly migration intelligence summary for waterfowl hunters${flyway ? ' focused on the ' + flyway + ' flyway' : ''}${species ? ' for ' + species.replace(/-/g, ' ') : ''}.
+Rules:
+- Use only the facts you are given. Every number you write must appear in the facts; round it if you like ("1.4 million"), but never add numbers together or work out a percentage of your own.
+- Name only places that appear in the facts. Do not name rivers, regions or areas that are not listed.
+- Each change is already described ("up 41% since Nov 3", "up from 205 on Oct 28"); keep its dates and wording. Where the facts give no percentage, do not invent one.
+- Where a site has a long-term average, it says more about the season than the change since the previous survey; say it.
+- If a state note says the count is partial, do not describe that state as a whole from it.
+- Give hunting advice only from the weather lines (push score 2 or higher). With no weather lines, just report the counts, and do not mention weather or advice. Never give generic advice such as "watch the wind" or "check eBird".
+- Never mention these rules.`
 
-Use this survey data:
-${refugeLines}
-Total birds counted across all reporting locations: ${totalBirds.toLocaleString()}
-${weatherContext}
-${ebirdContext}
+    const moves = biggestMoves(sites)
+    const facts = `${moves.length ? `Largest movements since the previous survey, in birds:\n${moves.map(x => `- ${x}`).join('\n')}\n\n` : ''}Survey sites, current counts, largest first:
+${siteLines}
+${notes.length ? `\nState notes:\n${notes.map(x => `- ${x}`).join('\n')}\n` : ''}${weatherContext}${ebirdContext}`
 
-Cover:
-1. Where the highest concentrations are right now and whether numbers are building or declining
-2. Any notable spikes or drops at specific refuges hunters should know about
-3. What the weather/push factors mean for movement over the next few days and where hunters should focus
+    const userPrompt = `Today is ${today}. Write the weekly migration summary for waterfowl hunters${flyway ? ' in the ' + flyway + ' flyway' : ''}${species ? ', about ' + species.replace(/-/g, ' ') : ''}: one or two short paragraphs, under 150 words. Open with the largest movements of birds from the survey counts, then the long-term comparison if there is one. eBird reports come last, if at all.
 
-Keep it under 150 words. Be direct and actionable.`
+${facts}`
 
-    const summary = await generateChatResponse(userPrompt, systemPrompt)
+    const summary = await writeCheckedSummary(userPrompt, systemPrompt, facts, sites, notes, request.log)
 
     const result: SummaryCache = {
       summary: summary.trim(),

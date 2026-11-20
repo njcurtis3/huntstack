@@ -6,13 +6,12 @@ import { assignSharedReports, getEBirdCountsForRefuge } from '../lib/ebird.js'
 import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 import { BoundedCache } from '../lib/cache.js'
 import { surveyChange } from '../lib/survey-change.js'
+import { loadLatestCounts, loadSurveyAverages } from '../lib/survey-data.js'
 
 const coverageCache = new BoundedCache<{ sites: number; states: Array<{ state: string; sites: number }> }>(1)
 // The dashboard query takes ~3 s and its counts change a few times a week (survey loads), so each
 // flyway/species answer is kept briefly: the Map and Migration pages ask for it on every visit
 const DASHBOARD_CACHE_MS = 5 * 60_000
-/** Fewer earlier surveys of a month than this and its "average" is a couple of years, not a norm */
-const MIN_SURVEYS_IN_AVERAGE = 5
 const dashboardCache = new BoundedCache<unknown>(20)
 
 export const refugeRoutes: FastifyPluginAsync = async (app) => {
@@ -241,38 +240,8 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
     if (cached) return cached
     const db = getDb()
 
-    // Get latest counts with previous survey for delta computation
-    const latestCounts = await db.execute(sql`
-      WITH ranked AS (
-        SELECT
-          rc.location_id, rc.species_id, rc.count, rc.survey_date, rc.survey_type,
-          l.name as refuge_name, s.code as state_code,
-          sp.slug as species_slug, sp.name as species_name,
-          l.center_point, l.metadata as location_metadata,
-          ROW_NUMBER() OVER (
-            PARTITION BY rc.location_id, rc.species_id
-            ORDER BY rc.survey_date DESC
-          ) as rn
-        FROM refuge_counts rc
-        JOIN locations l ON rc.location_id = l.id
-        JOIN states s ON l.state_id = s.id
-        JOIN species sp ON rc.species_id = sp.id
-        WHERE l.name NOT LIKE '%% - Statewide MWI'
-          AND (l.metadata->>'survey_only' IS NULL OR l.metadata->>'survey_only' = 'false')
-          ${speciesSlug ? sql`AND sp.slug = ${speciesSlug}` : sql``}
-      )
-      SELECT
-        c.location_id, c.refuge_name, c.state_code, c.species_slug, c.species_name,
-        c.count, c.survey_date, c.survey_type, c.center_point, c.location_metadata,
-        p.count as previous_count, p.survey_date as previous_date
-      FROM ranked c
-      LEFT JOIN ranked p
-        ON c.location_id = p.location_id AND c.species_id = p.species_id AND p.rn = 2
-      WHERE c.rn = 1
-      ORDER BY c.state_code, c.refuge_name
-    `)
-
-    let results = latestCounts as unknown as Array<Record<string, unknown>>
+    // Latest count per species per site, with the survey before it (survey-data.ts)
+    let results = await loadLatestCounts(db, speciesSlug)
 
     // Filter by flyway if specified
     if (flyway) {
@@ -428,42 +397,8 @@ export const refugeRoutes: FastifyPluginAsync = async (app) => {
       yearsInAverage: r.years as number,
     }))
 
-    // A monthly statewide survey's newest total against the same month in earlier years (today:
-    // LDWF, Sept 2004 on). LDWF's own reports lead with this ("well below the long-term December
-    // average"); survey-to-survey change can't say it, since the previous survey is a month back
-    // and a different stage of the season. Earlier surveys only: the newest is never in its own
-    // average. With a species picked, both sides are that species.
-    const averageRows = await db.execute(sql`
-      WITH s AS (
-        SELECT rc.location_id, rc.survey_date::date AS d, SUM(rc.count)::int AS total
-        FROM refuge_counts rc
-        JOIN species sp ON sp.id = rc.species_id
-        WHERE rc.survey_type = 'aerial_monthly'
-          ${speciesSlug ? sql`AND sp.slug = ${speciesSlug}` : sql``}
-        GROUP BY 1, 2
-      ),
-      latest AS (
-        SELECT DISTINCT ON (location_id) location_id, d, total FROM s ORDER BY location_id, d DESC
-      )
-      SELECT latest.location_id, to_char(latest.d, 'YYYY-MM-DD') AS survey_date, latest.total,
-             round(avg(h.total))::int AS avg_total, count(*)::int AS surveys,
-             min(EXTRACT(YEAR FROM h.d))::int AS first_year, max(EXTRACT(YEAR FROM h.d))::int AS last_year
-      FROM latest
-      JOIN s h ON h.location_id = latest.location_id
-        AND EXTRACT(MONTH FROM h.d) = EXTRACT(MONTH FROM latest.d)
-        AND h.d < latest.d
-      GROUP BY latest.location_id, latest.d, latest.total
-      HAVING count(*) >= ${MIN_SURVEYS_IN_AVERAGE}
-    `)
-    const surveyAverages = (averageRows as unknown as Array<Record<string, unknown>>).map(r => ({
-      locationId: r.location_id as string,
-      surveyDate: r.survey_date as string,
-      total: r.total as number,
-      avgTotal: r.avg_total as number,
-      surveysInAverage: r.surveys as number,
-      firstYear: r.first_year as number,
-      lastYear: r.last_year as number,
-    }))
+    // The newest monthly statewide survey against the same month in earlier years (survey-data.ts)
+    const surveyAverages = await loadSurveyAverages(db, speciesSlug)
 
     const result = {
       surveyZones,
