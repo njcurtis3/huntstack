@@ -1,4 +1,4 @@
-import { FastifyPluginAsync } from 'fastify'
+import type { FastifyBaseLogger, FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
 import { isConfigured, generateChatWithWebSearch } from '../lib/together.js'
 import { isEmbeddingConfigured, generateEmbedding } from '../lib/embeddings.js'
@@ -10,6 +10,8 @@ import { chatRequestSchema } from '@huntstack/shared'
 import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 import { DEFAULT_REPORT_SPECIES, getEBirdSpeciesReports, type EBirdSpeciesReport } from '../lib/ebird.js'
 import { accessLabel, accessOf } from '../lib/access.js'
+import { distanceKm, directionFrom } from '../lib/hunt-areas.js'
+import { PLACES, type Place } from '../data/places.js'
 import { loadLatestCounts, loadSurveyAverages, type SurveyAverage } from '../lib/survey-data.js'
 import { buildSiteFacts, pickSites, siteLine, stateNotes, toSummaryCounts } from '../lib/weekly-summary.js'
 import { AuthUnconfiguredError, verifyAccessTokenUser } from '../lib/supabase-auth.js'
@@ -59,7 +61,8 @@ const SPECIES_ALIASES: Record<string, string> = {
   gadwall: 'gadwall', gadwalls: 'gadwall',
   wigeon: 'american-wigeon', 'american wigeon': 'american-wigeon', baldpate: 'american-wigeon',
   shoveler: 'northern-shoveler', 'northern shoveler': 'northern-shoveler', spoonbill: 'northern-shoveler', shovelers: 'northern-shoveler',
-  canvasback: 'canvasback', canvasbacks: 'canvasback', can: 'canvasback', cans: 'canvasback',
+  // Not bare "can": "where can I hunt" was a canvasback question
+  canvasback: 'canvasback', canvasbacks: 'canvasback', cans: 'canvasback',
   redhead: 'redhead', redheads: 'redhead',
   scaup: 'scaup', bluebill: 'scaup', bluebills: 'scaup',
   'ring-necked duck': 'ring-necked-duck', ringneck: 'ring-necked-duck', ringnecks: 'ring-necked-duck', ringbill: 'ring-necked-duck',
@@ -84,6 +87,8 @@ const MIGRATION_KEYWORDS = ['migration', 'migrating', 'flying', 'counts', 'refug
 // Word starts, so "seasons", "closing" and "required" count but "relationship" isn't HIP.
 const REGULATION_PATTERN = /\b(bag|limits?\b|possession|seasons?\b|open(s|er|ers|ing)?\b|clos(e|es|ed|ing)\b|dates?\b|licen[cs]e|stamps?\b|permits?\b|hip\b|regulation|rules?\b|legal|shooting (hours|time)|steel shot|non-?toxic|youth|zones?\b|split|fees?\b|cost|price|how much|requir|allowed)/
 const LOCATION_KEYWORDS = ['where to hunt', 'where should i hunt', 'public land', 'public hunting', 'wma', 'wildlife management area', 'national forest', 'blm', 'wildlife refuge', 'hunting area', 'hunting location', 'place to hunt', 'spots to hunt']
+// "Where should I hunt?" in its many forms: answered from Where to Hunt's ranked areas
+const WHERE_TO_HUNT_PATTERN = /\bwhere\b[^?.!]{0,40}\b(hunt|go)\b|\b(best|good|top) (places?|spots?|areas?)\b|\b(places?|spots?|areas?) to hunt\b/
 const WEATHER_KEYWORDS = ['weather', 'forecast', 'temperature', 'wind', 'cold front', 'rain', 'snow', 'freeze', 'conditions', 'hunting conditions', 'front']
 // Questions about birds being somewhere now ("where are the snow geese right now?"), which ask
 // for counts and push factors without using a migration keyword.
@@ -105,6 +110,9 @@ interface ExtractedEntities {
   isRegulationQuery: boolean
   isBirdsNowQuery: boolean
   isPopulationQuery: boolean
+  isWhereToHuntQuery: boolean
+  /** A town the question is asked from ("near Amarillo"), from the Census towns file */
+  town: NamedTown | null
 }
 
 interface StructuredContext {
@@ -113,6 +121,8 @@ interface StructuredContext {
   regulations: Array<Record<string, unknown>>
   /** Current survey sites as lines like the weekly summary's, with notes per state */
   surveySites: SurveySiteContext
+  /** Where to Hunt's ranked areas (GET /api/hunt/areas), for "where should I hunt?" */
+  huntAreas: HuntAreaSummary[]
   /** Sub-state midwinter survey series per year (today: TPWD High Plains, 1997–2018) */
   midwinterHistory: Array<{ region: string; year: number; species: string | null; total: number }>
   surveyZones: SurveyZoneRow[]
@@ -163,6 +173,29 @@ async function chatUser(
   } catch (err) {
     if (err instanceof AuthUnconfiguredError) return 'unavailable'
     throw err
+  }
+}
+
+/**
+ * Where to Hunt's answer, asked of this server (the same route, cache and pre-computed default as
+ * the page). Fails open: no areas, and the chat answers without them.
+ */
+function huntAreasFetcher(app: FastifyInstance, log: FastifyBaseLogger): FetchHuntAreas {
+  return async ({ states, species }) => {
+    const params = new URLSearchParams()
+    if (states.length) params.set('states', states.join(','))
+    if (species) params.set('species', species)
+    try {
+      const res = await app.inject({ method: 'GET', url: `/api/hunt/areas${params.size ? `?${params}` : ''}` })
+      if (res.statusCode !== 200) {
+        log.warn({ status: res.statusCode }, 'chat: Where to Hunt areas unavailable')
+        return null
+      }
+      return (res.json() as { areas?: HuntAreaSummary[] }).areas ?? null
+    } catch (err) {
+      log.warn({ err }, 'chat: Where to Hunt areas failed')
+      return null
+    }
   }
 }
 
@@ -311,7 +344,7 @@ export function buildChatRoutes(deps: ChatDeps): FastifyPluginAsync {
         needsDocuments(entities)
           ? retrieveContext(message, documentFilters(entities))
           : Promise.resolve({ documents: [], sources: [] }),
-        retrieveStructuredContext(entities),
+        retrieveStructuredContext(entities, huntAreasFetcher(app, request.log)),
       ])
 
       // Step 3: Build system prompt with both context types; the model call also searches the web
@@ -408,6 +441,60 @@ export function truncateHistory(
   }))
 }
 
+/** Whether a phrase appears in lowercase text as whole words (no letter on either side) */
+function wordIn(lower: string, phrase: string): boolean {
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`(?:^|[^a-z])${escaped}(?:$|[^a-z])`).test(lower)
+}
+
+/** A Census town a question is asked from ("snow geese near Amarillo") */
+export interface NamedTown {
+  name: string
+  state: string
+  lat: number
+  lng: number
+}
+
+// "near Amarillo", "around Stuttgart", "within 2 hours of St. Charles", "outside of Lubbock"
+const TOWN_LEAD = /\b(?:near|around|close to|outside(?: of)?|from|of)\s+([a-z][a-z.' -]{1,40})/g
+// A CDP or village under this size must be in a state the question names: "of the" and "near me"
+// should not find a hamlet
+const MIN_TOWN_POPULATION = 1000
+const townIndexes = new WeakMap<readonly Place[], Map<string, Place[]>>()
+
+function townIndex(places: readonly Place[]): Map<string, Place[]> {
+  let index = townIndexes.get(places)
+  if (!index) {
+    index = new Map()
+    for (const p of places) {
+      const key = p[0].toLowerCase()
+      index.set(key, [...(index.get(key) ?? []), p])
+    }
+    townIndexes.set(places, index)
+  }
+  return index
+}
+
+/** The first town named after "near", "around", "of"...; a state the question names wins a tie */
+export function findTown(lower: string, stateCodes: string[], places: readonly Place[] = PLACES): NamedTown | null {
+  const index = townIndex(places)
+  for (const m of lower.matchAll(TOWN_LEAD)) {
+    const words = m[1].trim().split(/\s+/)
+    // Longest first: "st. charles" before "st."
+    for (let n = Math.min(4, words.length); n >= 1; n--) {
+      const name = words.slice(0, n).join(' ').replace(/[.']+$/, '')
+      const found = (index.get(name) ?? [])
+        .filter(p => stateCodes.includes(p[1]) || p[3] >= MIN_TOWN_POPULATION)
+        .sort((a, b) => Number(stateCodes.includes(b[1])) - Number(stateCodes.includes(a[1])) || b[3] - a[3])
+      if (found.length) {
+        const [townName, state, , , lat, lng] = found[0]
+        return { name: townName, state, lat, lng }
+      }
+    }
+  }
+  return null
+}
+
 export function extractEntities(query: string): ExtractedEntities {
   const lower = query.toLowerCase()
   const stateCodes = new Set<string>()
@@ -416,18 +503,15 @@ export function extractEntities(query: string): ExtractedEntities {
   // Match state names and codes (longer phrases first to avoid false positives)
   const sortedStateKeys = Object.keys(STATE_ALIASES).sort((a, b) => b.length - a.length)
   for (const alias of sortedStateKeys) {
-    // Word boundary check: alias must be surrounded by non-letter chars or string edges
-    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const re = new RegExp(`(?:^|[^a-z])${escaped}(?:$|[^a-z])`)
-    if (re.test(lower)) {
+    if (wordIn(lower, alias)) {
       stateCodes.add(STATE_ALIASES[alias])
     }
   }
 
-  // Match species names and aliases (longer phrases first)
-  const sortedSpeciesKeys = Object.keys(SPECIES_ALIASES).sort((a, b) => b.length - a.length)
-  for (const alias of sortedSpeciesKeys) {
-    if (lower.includes(alias)) {
+  // Species names and aliases as whole words, like states: a bare substring match read "Canada
+  // geese" and "American wigeon" as canvasback ("can") and "bearing" as black bear
+  for (const alias of Object.keys(SPECIES_ALIASES)) {
+    if (wordIn(lower, alias)) {
       speciesSlugs.add(SPECIES_ALIASES[alias])
     }
   }
@@ -440,8 +524,13 @@ export function extractEntities(query: string): ExtractedEntities {
   const isRegulationQuery = REGULATION_PATTERN.test(lower)
   const isBirdsNowQuery = BIRDS_NOW_PATTERN.test(lower)
   const isPopulationQuery = POPULATION_PATTERN.test(lower)
+  const isWhereToHuntQuery = WHERE_TO_HUNT_PATTERN.test(lower)
+  // "near Stuttgart": the town's state, when the question names none
+  const town = findTown(lower, [...stateCodes])
+  if (town && stateCodes.size === 0 && COVERED_STATES.includes(town.state)) stateCodes.add(town.state)
 
   return {
+    town,
     stateCodes: [...stateCodes],
     speciesSlugs: [...speciesSlugs],
     isWaterfowl,
@@ -451,6 +540,7 @@ export function extractEntities(query: string): ExtractedEntities {
     isRegulationQuery,
     isBirdsNowQuery,
     isPopulationQuery,
+    isWhereToHuntQuery,
   }
 }
 
@@ -495,6 +585,7 @@ export interface StructuredPlan {
   regulations: boolean
   refugeCounts: boolean
   locations: boolean
+  huntAreas: boolean
   weather: boolean
   pushFactors: boolean
   ebirdSightings: boolean
@@ -523,6 +614,8 @@ export function structuredPlan(e: ExtractedEntities): StructuredPlan {
     // Area lists help "where" questions; on a rules question about a state they were 15
     // refuge web pages in the sources that the answer didn't use.
     locations: e.isLocationQuery || (hasState && !rulesOnly),
+    // Where to Hunt's own ranking, so the chat and the page give the same answer
+    huntAreas: e.isWhereToHuntQuery,
     weather: e.isWeatherQuery || e.isMigrationQuery,
     pushFactors: e.isMigrationQuery || e.isWeatherQuery || birdsHere,
     // "Where are the snow geese right now?" - eBird is the freshest bird data we have; survey
@@ -596,13 +689,17 @@ async function retrieveContext(query: string, filters: ChunkFilters): Promise<{
 
 // ─── Structured context retrieval (NEW) ──────────────────────────────────────
 
-async function retrieveStructuredContext(entities: ExtractedEntities): Promise<StructuredContext> {
+/** Asks Where to Hunt for its ranked areas; null when it can't answer */
+export type FetchHuntAreas = (query: { states: string[]; species: string | null }) => Promise<HuntAreaSummary[] | null>
+
+async function retrieveStructuredContext(entities: ExtractedEntities, fetchHuntAreas?: FetchHuntAreas): Promise<StructuredContext> {
   const db = getDb()
   const result: StructuredContext = {
     seasons: [],
     licenses: [],
     regulations: [],
     surveySites: { lines: [], notes: [] },
+    huntAreas: [],
     midwinterHistory: [],
     surveyZones: [],
     locations: [],
@@ -861,6 +958,33 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
       }
     }
 
+    // ── Where to Hunt's ranked areas ─────────────────────────────────────
+    if (plan.huntAreas && fetchHuntAreas) {
+      queries.push((async () => {
+        const species = speciesSlugs.length === 1 ? speciesSlugs[0] : null
+        const { town } = entities
+        let areas: HuntAreaSummary[]
+        if (town) {
+          // Near a town: the overall best (crosses state lines: Amarillo is near NM and OK) and
+          // the town's own state's best, kept to those within reach
+          const lists = await Promise.all([
+            fetchHuntAreas({ states: [], species }),
+            fetchHuntAreas({ states: [town.state], species }),
+          ])
+          areas = areasNearTown(lists.flatMap(l => l ?? []), town)
+        } else {
+          areas = (await fetchHuntAreas({ states: stateCodes, species }) ?? []).slice(0, MAX_CHAT_AREAS)
+        }
+        if (!areas.length) return
+        result.huntAreas = areas
+        result.sources.push({
+          title: 'Where to Hunt (HuntStack)',
+          url: '/where-to-hunt',
+          snippet: 'Areas ranked by birds counted nearby, their trend, the season and the weather',
+        })
+      })())
+    }
+
     // ── Locations (public hunting areas) ────────────────────────────────
     if (plan.locations) {
       queries.push((async () => {
@@ -1070,7 +1194,11 @@ function formatStructuredContext(ctx: StructuredContext): string {
     sections.push(`## License Requirements\n${lines.join('\n')}`)
   }
 
-  // Refuge Counts
+  // Where to Hunt's areas, then refuge counts
+  if (ctx.huntAreas.length > 0) {
+    sections.push(`## Where to Hunt Ranking\nHuntStack's Where to Hunt page, best first: areas ranked by birds counted nearby, their trend, whether the season is open and the weather push. For "where should I hunt?", recommend from these in this order, name the area by its title, and suggest only the public land or open sites listed under it. Say the full list with maps is on HuntStack's Where to Hunt page. Public land means public access, not that every unit allows waterfowl hunting: tell users to check each unit's rules. Where lines give a distance from a town, they are the areas within 180 miles of it; if every one is farther than that, say the nearest birds HuntStack knows of are that far away.\n${formatHuntAreas(ctx.huntAreas)}`)
+  }
+
   const { lines: siteLines, notes: siteNotes } = ctx.surveySites
   if (siteLines.length > 0 || siteNotes.length > 0) {
     sections.push(`## Latest Bird Survey Counts\nThe newest survey at each current site (the same numbers as HuntStack's Migration page), largest first. Changes and long-term averages are already worked out: quote them as written and do not compute your own. A survey site is where birds were counted, not necessarily a place anyone may hunt: each line says what HuntStack knows about hunting access there.\n${[...siteLines, ...siteNotes.map(x => `- Note: ${x}`)].join('\n')}`)
@@ -1170,6 +1298,78 @@ const PERIOD_NAMES: Record<string, string> = {
 }
 
 /** AGFC's newest survey by zone, busiest first, each against its average for that period. */
+/** The fields of a Where to Hunt area (GET /api/hunt/areas) the chat uses */
+export interface HuntAreaSummary {
+  title: string
+  state: string
+  birds: number
+  surveyBirds: number
+  surveySites: number
+  ebirdPlaces: number
+  hunterReports: number
+  change: { percent: number } | null
+  latestDate: string | null
+  topSpecies: Array<{ name: string; count: number }>
+  season: { status: 'open' | 'closed' | 'unknown'; lines: string[] }
+  push: { score: number } | null
+  reasons: string[]
+  publicLands: Array<{ name: string; kind: string; distanceKm: number; direction: string; note: string | null }>
+  huntable: Array<{ name: string; access: string | null; accessNote: string | null }>
+  score: number
+  center: { lat: number; lng: number }
+  /** Set by areasNearTown: straight-line distance from the town the question named */
+  fromTown?: { town: string; miles: number; direction: string }
+}
+
+/** The most areas the model sees: enough to choose from, few enough to read */
+export const MAX_CHAT_AREAS = 8
+/** 180 miles, straight line: the Map's 3-hour ring */
+export const TOWN_REACH_KM = 290
+
+/**
+ * Areas within reach of a town, best first (Where to Hunt's score). With none in reach, the 3
+ * nearest, so the answer can say how far the closest birds are rather than send someone 300 miles
+ * without saying so. Duplicates (the same area from two lists) count once.
+ */
+export function areasNearTown(areas: HuntAreaSummary[], town: NamedTown, max = MAX_CHAT_AREAS): HuntAreaSummary[] {
+  const seen = new Set<string>()
+  const withDistance = areas
+    .filter(a => {
+      const key = `${a.title}|${a.state}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .map(a => {
+      const km = distanceKm(town.lat, town.lng, a.center.lat, a.center.lng)
+      const fromTown = { town: town.name, miles: Math.round(km * 0.621371), direction: directionFrom(town.lat, town.lng, a.center.lat, a.center.lng) }
+      return { area: { ...a, fromTown }, km }
+    })
+  const inReach = withDistance.filter(x => x.km <= TOWN_REACH_KM).sort((a, b) => b.area.score - a.area.score)
+  const picked = inReach.length ? inReach.slice(0, max) : withDistance.sort((a, b) => a.km - b.km).slice(0, 3)
+  return picked.map(x => x.area)
+}
+
+/** Where to Hunt's areas as numbered lines: what the page shows, in its order */
+export function formatHuntAreas(areas: HuntAreaSummary[]): string {
+  const mi = (km: number) => Math.round(km * 0.621371)
+  return areas.map((a, i) => {
+    const season = a.season.status === 'open'
+      ? `season open (${a.season.lines.join('; ')})`
+      : a.season.status === 'closed' ? 'season closed on this date' : 'season dates not in HuntStack'
+    const species = a.topSpecies.length ? `; most counted: ${a.topSpecies.slice(0, 3).map(t => `${t.name} ${t.count.toLocaleString('en-US')}`).join(', ')}` : ''
+    const lands = a.publicLands.slice(0, 3).map(l => `${l.name} (${l.kind}, ${mi(l.distanceKm)} mi ${l.direction}${l.note ? `; ${l.note}` : ''})`)
+    const open = a.huntable.map(h => `${h.name} (${accessLabel(accessOf({ access: h.access, accessNote: h.accessNote }))})`)
+    const where = [...lands, ...open]
+    const from = a.fromTown ? `; ${a.fromTown.miles} mi ${a.fromTown.direction} of ${a.fromTown.town} (straight line)` : ''
+    return [
+      `${i + 1}. ${a.title} (${a.state})${from}: ${season}; push score ${a.push?.score ?? 0}/3${species}`,
+      `   Why: ${a.reasons.join('; ')}`,
+      `   Public land or open sites: ${where.length ? where.join('; ') : 'none found nearby; check with the state agency'}`,
+    ].join('\n')
+  }).join('\n')
+}
+
 export interface SurveySiteContext {
   lines: string[]
   notes: string[]
@@ -1349,7 +1549,7 @@ Guidelines:
 - Always say which state's rules you mean, and remind users to confirm regulations with the official state agency.
 - When a question about birds, places or rules names no place, answer for the Central and Mississippi Flyways and say so. Mention other regions only briefly, if at all.
 - For where birds are now, use the survey counts (all current) and the eBird sightings. If a state's note says it has no current survey count, say so rather than describing birds there from older numbers. Call eBird numbers birder reports, not counts of birds.
-- When answering "where should I hunt?" or "are conditions good?", prioritize states with: (1) high push score, (2) arriving/building migration status, (3) high bird counts. A push score of 2–3 with arriving birds is the strongest buy signal.
+- When answering "where should I hunt?", use the Where to Hunt ranking if it is given above, in its order. Without it, or for "are conditions good?", prioritize states with: (1) high push score, (2) arriving/building migration status, (3) high bird counts. A push score of 2–3 with arriving birds is the strongest buy signal.
 - NEVER repeat or reference labels like "STRUCTURED DATA", "DOCUMENT CONTEXT" or "WEB SEARCH RESULTS" in your answer; they are internal.
 - Be conversational and specific. Format with markdown: **bold** for emphasis, numbered lists for rankings, bullet lists for details.
 

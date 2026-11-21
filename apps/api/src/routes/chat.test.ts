@@ -9,6 +9,10 @@ import {
   formatMidwinterHistory,
   formatShootingHours,
   formatEBirdSightings,
+  formatHuntAreas,
+  areasNearTown,
+  findTown,
+  type HuntAreaSummary,
   formatSurveyZones,
   needsDocuments,
   structuredPlan,
@@ -127,6 +131,8 @@ describe('extractEntities', () => {
       isRegulationQuery: false,
       isBirdsNowQuery: false,
       isPopulationQuery: false,
+      isWhereToHuntQuery: false,
+      town: null,
     })
   })
 })
@@ -469,5 +475,110 @@ describe('surveySiteContext', () => {
     const ctx = surveySiteContext(rows, [], ['OK'], [], now)
     expect(ctx.lines[0]).toMatch(/; closed to waterfowl hunting$/)
     expect(surveySiteContext(rows, [], ['MO'], [], now).lines[0]).toMatch(/; hunting access not verified by HuntStack$/)
+  })
+})
+
+describe('where-to-hunt questions', () => {
+  it('are recognised in their usual forms', () => {
+    for (const q of [
+      'Where should I hunt this weekend?',
+      'where can I go duck hunting in Arkansas',
+      'Snow geese - best places near Amarillo?',
+      'good spots to hunt mallards in Missouri',
+      'any areas to hunt teal in Louisiana?',
+    ]) {
+      expect(extractEntities(q).isWhereToHuntQuery, q).toBe(true)
+      expect(structuredPlan(extractEntities(q)).huntAreas, q).toBe(true)
+    }
+  })
+
+  it('leave other questions alone', () => {
+    for (const q of [
+      'Kansas duck bag limit',
+      'When does duck season open in Texas?',
+      'where are the snow geese right now?',
+      'what decoy spread works for mallards?',
+    ]) {
+      expect(structuredPlan(extractEntities(q)).huntAreas, q).toBe(false)
+    }
+  })
+})
+
+describe('formatHuntAreas', () => {
+  const area: HuntAreaSummary = {
+    title: 'Near Mound City, MO', state: 'MO', birds: 102989, surveyBirds: 102989, surveySites: 1,
+    ebirdPlaces: 2, hunterReports: 0, change: { percent: -6 }, latestDate: '2026-11-10',
+    topSpecies: [{ name: 'Gadwall', count: 28635 }, { name: 'Northern Pintail', count: 25135 }],
+    season: { status: 'open', lines: ['Ducks: Middle Zone'] },
+    push: { score: 2 },
+    reasons: ['102,989 ducks and geese at 1 survey site', 'Counts down 6% since the previous surveys'],
+    publicLands: [{ name: 'Bob Brown CA', kind: 'State Conservation Area', distanceKm: 16, direction: 'S', note: null }],
+    huntable: [{ name: 'Loess Bluffs NWR', access: 'limited', accessNote: 'Light geese only' }],
+    score: 9, center: { lat: 40.1, lng: -95.2 },
+  }
+
+  it('numbers the areas in order with their season, push, reasons and where to go', () => {
+    const text = formatHuntAreas([area, { ...area, title: 'Near Quincy, IL', state: 'IL', push: null, publicLands: [], huntable: [], season: { status: 'unknown', lines: [] } }])
+    expect(text).toContain('1. Near Mound City, MO (MO): season open (Ducks: Middle Zone); push score 2/3; most counted: Gadwall 28,635, Northern Pintail 25,135')
+    expect(text).toContain('Why: 102,989 ducks and geese at 1 survey site; Counts down 6% since the previous surveys')
+    expect(text).toContain('Bob Brown CA (State Conservation Area, 10 mi S)')
+    expect(text).toContain('Loess Bluffs NWR (public waterfowl hunting only in part of the area or under limits (Light geese only))')
+    expect(text).toContain('2. Near Quincy, IL (IL): season dates not in HuntStack; push score 0/3')
+    expect(text).toContain('none found nearby; check with the state agency')
+  })
+})
+
+describe('species names are whole words', () => {
+  it('does not read "can", "Canada" or "American" as canvasback', () => {
+    expect(extractEntities('Where can I go duck hunting in Missouri?').speciesSlugs).toEqual([])
+    expect(extractEntities('Can I hunt Canada geese in Kansas?').speciesSlugs).toEqual(['canada-goose'])
+    expect(extractEntities('american wigeon limit in Texas').speciesSlugs).toEqual(['american-wigeon'])
+    expect(extractEntities('bearing north, any ducks?').speciesSlugs).toEqual([])
+  })
+  it("still finds hunters' names for birds", () => {
+    expect(extractEntities('are the cans in yet?').speciesSlugs).toEqual(['canvasback'])
+    expect(extractEntities('specks near Stuttgart').speciesSlugs).toEqual(['white-fronted-goose'])
+  })
+})
+
+describe('findTown', () => {
+  it('finds a town named after near / around / of', () => {
+    expect(findTown('snow geese near amarillo?', ['TX'])).toMatchObject({ name: 'Amarillo', state: 'TX' })
+    expect(findTown('ducks within 2 hours of st. charles', [])).toMatchObject({ name: 'St. Charles' })
+    expect(findTown('where to hunt around stuttgart', [])).toMatchObject({ name: 'Stuttgart', state: 'AR' })
+  })
+  it('prefers the state the question names', () => {
+    expect(findTown('ducks near stuttgart, kansas', ['KS'])).toMatchObject({ state: 'KS' })
+  })
+  it('ignores words that are not a sizeable town', () => {
+    expect(findTown('where should i hunt this weekend', [])).toBeNull()
+    expect(findTown('best spots near me', [])).toBeNull()
+    expect(findTown('a lot of mallards', [])).toBeNull()
+  })
+  it("gives a question its town's state when it names none", () => {
+    expect(extractEntities('where should I hunt near Stuttgart?').stateCodes).toEqual(['AR'])
+  })
+})
+
+describe('areasNearTown', () => {
+  const town = { name: 'Amarillo', state: 'TX', lat: 35.198, lng: -101.833 }
+  const at = (title: string, state: string, score: number, lat: number, lng: number) => ({
+    title, state, score, center: { lat, lng }, birds: 0, surveyBirds: 0, surveySites: 0, ebirdPlaces: 0,
+    hunterReports: 0, change: null, latestDate: null, topSpecies: [], season: { status: 'open' as const, lines: [] },
+    push: null, reasons: [], publicLands: [], huntable: [],
+  })
+  it('keeps areas within 180 miles, best first, once each', () => {
+    const near = at('Near Hereford, TX', 'TX', 3, 34.82, -102.40)
+    const nearer = at('Near Canyon, TX', 'TX', 5, 34.98, -101.92)
+    const far = at('Near Sherman, TX', 'TX', 50, 33.64, -96.61)
+    const got = areasNearTown([far, near, nearer, near], town)
+    expect(got.map(a => a.title)).toEqual(['Near Canyon, TX', 'Near Hereford, TX'])
+    expect(got[0].fromTown).toMatchObject({ town: 'Amarillo', direction: 'S' })
+  })
+  it('falls back to the 3 nearest, with their distance, when none is in reach', () => {
+    const got = areasNearTown([at('Near Sherman, TX', 'TX', 50, 33.64, -96.61), at('17 mi N of Brownsville, TX', 'TX', 9, 26.15, -97.5)], town)
+    expect(got.map(a => a.title)).toEqual(['Near Sherman, TX', '17 mi N of Brownsville, TX'])
+    expect(got[0].fromTown!.miles).toBeGreaterThan(250)
+    expect(formatHuntAreas(got)).toContain(`Near Sherman, TX (TX); ${got[0].fromTown!.miles} mi ESE`.slice(0, 30))
   })
 })
