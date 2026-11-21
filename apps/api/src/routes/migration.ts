@@ -2,7 +2,8 @@ import type { FastifyBaseLogger, FastifyPluginAsync } from 'fastify'
 import { sql } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { getPushFactorsForStates, pushFactorLabel } from '../lib/weather.js'
-import { generateChatResponse, isConfigured } from '../lib/together.js'
+import { defaultModel, generateChatResponse, isConfigured } from '../lib/together.js'
+import { loadLatestSummary, saveSummary, summaryScope, type SummaryOutcome } from '../lib/summary-store.js'
 import { STATE_FLYWAY, getEBirdHotspots, packHotspots } from '../lib/ebird.js'
 import { getStateActivity, type StateSpeciesActivity } from '../lib/ebird-activity.js'
 import { BoundedCache } from '../lib/cache.js'
@@ -72,21 +73,21 @@ async function writeCheckedSummary(
   sites: SiteFact[],
   notes: string[],
   log: FastifyBaseLogger,
-): Promise<string> {
+): Promise<{ text: string; outcome: SummaryOutcome; problems: string[] }> {
   const problemsOf = (t: string) => summaryProblems(t, factsText, facts, sites)
   let text = tidySummary(await generateChatResponse(userPrompt, systemPrompt))
-  let bad = problemsOf(text)
-  if (bad.length === 0) return text
-  log.warn({ bad, text }, 'weekly summary: draft not backed by the facts, writing it again')
+  const first = problemsOf(text)
+  if (first.length === 0) return { text, outcome: 'first_draft', problems: [] }
+  log.warn({ bad: first, text }, 'weekly summary: draft not backed by the facts, writing it again')
 
   const retry = `${userPrompt}
 
-Your previous draft said things the facts do not contain: ${bad.join('; ')}. Write it again using only what the facts above say.`
+Your previous draft said things the facts do not contain: ${first.join('; ')}. Write it again using only what the facts above say.`
   text = tidySummary(await generateChatResponse(retry, systemPrompt))
-  bad = problemsOf(text)
-  if (bad.length === 0) return text
-  log.warn({ bad, text }, 'weekly summary: second draft failed the check, using the template')
-  return templateSummary(sites, notes)
+  const second = problemsOf(text)
+  if (second.length === 0) return { text, outcome: 'retry', problems: first }
+  log.warn({ bad: second, text }, 'weekly summary: second draft failed the check, using the template')
+  return { text: templateSummary(sites, notes), outcome: 'template', problems: [...first, ...second] }
 }
 
 export const migrationRoutes: FastifyPluginAsync = async (app) => {
@@ -175,15 +176,27 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
     // Explicitly parse so ?refresh=false does not bypass the cache.
     const refresh = refreshParam === true || refreshParam === 'true'
 
-    const cacheKey = `summary:${flyway || 'all'}:${species || 'all'}`
+    const cacheKey = summaryScope(flyway, species)
 
     // Return the cached summary when it is fresh, and also when a forced refresh arrives before
-    // the regeneration floor has elapsed (see REFRESH_MIN_AGE_MS).
-    const cached = getCachedSummary(cacheKey)
+    // the regeneration floor has elapsed (see REFRESH_MIN_AGE_MS). After a restart, or on another
+    // API instance, the memory cache is empty: the newest saved summary stands in for it.
+    let cached = getCachedSummary(cacheKey)
+    if (!cached) {
+      const saved = await loadLatestSummary(cacheKey, SUMMARY_TTL)
+      if (saved) {
+        cached = {
+          summary: saved.summary,
+          generatedAt: saved.generatedAt.toISOString(),
+          expiresAt: saved.generatedAt.getTime() + SUMMARY_TTL,
+        }
+        summaryCache.set(cacheKey, cached, cached.expiresAt - Date.now())
+      }
+    }
     if (cached) {
       const ageMs = Date.now() - new Date(cached.generatedAt).getTime()
       if (!refresh || ageMs < REFRESH_MIN_AGE_MS) {
-        return { ...cached, cached: true }
+        return { summary: cached.summary, generatedAt: cached.generatedAt, cached: true }
       }
     }
 
@@ -319,15 +332,21 @@ Rules:
 
 ${facts}`
 
-    const summary = await writeCheckedSummary(userPrompt, systemPrompt, facts, factLines, sites, notes, request.log)
+    const written = await writeCheckedSummary(userPrompt, systemPrompt, facts, factLines, sites, notes, request.log)
 
+    const now = new Date()
     const result: SummaryCache = {
-      summary: summary.trim(),
-      generatedAt: new Date().toISOString(),
-      expiresAt: Date.now() + SUMMARY_TTL,
+      summary: written.text.trim(),
+      generatedAt: now.toISOString(),
+      expiresAt: now.getTime() + SUMMARY_TTL,
     }
 
     summaryCache.set(cacheKey, result, SUMMARY_TTL)
+    saveSummary({
+      scope: cacheKey, flyway: flyway?.toLowerCase() || null, speciesSlug: species || null,
+      summary: result.summary, outcome: written.outcome, problems: written.problems,
+      facts, model: defaultModel(),
+    }, now)
 
     return {
       summary: result.summary,

@@ -49,6 +49,11 @@ export class LlmHttpError extends Error {
   }
 }
 
+/** The model a call without an override uses */
+export function defaultModel(): string {
+  return process.env.LLM_MODEL || DEFAULT_MODEL
+}
+
 export function isConfigured(): boolean {
   return !!apiKey()
 }
@@ -73,7 +78,7 @@ async function complete(messages: ChatMessage[], plugins?: unknown[], override?:
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: override?.model ?? (process.env.LLM_MODEL || DEFAULT_MODEL),
+      model: override?.model ?? defaultModel(),
       max_tokens: 1024,
       // Low temperature: answers are mostly dates and bag limits read from the context, where a
       // creative paraphrase is a wrong number.

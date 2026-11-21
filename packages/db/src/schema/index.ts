@@ -431,6 +431,24 @@ export const fieldReports = pgTable('field_reports', {
   activityCheck: check('field_reports_activity_check', sql`${table.activity} IS NULL OR ${table.activity} IN ('flying', 'on_water', 'in_field')`),
 }))
 
+// Every weekly migration summary the API writes (apps/api/src/lib/summary-store.ts). Raw SQL:
+// scripts/add-weekly-summaries-table.sql (row level security on, no policies).
+export const weeklySummaries = pgTable('weekly_summaries', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  scope: text('scope').notNull(), // 'summary:<flyway|all>:<species|all>'
+  flyway: text('flyway'),
+  speciesSlug: varchar('species_slug', { length: 100 }),
+  summary: text('summary').notNull(),
+  outcome: text('outcome').notNull(), // 'first_draft' | 'retry' | 'template'
+  problems: jsonb('problems').notNull().default(sql`'[]'::jsonb`),
+  facts: text('facts'),
+  model: text('model'),
+  generatedAt: timestamp('generated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  scopeGeneratedIdx: index('weekly_summaries_scope_generated_idx').on(table.scope, sql`${table.generatedAt} DESC`),
+  outcomeCheck: check('weekly_summaries_outcome_check', sql`${table.outcome} IN ('first_draft', 'retry', 'template')`),
+}))
+
 // ============================================
 // OUTFITTER SELF-SERVICE (owner claims, pending edits, inquiries, views)
 // ============================================
