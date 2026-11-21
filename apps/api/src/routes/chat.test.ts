@@ -12,7 +12,7 @@ import {
   formatSurveyZones,
   needsDocuments,
   structuredPlan,
-  surveyAgeNote,
+  surveySiteContext,
   truncateHistory,
   withAreaHint,
 } from './chat.js'
@@ -400,18 +400,6 @@ describe('snow geese right now', () => {
   })
 })
 
-describe('surveyAgeNote', () => {
-  const now = new Date('2026-10-30T12:00:00Z')
-  it('says nothing for a survey within 3 weeks', () => {
-    expect(surveyAgeNote('2026-10-20', now)).toBe('')
-    expect(surveyAgeNote(null, now)).toBe('')
-  })
-  it('marks older surveys as not current', () => {
-    expect(surveyAgeNote('2026-01-23', now)).toBe(' - 40 weeks old, not current')
-    expect(surveyAgeNote('2024-01-15', now)).toBe(' - 2+ years old, not current')
-  })
-})
-
 describe('formatEBirdSightings', () => {
   const row = (state: string, speciesName: string, places: number, topPlaces = [] as Array<{ name: string; count: number; date: string }>) => ({
     state, species: speciesName.toLowerCase(), speciesName, places, birds: 0, topPlaces,
@@ -436,5 +424,50 @@ describe('formatEBirdSightings', () => {
     ])
     expect(text).not.toContain('Mallard')
     expect(text.indexOf('Gadwall')).toBeLessThan(text.indexOf('Wigeon'))
+  })
+})
+
+describe('surveySiteContext', () => {
+  const now = new Date('2026-11-21T12:00:00Z')
+  const row = (loc: string, name: string, state: string, slug: string, count: number, date: string,
+    prev: number | null = null, prevDate: string | null = null, metadata: unknown = null) => ({
+    location_id: loc, refuge_name: name, state_code: state, species_slug: slug,
+    species_name: slug === 'mallard' ? 'Mallard' : 'Snow Goose', count, survey_date: date,
+    previous_count: prev, previous_date: prevDate, location_metadata: metadata,
+  })
+  const rows = [
+    row('a', 'Salt Plains NWR', 'OK', 'mallard', 1, '2026-10-21'),            // older than 4 weeks
+    row('b', 'Loess Bluffs NWR', 'MO', 'mallard', 20000, '2026-11-17', 26000, '2026-11-10'),
+    row('b', 'Loess Bluffs NWR', 'MO', 'snow-goose', 5000, '2026-11-17'),
+    row('c', 'Washita NWR', 'OK', 'snow-goose', 3000, '2026-11-18', null, null,
+      { access: 'closed' }),
+  ]
+
+  it('keeps only the states asked about, and says when one has no current survey', () => {
+    const ctx = surveySiteContext(rows, [], ['OK', 'LA'], [], now)
+    expect(ctx.lines).toHaveLength(1)
+    expect(ctx.lines[0]).toMatch(/^- Washita NWR \(OK\)/)
+    expect(ctx.lines.join()).not.toMatch(/Salt Plains|Loess/)
+    expect(ctx.notes).toContain('LA: no current survey count.')
+  })
+
+  it('totals a site over the species asked about, with the change worked out', () => {
+    const ctx = surveySiteContext(rows, [], [], ['mallard'], now)
+    expect(ctx.lines).toHaveLength(1)
+    expect(ctx.lines[0]).toContain('Loess Bluffs NWR (MO)')
+    expect(ctx.lines[0]).toContain('20,000 birds')
+    expect(ctx.lines[0]).toMatch(/down/)
+    expect(ctx.lines[0]).not.toContain('Snow Goose')
+  })
+
+  it('lists every state, largest site first, when no state is named', () => {
+    const ctx = surveySiteContext(rows, [], [], [], now)
+    expect(ctx.lines.map(l => l.match(/^- ([^(]+)/)![1].trim())).toEqual(['Loess Bluffs NWR', 'Washita NWR'])
+  })
+
+  it('carries what HuntStack knows about hunting access', () => {
+    const ctx = surveySiteContext(rows, [], ['OK'], [], now)
+    expect(ctx.lines[0]).toMatch(/; closed to waterfowl hunting$/)
+    expect(surveySiteContext(rows, [], ['MO'], [], now).lines[0]).toMatch(/; hunting access not verified by HuntStack$/)
   })
 })

@@ -10,6 +10,8 @@ import { chatRequestSchema } from '@huntstack/shared'
 import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 import { DEFAULT_REPORT_SPECIES, getEBirdSpeciesReports, type EBirdSpeciesReport } from '../lib/ebird.js'
 import { accessLabel, accessOf } from '../lib/access.js'
+import { loadLatestCounts, loadSurveyAverages, type SurveyAverage } from '../lib/survey-data.js'
+import { buildSiteFacts, pickSites, siteLine, stateNotes, toSummaryCounts } from '../lib/weekly-summary.js'
 import { AuthUnconfiguredError, verifyAccessTokenUser } from '../lib/supabase-auth.js'
 import { parseAdminIds, type VerifyUser } from '../lib/auth-guard.js'
 import { drizzleAccountStore, type AccountStore } from '../lib/account-store.js'
@@ -109,7 +111,8 @@ interface StructuredContext {
   seasons: Array<Record<string, unknown>>
   licenses: Array<Record<string, unknown>>
   regulations: Array<Record<string, unknown>>
-  refugeCounts: Array<Record<string, unknown>>
+  /** Current survey sites as lines like the weekly summary's, with notes per state */
+  surveySites: SurveySiteContext
   /** Sub-state midwinter survey series per year (today: TPWD High Plains, 1997–2018) */
   midwinterHistory: Array<{ region: string; year: number; species: string | null; total: number }>
   surveyZones: SurveyZoneRow[]
@@ -599,7 +602,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
     seasons: [],
     licenses: [],
     regulations: [],
-    refugeCounts: [],
+    surveySites: { lines: [], notes: [] },
     midwinterHistory: [],
     surveyZones: [],
     locations: [],
@@ -775,32 +778,18 @@ async function retrieveStructuredContext(entities: ExtractedEntities): Promise<S
 
     // ── Refuge Counts (migration data) ───────────────────────────────────
     if (plan.refugeCounts) {
+      // The Migration page's own counts and arithmetic (survey-data.ts, weekly-summary.ts), so an
+      // answer agrees with the cards. Until 2026-11-21 this was 20 rows ordered by location id with
+      // no state filter: two sites' worth, whatever the question.
       queries.push((async () => {
-        const speciesFilter = speciesSlugs.length > 0
-          ? sql`AND sp.slug IN (${sql.join(speciesSlugs.map(s => sql`${s}`), sql`, `)})`
-          : sql``
-
-        const rows = await db.execute(sql`
-          SELECT DISTINCT ON (rc.location_id, rc.species_id)
-            l.name AS refuge_name,
-            st.code AS state_code,
-            sp.name AS species_name,
-            rc.count,
-            rc.survey_date,
-            rc.survey_type,
-            rc.source_url,
-            l.metadata AS location_metadata
-          FROM refuge_counts rc
-          JOIN locations l ON rc.location_id = l.id
-          JOIN states st ON l.state_id = st.id
-          JOIN species sp ON rc.species_id = sp.id
-          WHERE l.name NOT LIKE '%% - Statewide MWI'
-            AND (l.metadata->>'survey_only') IS DISTINCT FROM 'true'
-            ${speciesFilter}
-          ORDER BY rc.location_id, rc.species_id, rc.survey_date DESC
-          LIMIT 20
-        `)
-        result.refugeCounts = rows as unknown as Array<Record<string, unknown>>
+        const one = speciesSlugs.length === 1 ? speciesSlugs[0] : undefined
+        const [rows, averages] = await Promise.all([
+          loadLatestCounts(db, one),
+          // A long-term average is a total over the species asked about: right for one species or
+          // all of them, wrong for a pick of several
+          speciesSlugs.length > 1 ? Promise.resolve([]) : loadSurveyAverages(db, one),
+        ])
+        result.surveySites = surveySiteContext(rows, averages, stateCodes, speciesSlugs)
       })())
 
       // Long-run winter numbers for a sub-state region, as context for "is this a good
@@ -1082,28 +1071,9 @@ function formatStructuredContext(ctx: StructuredContext): string {
   }
 
   // Refuge Counts
-  if (ctx.refugeCounts.length > 0) {
-    // Group by refuge for cleaner display
-    const byRefuge = new Map<string, Array<Record<string, unknown>>>()
-    for (const rc of ctx.refugeCounts) {
-      const key = rc.refuge_name as string
-      if (!byRefuge.has(key)) byRefuge.set(key, [])
-      byRefuge.get(key)!.push(rc)
-    }
-
-    const lines: string[] = []
-    for (const [refuge, counts] of byRefuge) {
-      const stateCode = counts[0].state_code
-      const surveyDate = counts[0].survey_date
-        ? new Date(counts[0].survey_date as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-        : '?'
-      const speciesList = counts
-        .map(c => `${c.species_name}: ${Number(c.count).toLocaleString()}`)
-        .join(', ')
-      const access = accessLabel(accessOf(counts[0].location_metadata))
-      lines.push(`- ${refuge} (${stateCode}, ${surveyDate}${surveyAgeNote(counts[0].survey_date as string | null, new Date())}; ${access}): ${speciesList}`)
-    }
-    sections.push(`## Latest Bird Survey Counts\nThe newest survey at each place. Counts marked as old say nothing about where birds are now. A survey site is where birds were counted, not necessarily a place anyone may hunt: each line says what HuntStack knows about hunting access there.\n${lines.join('\n')}`)
+  const { lines: siteLines, notes: siteNotes } = ctx.surveySites
+  if (siteLines.length > 0 || siteNotes.length > 0) {
+    sections.push(`## Latest Bird Survey Counts\nThe newest survey at each current site (the same numbers as HuntStack's Migration page), largest first. Changes and long-term averages are already worked out: quote them as written and do not compute your own. A survey site is where birds were counted, not necessarily a place anyone may hunt: each line says what HuntStack knows about hunting access there.\n${[...siteLines, ...siteNotes.map(x => `- Note: ${x}`)].join('\n')}`)
   }
 
   if (ctx.ebirdSightings.length > 0) {
@@ -1200,13 +1170,41 @@ const PERIOD_NAMES: Record<string, string> = {
 }
 
 /** AGFC's newest survey by zone, busiest first, each against its average for that period. */
-/** " - 9 weeks old, not current" for a survey more than 3 weeks before `now`; '' otherwise. */
-export function surveyAgeNote(surveyDate: string | null, now: Date): string {
-  if (!surveyDate) return ''
-  const days = Math.floor((now.getTime() - new Date(surveyDate).getTime()) / 86_400_000)
-  if (days <= 21) return ''
-  if (days < 365) return ` - ${Math.round(days / 7)} weeks old, not current`
-  return ` - ${Math.floor(days / 365)}+ years old, not current`
+export interface SurveySiteContext {
+  lines: string[]
+  notes: string[]
+}
+
+/**
+ * The chat's survey counts, from the Migration page's latest-count rows (loadLatestCounts): only
+ * the states and species asked about, current sites only, one line per site with its total,
+ * comparable change, long-term average and top species (weekly-summary.ts siteLine), largest first
+ * up to MAX_SITES, plus what HuntStack knows about hunting access there. A state asked about with
+ * no current site says so, so the model doesn't reach for an old count.
+ */
+export function surveySiteContext(
+  rows: Array<Record<string, unknown>>,
+  averages: SurveyAverage[],
+  stateCodes: string[],
+  speciesSlugs: string[],
+  now = new Date(),
+): SurveySiteContext {
+  const wantStates = new Set(stateCodes)
+  const wantSpecies = new Set(speciesSlugs)
+  const kept = rows.filter(r =>
+    (wantStates.size === 0 || wantStates.has(String(r.state_code))) &&
+    (wantSpecies.size === 0 || wantSpecies.has(String(r.species_slug))))
+  const metadata = new Map(kept.map(r => [String(r.location_id), r.location_metadata]))
+
+  const all = buildSiteFacts(toSummaryCounts(kept), averages, now)
+  const sites = pickSites(all)
+  const lines = sites.map(s => `${siteLine(s)}; ${accessLabel(accessOf(metadata.get(s.refugeId)))}`)
+
+  const notes = stateNotes(all)
+  for (const st of stateCodes) {
+    if (!all.some(s => s.state === st)) notes.push(`${st}: no current survey count${wantSpecies.size ? ' for this species' : ''}.`)
+  }
+  return { lines, notes }
 }
 
 /**
@@ -1350,7 +1348,7 @@ Guidelines:
 - If nothing here answers the question, say so plainly and point the user to the state wildlife agency. General hunting knowledge (gear, tactics, bird ID) is fine, but never invent dates, limits, prices or counts.
 - Always say which state's rules you mean, and remind users to confirm regulations with the official state agency.
 - When a question about birds, places or rules names no place, answer for the Central and Mississippi Flyways and say so. Mention other regions only briefly, if at all.
-- For where birds are now, use the eBird sightings and any survey counts not marked old. Call eBird numbers birder reports, not counts of birds.
+- For where birds are now, use the survey counts (all current) and the eBird sightings. If a state's note says it has no current survey count, say so rather than describing birds there from older numbers. Call eBird numbers birder reports, not counts of birds.
 - When answering "where should I hunt?" or "are conditions good?", prioritize states with: (1) high push score, (2) arriving/building migration status, (3) high bird counts. A push score of 2–3 with arriving birds is the strongest buy signal.
 - NEVER repeat or reference labels like "STRUCTURED DATA", "DOCUMENT CONTEXT" or "WEB SEARCH RESULTS" in your answer; they are internal.
 - Be conversational and specific. Format with markdown: **bold** for emphasis, numbered lists for rankings, bullet lists for details.
