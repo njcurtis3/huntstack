@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   biggestMoves, buildSiteFacts, describeChange, extractNumbers, pickSites, siteLine, stateNotes, templateSummary,
-  dropRuleTalk, toSummaryCounts, unsupportedClaims, unsupportedNumbers, type SummaryCount,
+  misattributedNumbers, siteAliases, siteFact, summaryProblems, tidySummary, toSummaryCounts,
+  unknownPlaces, unsupportedClaims, unsupportedNumbers, type Fact, type SummaryCount,
 } from './weekly-summary.js'
 
 const NOW = new Date('2026-11-19T12:00:00Z')
@@ -172,13 +175,126 @@ describe('unsupportedClaims', () => {
   })
 })
 
-describe('dropRuleTalk', () => {
+describe('tidySummary', () => {
   it('removes sentences about having no advice to give, and nothing else', () => {
-    expect(dropRuleTalk('Counts rose at Swan Lake. No hunting advice is given this week as the push scores are below 2 in all states. eBird reports rose.'))
+    expect(tidySummary('Counts rose at Swan Lake. No hunting advice is given this week as the push scores are below 2 in all states. eBird reports rose.'))
       .toBe('Counts rose at Swan Lake. eBird reports rose.')
-    expect(dropRuleTalk('With push scores of 0 and 0.5, there is no hunting advice to offer at this time.')).toBe('')
-    expect(dropRuleTalk('A cold front pushes into Kansas. Hunt the north side of Cheyenne Bottoms.'))
+    expect(tidySummary('With push scores of 0 and 0.5, there is no hunting advice to offer at this time.')).toBe('')
+    expect(tidySummary('A cold front pushes into Kansas. Hunt the north side of Cheyenne Bottoms.'))
       .toBe('A cold front pushes into Kansas. Hunt the north side of Cheyenne Bottoms.')
+  })
+
+  it('removes filler: no number and nothing moving', () => {
+    expect(tidySummary('Loess Bluffs has 102,989 birds. The current count at Loess Bluffs is notable, as it provides a snapshot of the waterfowl population at this specific site.'))
+      .toBe('Loess Bluffs has 102,989 birds.')
+    expect(tidySummary('eBird reports show waterfowl being seen at various locations.')).toBe('')
+    expect(tidySummary('Pintail numbers are building at Swan Lake.')).toBe('Pintail numbers are building at Swan Lake.')
+  })
+
+  it('keeps paragraphs and names with abbreviations whole', () => {
+    expect(tidySummary('Long Lake (St. Charles Co.) is up 333% since Oct 28.\n\nLouisiana is 51% below average.'))
+      .toBe('Long Lake (St. Charles Co.) is up 333% since Oct 28.\n\nLouisiana is 51% below average.')
+  })
+})
+
+describe('numbers in context', () => {
+  const sites = buildSiteFacts([
+    count({ refugeId: 'h', refugeName: 'Hagerman National Wildlife Refuge', state: 'TX', count: 1029, previousCount: 327, previousDate: '2026-11-03' }),
+    count({ refugeId: 'l', refugeName: 'Loess Bluffs National Wildlife Refuge', state: 'MO', count: 102989 }),
+    count({ refugeId: 's', refugeName: 'Swan Lake (Two Rivers NWR) - Mississippi River (INHS)', state: 'IL', count: 106295 }),
+  ], [], NOW)
+  const facts: Fact[] = [
+    ...sites.map(siteFact),
+    { kind: 'ebird', state: 'TX', text: '- TX: waterfowl reported at 4332 places in the last 14 days, +72% vs two weeks earlier' },
+  ]
+
+  it('accepts a number used for its own site, by any of its names', () => {
+    expect(misattributedNumbers('Hagerman NWR counted 1,029 birds.', facts)).toEqual([])
+    expect(misattributedNumbers('Swan Lake held 106,295 birds and Loess Bluffs 102,989.', facts)).toEqual([])
+    expect(misattributedNumbers('Missouri: 102,989 birds at one refuge.', facts)).toEqual([])
+  })
+
+  it("rejects one site's number given to another", () => {
+    expect(misattributedNumbers('Hagerman NWR counted 102,989 birds.', facts)).toHaveLength(1)
+  })
+
+  it('keeps eBird numbers to sentences about birder reports', () => {
+    expect(misattributedNumbers('Texas had 4,332 birds at Hagerman.', facts)).toHaveLength(1)
+    expect(misattributedNumbers('Birders reported waterfowl at 4,332 places in Texas.', facts)).toEqual([])
+  })
+
+  it('holds a sentence that names nothing to the plain check only', () => {
+    expect(misattributedNumbers('Elsewhere, counts reached 102,989.', facts)).toEqual([])
+  })
+})
+
+describe('siteAliases', () => {
+  it('gives the short names a reader uses', () => {
+    expect(siteAliases('Swan Lake (Two Rivers NWR) - Mississippi River (INHS)')).toContain('swan lake')
+    expect(siteAliases('Loess Bluffs National Wildlife Refuge')).toEqual(expect.arrayContaining(['loess bluffs nwr', 'loess bluffs']))
+  })
+})
+
+describe('unknownPlaces', () => {
+  const factsText = '- Keokuk to Nauvoo - Mississippi River (INHS) (IL): 75,450 birds\n- Loess Bluffs National Wildlife Refuge (MO): 102,989 birds\n- Cuba Island - Illinois River (INHS) (IL)'
+
+  it('catches the place the old summary invented', () => {
+    expect(unknownPlaces('Hunters should focus on the Mississippi River delta.', factsText)).toEqual(['Mississippi River delta'])
+    expect(unknownPlaces('Birds are stacking up on the Gulf Coast.', factsText)).toEqual(['Gulf Coast'])
+  })
+
+  it('allows places in the facts, their short forms, and states', () => {
+    expect(unknownPlaces('Along the Mississippi River, Keokuk to Nauvoo rose. Loess Bluffs NWR held steady. Cuba Island too.', factsText)).toEqual([])
+    expect(unknownPlaces('Louisiana and Missouri counts rose.', factsText)).toEqual([])
+  })
+
+  it('ignores capitalized words that are not places', () => {
+    expect(unknownPlaces('Northern Pintail and Greater White-fronted Goose led the November count.', factsText)).toEqual([])
+  })
+})
+
+describe('summaryProblems', () => {
+  it('collects every kind of problem, and passes a clean draft', () => {
+    const sites = buildSiteFacts([count({ refugeName: 'Swan Lake', count: 106295 })], [], NOW)
+    const facts = sites.map(siteFact)
+    const text = facts.map(f => f.text).join('\n')
+    expect(summaryProblems('Swan Lake held 106,295 birds.', text, facts, sites)).toEqual([])
+    expect(summaryProblems('', text, facts, sites)).toEqual(['an empty draft'])
+    const bad = summaryProblems('Swan Lake held 900,000 birds, above its long-term average, as did Reelfoot Lake.', text, facts, sites)
+    expect(bad).toHaveLength(3)
+  })
+})
+
+// The summary repeats three of the Migration page's card rules, since the API can't import web
+// code. If the web app changes one, this fails until the copy here is changed to match.
+describe('card rules match the web app', () => {
+  const web = (f: string) => readFileSync(resolve(import.meta.dirname, '../../../web/src/lib', f), 'utf-8')
+  const api = readFileSync(resolve(import.meta.dirname, 'weekly-summary.ts'), 'utf-8')
+  const block = (src: string, start: RegExp) => {
+    const m = src.match(start)
+    if (!m || m.index === undefined) throw new Error(`not found: ${start}`)
+    let depth = 0
+    for (let i = src.indexOf('{', m.index + m[0].length - 1); i < src.length; i++) {
+      if (src[i] === '{') depth++
+      else if (src[i] === '}' && --depth === 0) return src.slice(m.index + m[0].length, i + 1)
+    }
+    throw new Error('unclosed')
+  }
+  const bare = (s: string) => s.replace(/\/\/.*$/gm, '').replace(/\s+/g, '')
+
+  it('STATEWIDE_SURVEY', () => {
+    const re = /const STATEWIDE_SURVEY[^=]*=/
+    expect(bare(block(api, re))).toBe(bare(block(web('migrationGroups.ts'), re)))
+  })
+
+  it('SITE_COUNTS_ONLY', () => {
+    const line = (s: string) => bare(s.match(/const SITE_COUNTS_ONLY = new Set\(\[[^\]]*\]\)/)![0])
+    expect(line(api)).toBe(line(web('migrationGroups.ts')))
+  })
+
+  it('staleThresholdFor', () => {
+    const re = /function staleThresholdFor\(now: Date\): Date /
+    expect(bare(block(api, re))).toBe(bare(block(web('migrationStats.ts'), re)))
   })
 })
 

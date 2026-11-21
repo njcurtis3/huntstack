@@ -255,17 +255,173 @@ export function unsupportedClaims(summary: string, sites: SiteFact[]): string[] 
   return problems
 }
 
+// ─── Numbers in context ───────────────────────────────────────────────────────
+
+/** One line of the facts, with what it is about: a number is only good for claims about its subject */
+export interface Fact {
+  kind: 'survey' | 'ebird' | 'weather'
+  state: string
+  /** The survey site, for survey lines */
+  site?: string
+  text: string
+}
+
+export const STATE_NAMES: Record<string, string> = {
+  AL: 'Alabama', AR: 'Arkansas', CA: 'California', CO: 'Colorado', FL: 'Florida', GA: 'Georgia',
+  IA: 'Iowa', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', KS: 'Kansas', KY: 'Kentucky',
+  LA: 'Louisiana', MN: 'Minnesota', MO: 'Missouri', MS: 'Mississippi', MT: 'Montana',
+  ND: 'North Dakota', NE: 'Nebraska', NM: 'New Mexico', NV: 'Nevada', OH: 'Ohio', OK: 'Oklahoma',
+  OR: 'Oregon', SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', WA: 'Washington', WI: 'Wisconsin',
+  WY: 'Wyoming',
+}
+
+export function siteFact(s: SiteFact): Fact {
+  return { kind: 'survey', state: s.state, site: s.refugeName, text: siteLine(s) }
+}
+
+export function moveFacts(sites: SiteFact[], max = 3): Fact[] {
+  const lines = biggestMoves(sites, max)
+  return sites
+    .filter(s => s.change && s.change.now !== s.change.previous)
+    .sort((a, b) => Math.abs(b.change!.now - b.change!.previous) - Math.abs(a.change!.now - a.change!.previous))
+    .slice(0, max)
+    .map((s, i) => ({ kind: 'survey' as const, state: s.state, site: s.refugeName, text: `- ${lines[i]}` }))
+}
+
+/** "national wildlife refuge" and "NWR" are the same name to a reader */
+function normalizePlace(text: string): string {
+  return text.toLowerCase().replace(/national wildlife refuge/g, 'nwr').replace(/\s+/g, ' ')
+}
+
 /**
- * Drop sentences about the summary's own rules ("No hunting advice is given this week as the
- * push scores are below 2"). The prompt forbids them and Llama 3.3 writes them anyway.
+ * The ways a sentence names a survey site: "Swan Lake (Two Rivers NWR) - Mississippi River (INHS)"
+ * is written "Swan Lake"; "Loess Bluffs National Wildlife Refuge" may be "Loess Bluffs NWR" or
+ * "Loess Bluffs".
  */
-export function dropRuleTalk(summary: string): string {
+export function siteAliases(name: string): string[] {
+  const full = normalizePlace(name)
+  const head = full.split(' - ')[0]
+  const out = new Set([full, head, head.split(' (')[0], head.replace(/\s+nwr$/, ''), head.split(',')[0]])
+  return [...out].map(a => a.trim()).filter(a => a.length >= 4)
+}
+
+/** Split into sentences without breaking "St. Charles Co." or "Nov. 3" */
+function sentences(text: string): string[] {
+  return text.split(/(?<!\b(?:St|Co|Mt|Jan|Feb|Mar|Apr|Aug|Sep|Sept|Oct|Nov|Dec|No)\.)(?<=[.!?])\s+/)
+}
+
+function near(v: number, k: number): boolean {
+  return Math.abs(v - k) <= Math.max(0.03 * k, 0.5)
+}
+
+const EBIRD_WORDS = /ebird|birders?\b|sightings?|reported|spotted|places\b|locations\b/i
+
+/**
+ * Numbers that are in the facts, but not the facts about what the sentence is about. A sentence
+ * naming a site or a state may only use numbers from that site's or state's lines, and only a
+ * sentence about birder reports may use the eBird lines' numbers ("4,332 places in Texas" must
+ * not become "4,332 birds at Hagerman"). A sentence that names nothing is held to the plain check.
+ */
+export function misattributedNumbers(summary: string, facts: Fact[]): string[] {
+  const problems: string[] = []
+  const sites = [...new Set(facts.filter(f => f.site).map(f => f.site!))]
+  for (const sentence of sentences(summary)) {
+    const lower = normalizePlace(sentence)
+    const namedSites = sites.filter(s => siteAliases(s).some(a => lower.includes(a)))
+    const namedStates = new Set(Object.entries(STATE_NAMES)
+      .filter(([code, name]) => lower.includes(name.toLowerCase()) || new RegExp(`\\b${code}\\b`).test(sentence))
+      .map(([code]) => code))
+    // A site named in full can contain a state's name ("Louisiana - LDWF Aerial Survey"): fine
+    const aboutEbird = EBIRD_WORDS.test(sentence)
+    for (const v of extractNumbers(sentence)) {
+      if (v <= 10) continue
+      const holders = facts.filter(f => extractNumbers(f.text).some(k => near(v, k)))
+      if (holders.length === 0) continue // unsupportedNumbers reports it
+      const usable = holders.filter(f => f.kind !== 'ebird' || aboutEbird)
+      const named = namedSites.length > 0 || namedStates.size > 0
+      const fits = usable.filter(f => !named || (f.site && namedSites.includes(f.site)) || namedStates.has(f.state))
+      if (fits.length === 0) {
+        const from = holders[0].site ?? `${holders[0].state} ${holders[0].kind === 'ebird' ? 'eBird reports' : holders[0].kind}`
+        problems.push(`${v.toLocaleString('en-US')} is a number for ${from}, not for what that sentence describes`)
+      }
+    }
+  }
+  return problems
+}
+
+// ─── Place names ──────────────────────────────────────────────────────────────
+
+const PLACE_NOUNS = new Set(['lake', 'lakes', 'river', 'rivers', 'refuge', 'nwr', 'delta', 'bay', 'marsh',
+  'marshes', 'county', 'parish', 'island', 'bottoms', 'bluffs', 'club', 'area', 'reservoir', 'basin',
+  'valley', 'creek', 'slough', 'pool', 'division', 'coast', 'prairie', 'panhandle', 'plains', 'wma', 'sound',
+  'bayou', 'wetlands', 'flats', 'region'])
+const LEAD_WORDS = new Set(['the', 'at', 'in', 'on', 'near', 'along', 'from', 'of', 'and', 'while', 'with',
+  'across', 'around', 'both', 'meanwhile', 'further', 'south', 'north', 'east', 'west', 'central'])
+
+/**
+ * Place names in the text that the facts don't contain: the model wrote "the Mississippi River
+ * delta" from data that had only INHS river sites. A place is a run of capitalized words ending
+ * in, or followed by, a place word (Lake, River, Delta, NWR...); state names are always allowed.
+ */
+export function unknownPlaces(summary: string, factsText: string): string[] {
+  const facts = normalizePlace(factsText)
+  const stateNames = new Set(Object.values(STATE_NAMES).map(s => s.toLowerCase()))
+  const found = new Set<string>()
+  // A place name never runs across punctuation: "the Mississippi River, Keokuk to Nauvoo" is two
+  for (const chunk of sentences(summary).flatMap(s => s.split(/[,;:()]|\.(?=\s|$)/))) {
+    const words = chunk.replace(/["'’]/g, ' ').split(/\s+/).filter(Boolean)
+    for (let i = 0; i < words.length; i++) {
+      if (!/^[A-Z]/.test(words[i])) continue
+      let j = i
+      while (j < words.length && /^[A-Z]/.test(words[j])) j++
+      while (j < words.length && PLACE_NOUNS.has(words[j].toLowerCase())) j++ // "River delta"
+      let run = words.slice(i, j)
+      while (run.length && LEAD_WORDS.has(run[0].toLowerCase())) run = run.slice(1)
+      i = j
+      if (!run.some(w => PLACE_NOUNS.has(w.toLowerCase()))) continue
+      const place = normalizePlace(run.join(' '))
+      if (stateNames.has(place) || facts.includes(place)) continue
+      found.add(run.join(' '))
+    }
+  }
+  return [...found]
+}
+
+// ─── Tidying ──────────────────────────────────────────────────────────────────
+
+const SAYS_SOMETHING = /\d|\b(up|down|more|fewer|rose|rise|rising|fell|fall|falling|increas\w*|decreas\w*|declin\w*|drop\w*|jump\w*|doubl\w*|tripl\w*|times|below|above|higher|lower|most|largest|biggest|front|winds?|freez\w*|cold|push|arriv\w*|left|leaving|build\w*|peak\w*|gone|steady|unchanged|same|hunt\w*)\b/i
+
+/**
+ * Drop sentences that say nothing, keeping paragraphs:
+ * - about the summary's own rules ("No hunting advice is given this week as the push scores are
+ *   below 2"): the prompt forbids them and Llama 3.3 writes them anyway;
+ * - filler with no number and no movement ("The current count at Loess Bluffs is notable, as it
+ *   provides a snapshot of the waterfowl population at this specific site.").
+ */
+export function tidySummary(summary: string): string {
   return summary
-    .split(/(?<=[.!?])\s+/)
-    .filter(s => !/\b(no|not)\b[^.]*\badvice\b|\badvice\b[^.]*\b(no|not|none)\b/i.test(s))
-    .join(' ')
-    .replace(/[ \t]+\n/g, '\n')
+    .split(/\n\s*\n|\n/)
+    .map(p => sentences(p.trim())
+      .filter(s => s && !/\b(no|not)\b[^.]*\badvice\b|\badvice\b[^.]*\b(no|not|none)\b/i.test(s))
+      .filter(s => SAYS_SOMETHING.test(s))
+      .join(' '))
+    .filter(Boolean)
+    .join('\n\n')
     .trim()
+}
+
+/**
+ * Everything wrong with a draft, in words the model is shown on its retry. Empty means publish.
+ * `factsText` is the whole prompt's facts (state notes included); `facts` the lines with subjects.
+ */
+export function summaryProblems(text: string, factsText: string, facts: Fact[], sites: SiteFact[]): string[] {
+  if (!text) return ['an empty draft']
+  return [
+    ...unsupportedNumbers(text, factsText).map(v => `the number ${v.toLocaleString('en-US')}, which is not in the facts`),
+    ...misattributedNumbers(text, facts),
+    ...unsupportedClaims(text, sites),
+    ...unknownPlaces(text, factsText).map(p => `the place "${p}", which is not in the facts`),
+  ]
 }
 
 // ─── The fallback ─────────────────────────────────────────────────────────────

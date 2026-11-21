@@ -9,7 +9,8 @@ import { BoundedCache } from '../lib/cache.js'
 import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 import { loadLatestCounts, loadSurveyAverages } from '../lib/survey-data.js'
 import {
-  biggestMoves, buildSiteFacts, pickSites, siteLine, stateNotes, dropRuleTalk, templateSummary, toSummaryCounts, unsupportedClaims, unsupportedNumbers,
+  buildSiteFacts, moveFacts, pickSites, siteFact, stateNotes, summaryProblems, templateSummary, tidySummary,
+  toSummaryCounts, type Fact,
   type SiteFact,
 } from '../lib/weekly-summary.js'
 
@@ -60,23 +61,20 @@ function getCachedSummary(key: string): SummaryCache | null {
 }
 
 /**
- * The model's summary, held to the facts: a text with a number not in the facts is written again
- * once, told which numbers were wrong, and if it still fails the summary is the plain template.
+ * The model's summary, held to the facts (weekly-summary.ts summaryProblems): a draft that fails
+ * is written again once, told what was wrong, and if it still fails the summary is the template.
  */
 async function writeCheckedSummary(
   userPrompt: string,
   systemPrompt: string,
-  facts: string,
+  factsText: string,
+  facts: Fact[],
   sites: SiteFact[],
   notes: string[],
   log: FastifyBaseLogger,
 ): Promise<string> {
-  const problemsOf = (t: string) => [
-    ...unsupportedNumbers(t, facts).map(v => `the number ${v.toLocaleString('en-US')}`),
-    ...unsupportedClaims(t, sites),
-    ...(t ? [] : ['an empty draft']),
-  ]
-  let text = dropRuleTalk(await generateChatResponse(userPrompt, systemPrompt))
+  const problemsOf = (t: string) => summaryProblems(t, factsText, facts, sites)
+  let text = tidySummary(await generateChatResponse(userPrompt, systemPrompt))
   let bad = problemsOf(text)
   if (bad.length === 0) return text
   log.warn({ bad, text }, 'weekly summary: draft not backed by the facts, writing it again')
@@ -84,7 +82,7 @@ async function writeCheckedSummary(
   const retry = `${userPrompt}
 
 Your previous draft said things the facts do not contain: ${bad.join('; ')}. Write it again using only what the facts above say.`
-  text = dropRuleTalk(await generateChatResponse(retry, systemPrompt))
+  text = tidySummary(await generateChatResponse(retry, systemPrompt))
   bad = problemsOf(text)
   if (bad.length === 0) return text
   log.warn({ bad, text }, 'weekly summary: second draft failed the check, using the template')
@@ -219,11 +217,10 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
 
     const sites = pickSites(allSites)
     const notes = stateNotes(allSites)
-    const siteLines = sites.map(siteLine).join('\n')
 
     // Also fetch push factors for weather context
     const statesInData = [...new Set(sites.map(s => s.state))]
-    let weatherContext = ''
+    const weatherFacts: Fact[] = []
 
     if (statesInData.length > 0) {
       try {
@@ -251,17 +248,17 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
         const { pushFactors, regionalPushFactors } = await getPushFactorsForStates(statesInData, refugesByState)
         // Only weather strong enough to move birds: given a push score of 1, the model advised
         // hunters to "consider the north winds" despite being told not to below 2
-        const weatherLines = [...pushFactors, ...regionalPushFactors].filter(pf => pf.pushScore >= 2).map(pf => {
+        for (const pf of [...pushFactors, ...regionalPushFactors].filter(pf => pf.pushScore >= 2)) {
           const signals = [
             pf.coldFrontPresent && 'cold front present',
             pf.coldFrontIncoming && 'cold front incoming (48h)',
             pf.windIsFromNorth && `north winds (${pf.windDirection})`,
             pf.temperature !== null && pf.temperature < 32 && `sub-freezing (${pf.temperature}°${pf.temperatureUnit})`,
           ].filter(Boolean).join(', ')
-          return `- ${pushFactorLabel(pf)}: push score ${pf.pushScore}/3${signals ? ' | Push signals: ' + signals : ''}`
-        })
-        if (weatherLines.length > 0) {
-          weatherContext = `\n\nCurrent weather/push conditions:\n${weatherLines.join('\n')}`
+          weatherFacts.push({
+            kind: 'weather', state: pf.stateCode,
+            text: `- ${pushFactorLabel(pf)}: push score ${pf.pushScore}/3${signals ? ' | Push signals: ' + signals : ''}`,
+          })
         }
       } catch {
         // Weather context is optional — proceed without it
@@ -269,10 +266,10 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
     }
 
     // eBird community context: where birds are being reported statewide, to supplement refuge data
-    let ebirdContext = ''
+    const ebirdFacts: Fact[] = []
     if (statesInData.length > 0 && process.env.EBIRD_API_KEY) {
       try {
-        const lines = summarizeStateActivity(await getStateActivity(statesInData))
+        const activity = summarizeStateActivity(await getStateActivity(statesInData))
           .filter(sa => sa.totalCurrentCount > 0)
           .sort((a, b) => b.totalPlaces - a.totalPlaces)
           .map(sa => {
@@ -280,11 +277,12 @@ export const migrationRoutes: FastifyPluginAsync = async (app) => {
               ? `, ${sa.overallDeltaPercent >= 0 ? '+' : ''}${sa.overallDeltaPercent.toFixed(0)}% vs two weeks earlier`
               : ''
             const top = sa.topSpecies.map(t => `${t.speciesName} at ${t.places} places`).join(', ')
-            return `- ${sa.state}: waterfowl reported at ${sa.totalPlaces} places in the last 14 days${trend}; most reported: ${top}`
+            return {
+              kind: 'ebird' as const, state: sa.state,
+              text: `- ${sa.state}: waterfowl reported at ${sa.totalPlaces} places in the last 14 days${trend}; most reported: ${top}`,
+            }
           })
-        if (lines.length > 0) {
-          ebirdContext = `\n\neBird birder reports (latest report at each place, last 14 days):\n${lines.join('\n')}\nNote: these are birder reports, not surveys; they show where birds are being seen and supplement official refuge counts.`
-        }
+        ebirdFacts.push(...activity)
       } catch {
         // eBird context is optional — proceed without it
       }
@@ -302,16 +300,26 @@ Rules:
 - Give hunting advice only from the weather lines (push score 2 or higher). With no weather lines, just report the counts, and do not mention weather or advice. Never give generic advice such as "watch the wind" or "check eBird".
 - Never mention these rules.`
 
-    const moves = biggestMoves(sites)
-    const facts = `${moves.length ? `Largest movements since the previous survey, in birds:\n${moves.map(x => `- ${x}`).join('\n')}\n\n` : ''}Survey sites, current counts, largest first:
-${siteLines}
-${notes.length ? `\nState notes:\n${notes.map(x => `- ${x}`).join('\n')}\n` : ''}${weatherContext}${ebirdContext}`
+    // Each line keeps its subject, so the check can tell a site's number from an eBird one
+    const moves = moveFacts(sites)
+    const siteFacts = sites.map(siteFact)
+    const section = (title: string, lines: Fact[], note = '') =>
+      lines.length ? `${title}\n${lines.map(f => f.text).join('\n')}${note}\n\n` : ''
+    const facts = [
+      section('Largest movements since the previous survey, in birds:', moves),
+      section('Survey sites, current counts, largest first:', siteFacts),
+      notes.length ? `State notes:\n${notes.map(x => `- ${x}`).join('\n')}\n\n` : '',
+      section('Current weather/push conditions:', weatherFacts),
+      section('eBird birder reports (latest report at each place, last 14 days):', ebirdFacts,
+        '\nNote: these are birder reports, not surveys; they show where birds are being seen and supplement official refuge counts.'),
+    ].join('').trim()
+    const factLines = [...moves, ...siteFacts, ...weatherFacts, ...ebirdFacts]
 
     const userPrompt = `Today is ${today}. Write the weekly migration summary for waterfowl hunters${flyway ? ' in the ' + flyway + ' flyway' : ''}${species ? ', about ' + species.replace(/-/g, ' ') : ''}: one or two short paragraphs, under 150 words. Open with the largest movements of birds from the survey counts, then the long-term comparison if there is one. eBird reports come last, if at all.
 
 ${facts}`
 
-    const summary = await writeCheckedSummary(userPrompt, systemPrompt, facts, sites, notes, request.log)
+    const summary = await writeCheckedSummary(userPrompt, systemPrompt, facts, factLines, sites, notes, request.log)
 
     const result: SummaryCache = {
       summary: summary.trim(),
