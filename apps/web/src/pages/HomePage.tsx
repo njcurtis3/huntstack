@@ -25,9 +25,9 @@ export function HomePage() {
           (will-change) so the 0.3 s theme color transition never redraws the lines; a mask colored
           by a theme variable was re-rasterized on every frame of it, which made switching slow. */}
       <img src="/topo-grafton-light.svg" alt="" aria-hidden="true" decoding="async"
-        className="pointer-events-none absolute inset-0 w-full h-full object-cover [will-change:transform] opacity-[0.14] dark:opacity-0" />
+        className="pointer-events-none absolute inset-0 w-full h-full object-cover [will-change:transform] opacity-[0.3] dark:opacity-0" />
       <img src="/topo-grafton-dark.svg" alt="" aria-hidden="true" decoding="async"
-        className="pointer-events-none absolute inset-0 w-full h-full object-cover [will-change:transform] opacity-0 dark:opacity-[0.16]" />
+        className="pointer-events-none absolute inset-0 w-full h-full object-cover [will-change:transform] opacity-0 dark:opacity-[0.24]" />
       <div aria-hidden="true" className="pointer-events-none absolute inset-0"
         style={{ background: `radial-gradient(ellipse 55% 50% at 50% 50%, rgb(var(--color-bg-primary)) 0%, rgb(var(--color-bg-primary) / 0) 100%)` }} />
       <div className="relative w-full max-w-2xl mx-auto px-4 sm:px-6 py-16 flex flex-col items-center">
