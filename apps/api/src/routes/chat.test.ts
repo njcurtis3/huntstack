@@ -12,6 +12,7 @@ import {
   formatHuntAreas,
   areasNearTown,
   findTown,
+  findStates,
   type HuntAreaSummary,
   formatSurveyZones,
   needsDocuments,
@@ -556,6 +557,8 @@ describe('findTown', () => {
     expect(findTown('a lot of mallards', [])).toBeNull()
   })
   it("gives a question its town's state when it names none", () => {
+    expect(extractEntities('Best spots around Sioux City for honkers').stateCodes).toEqual(['IA'])
+    expect(extractEntities('Is Kansas City any good for geese').stateCodes).toEqual(['MO'])
     expect(extractEntities('where should I hunt near Stuttgart?').stateCodes).toEqual(['AR'])
   })
 })
@@ -580,5 +583,49 @@ describe('areasNearTown', () => {
     expect(got.map(a => a.title)).toEqual(['Near Sherman, TX', '17 mi N of Brownsville, TX'])
     expect(got[0].fromTown!.miles).toBeGreaterThan(250)
     expect(formatHuntAreas(got)).toContain(`Near Sherman, TX (TX); ${got[0].fromTown!.miles} mi ESE`.slice(0, 30))
+  })
+})
+
+describe('findStates', () => {
+  it('knows every state by name, including ones HuntStack does not cover', () => {
+    expect(findStates('Nebraska snow goose conservation order')).toEqual(['NE'])
+    expect(findStates('ducks in South Dakota or Minnesota?').sort()).toEqual(['MN', 'SD'])
+  })
+  it('does not read the shorter name inside a longer one', () => {
+    expect(findStates('West Virginia duck season')).toEqual(['WV'])
+    expect(findStates('Arkansas mallards')).toEqual(['AR'])
+  })
+  it('does not read flyways and the Mississippi River as states', () => {
+    expect(findStates('how is the Mississippi flyway looking?')).toEqual([])
+    expect(findStates('birds on the Mississippi River near Quincy')).toEqual([])
+    expect(findStates('Mississippi duck season dates')).toEqual(['MS'])
+  })
+  it('reads codes only where they cannot be an ordinary word', () => {
+    expect(findStates('is it ok to shoot hens?')).toEqual([])
+    expect(findStates('NE winds tomorrow, good for ducks?')).toEqual([])
+    expect(findStates('ducks near Enid, OK')).toEqual(['OK'])
+    expect(findStates('TX teal season')).toEqual(['TX'])
+    expect(findStates('tx teal season')).toEqual(['TX'])
+    expect(findStates('LA duck dates')).toEqual([])
+    expect(findStates('Can I shoot cans in LA?')).toEqual(['LA'])
+    expect(findStates('yes, ok, but where?')).toEqual([])
+    expect(findStates('hunting is slow, in my view')).toEqual([])
+  })
+  it('still knows the Panhandle', () => {
+    expect(findStates('snow geese in the texas panhandle')).toEqual(['TX'])
+  })
+})
+
+describe('findTown without "near"', () => {
+  it('finds a capitalized town of 10,000 or more anywhere', () => {
+    expect(findTown('Amarillo snow geese this weekend?', [])).toMatchObject({ name: 'Amarillo', state: 'TX' })
+    expect(findTown('Any ducks around Jonesboro lately', [])).toMatchObject({ name: 'Jonesboro', state: 'AR' })
+    expect(findTown('Is Kansas City any good for geese', [])).toMatchObject({ name: 'Kansas City', state: 'MO' })
+  })
+  it('ignores small towns, lower case, and towns that are common words', () => {
+    expect(findTown('amarillo snow geese', [])).toBeNull()
+    expect(findTown('Mission accomplished, where next?', [])).toBeNull()
+    expect(findTown('Normal bag limit for teal?', [])).toBeNull()
+    expect(findTown('Snow Geese In Texas', [])).toBeNull()
   })
 })

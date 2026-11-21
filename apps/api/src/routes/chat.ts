@@ -32,20 +32,56 @@ type ChatRequestBody = z.infer<typeof chatRequestSchema>
 
 // ─── Entity aliases for query matching ───────────────────────────────────────
 
-const STATE_ALIASES: Record<string, string> = {
-  texas: 'TX', tx: 'TX',
-  // Panhandle places hunters name instead of the state ("snow geese near Amarillo")
-  amarillo: 'TX', lubbock: 'TX', 'texas panhandle': 'TX', 'south plains': 'TX',
-  arkansas: 'AR', ar: 'AR',
-  louisiana: 'LA', la: 'LA',
-  'new mexico': 'NM', nm: 'NM',
-  kansas: 'KS', ks: 'KS',
-  oklahoma: 'OK', ok: 'OK',
-  colorado: 'CO', co: 'CO',
-  missouri: 'MO', mo: 'MO',
-  illinois: 'IL', iowa: 'IA',
-  montana: 'MT', mt: 'MT',
-  wyoming: 'WY', wy: 'WY',
+// Every state by name, so "ducks in Nebraska" is answered as Nebraska (eBird, the web, and saying
+// HuntStack has no seasons there) rather than as a question with no state
+const STATE_NAMES: Record<string, string> = {
+  alabama: 'AL', alaska: 'AK', arizona: 'AZ', arkansas: 'AR', california: 'CA', colorado: 'CO',
+  connecticut: 'CT', delaware: 'DE', florida: 'FL', georgia: 'GA', hawaii: 'HI', idaho: 'ID',
+  illinois: 'IL', indiana: 'IN', iowa: 'IA', kansas: 'KS', kentucky: 'KY', louisiana: 'LA',
+  maine: 'ME', maryland: 'MD', massachusetts: 'MA', michigan: 'MI', minnesota: 'MN',
+  mississippi: 'MS', missouri: 'MO', montana: 'MT', nebraska: 'NE', nevada: 'NV',
+  'new hampshire': 'NH', 'new jersey': 'NJ', 'new mexico': 'NM', 'new york': 'NY',
+  'north carolina': 'NC', 'north dakota': 'ND', ohio: 'OH', oklahoma: 'OK', oregon: 'OR',
+  pennsylvania: 'PA', 'rhode island': 'RI', 'south carolina': 'SC', 'south dakota': 'SD',
+  tennessee: 'TN', texas: 'TX', utah: 'UT', vermont: 'VT', virginia: 'VA', washington: 'WA',
+  'west virginia': 'WV', wisconsin: 'WI', wyoming: 'WY',
+}
+const STATE_CODES = new Set(Object.values(STATE_NAMES))
+// Regions hunters name instead of the state
+const REGION_ALIASES: Record<string, string> = { 'texas panhandle': 'TX', 'south plains': 'TX' }
+// Rivers and flyways named after a state are not about that state, and "Kansas City" is a town
+// (findTown gives the question its state)
+const NOT_A_STATE = /\b(mississippi|central|pacific|atlantic) flyways?\b|\bmississippi river\b|\b(kansas|oklahoma|iowa|texas|arkansas|missouri|nevada) city\b/g
+// Codes that are also words or common abbreviations ("is it ok", "NE winds", "in", "Ms."): only
+// in capitals after a comma or "in" ("Enid, OK", "teal in LA"). The rest count in capitals
+// anywhere ("TX ducks") or after a comma, and these few in lower case too, since they are no word
+const WORD_CODES = new Set(['IN', 'OR', 'ME', 'HI', 'OH', 'OK', 'ID', 'NE', 'MS', 'DE', 'MA', 'PA', 'AL', 'GA', 'MI', 'LA', 'CO', 'MO'])
+const LOWERCASE_CODES = new Set(['tx', 'nm', 'ks', 'ar', 'ia', 'wy', 'mt', 'sd', 'nd', 'mn', 'ky', 'tn', 'wi'])
+
+/** The states a question names: by name, region, or a code where it can't be an ordinary word */
+export function findStates(query: string): string[] {
+  const found = new Set<string>()
+  // Longest names first, each blanked once matched: "west virginia" is not also Virginia
+  let lower = query.toLowerCase().replace(NOT_A_STATE, ' ')
+  const names = { ...STATE_NAMES, ...REGION_ALIASES }
+  for (const name of Object.keys(names).sort((a, b) => b.length - a.length)) {
+    const re = wordRegex(name, 'g')
+    if (re.test(lower)) {
+      found.add(names[name])
+      lower = lower.replace(re, m => m.replace(/[a-z]/g, ' '))
+    }
+  }
+  for (const m of query.matchAll(/(,\s*|\bin\s+)?\b([A-Za-z]{2})\b/gi)) {
+    const code = m[2].toUpperCase()
+    if (!STATE_CODES.has(code)) continue
+    const led = !!m[1]
+    const capitals = m[2] === code
+    const counts = WORD_CODES.has(code)
+      ? capitals && led
+      : capitals || LOWERCASE_CODES.has(m[2]) || (led && m[1].includes(','))
+    if (counts) found.add(code)
+  }
+  return [...found]
 }
 
 const SPECIES_ALIASES: Record<string, string> = {
@@ -441,10 +477,14 @@ export function truncateHistory(
   }))
 }
 
-/** Whether a phrase appears in lowercase text as whole words (no letter on either side) */
-function wordIn(lower: string, phrase: string): boolean {
+/** A phrase as whole words in lowercase text (no letter on either side) */
+function wordRegex(phrase: string, flags = ''): RegExp {
   const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return new RegExp(`(?:^|[^a-z])${escaped}(?:$|[^a-z])`).test(lower)
+  return new RegExp(`(?<![a-z])${escaped}(?![a-z])`, flags)
+}
+
+function wordIn(lower: string, phrase: string): boolean {
+  return wordRegex(phrase).test(lower)
 }
 
 /** A Census town a question is asked from ("snow geese near Amarillo") */
@@ -475,20 +515,51 @@ function townIndex(places: readonly Place[]): Map<string, Place[]> {
   return index
 }
 
-/** The first town named after "near", "around", "of"...; a state the question names wins a tie */
-export function findTown(lower: string, stateCodes: string[], places: readonly Place[] = PLACES): NamedTown | null {
+// A town named without "near" ("Amarillo snow geese") must be capitalized and this big
+const MIN_BARE_TOWN_POPULATION = 10_000
+// Towns of that size whose names are also words or first names hunters write capitalized
+const TOWN_WORDS = new Set([
+  'mission', 'temple', 'victoria', 'paris', 'rogers', 'allen', 'bryan', 'tyler', 'kyle', 'keller',
+  'conway', 'sherman', 'normal', 'independence', 'liberty', 'marion', 'lawrence', 'jackson',
+  'florence', 'harrison', 'franklin', 'lincoln', 'washington', 'canyon', 'hope', 'freeport',
+  'midland', 'highland', 'grandview', 'universal city', 'the colony', 'friendswood', 'sunset',
+  'hunt', 'early', 'humble', 'rosenberg', 'converse', 'forney', 'manhattan', 'salem', 'carbondale',
+])
+
+/** The towns a lowercase name could be, best first: a state the question names, then the largest */
+function townsNamed(index: Map<string, Place[]>, name: string, stateCodes: string[], minPopulation: number): Place[] {
+  return (index.get(name) ?? [])
+    .filter(p => stateCodes.includes(p[1]) || p[3] >= minPopulation)
+    .sort((a, b) => Number(stateCodes.includes(b[1])) - Number(stateCodes.includes(a[1])) || b[3] - a[3])
+}
+
+const asTown = ([name, state, , , lat, lng]: Place): NamedTown => ({ name, state, lat, lng })
+
+/**
+ * The town a question is asked from: first one named after "near", "around", "of"... (any case,
+ * any size over MIN_TOWN_POPULATION), else a capitalized town of MIN_BARE_TOWN_POPULATION or more
+ * anywhere ("Amarillo snow geese"), not a common word (TOWN_WORDS). A state the question names
+ * wins a tie (Stuttgart, AR or KS).
+ */
+export function findTown(query: string, stateCodes: string[], places: readonly Place[] = PLACES): NamedTown | null {
   const index = townIndex(places)
-  for (const m of lower.matchAll(TOWN_LEAD)) {
+  for (const m of query.toLowerCase().matchAll(TOWN_LEAD)) {
     const words = m[1].trim().split(/\s+/)
     // Longest first: "st. charles" before "st."
     for (let n = Math.min(4, words.length); n >= 1; n--) {
-      const name = words.slice(0, n).join(' ').replace(/[.']+$/, '')
-      const found = (index.get(name) ?? [])
-        .filter(p => stateCodes.includes(p[1]) || p[3] >= MIN_TOWN_POPULATION)
-        .sort((a, b) => Number(stateCodes.includes(b[1])) - Number(stateCodes.includes(a[1])) || b[3] - a[3])
-      if (found.length) {
-        const [townName, state, , , lat, lng] = found[0]
-        return { name: townName, state, lat, lng }
+      const found = townsNamed(index, words.slice(0, n).join(' ').replace(/[.']+$/, ''), stateCodes, MIN_TOWN_POPULATION)
+      if (found.length) return asTown(found[0])
+    }
+  }
+  for (const m of query.matchAll(/[A-Z][a-z.']+(?:[ -][A-Z][a-z.']+){0,3}/g)) {
+    const words = m[0].split(' ')
+    for (let start = 0; start < words.length; start++) {
+      for (let n = words.length - start; n >= 1; n--) {
+        const name = words.slice(start, start + n).join(' ').toLowerCase().replace(/[.']+$/, '')
+        if (TOWN_WORDS.has(name) || STATE_NAMES[name]) continue
+        const found = townsNamed(index, name, stateCodes, MIN_BARE_TOWN_POPULATION)
+          .filter(p => p[3] >= MIN_BARE_TOWN_POPULATION)
+        if (found.length) return asTown(found[0])
       }
     }
   }
@@ -497,16 +568,8 @@ export function findTown(lower: string, stateCodes: string[], places: readonly P
 
 export function extractEntities(query: string): ExtractedEntities {
   const lower = query.toLowerCase()
-  const stateCodes = new Set<string>()
+  const stateCodes = new Set<string>(findStates(query))
   const speciesSlugs = new Set<string>()
-
-  // Match state names and codes (longer phrases first to avoid false positives)
-  const sortedStateKeys = Object.keys(STATE_ALIASES).sort((a, b) => b.length - a.length)
-  for (const alias of sortedStateKeys) {
-    if (wordIn(lower, alias)) {
-      stateCodes.add(STATE_ALIASES[alias])
-    }
-  }
 
   // Species names and aliases as whole words, like states: a bare substring match read "Canada
   // geese" and "American wigeon" as canvasback ("can") and "bearing" as black bear
@@ -526,8 +589,9 @@ export function extractEntities(query: string): ExtractedEntities {
   const isPopulationQuery = POPULATION_PATTERN.test(lower)
   const isWhereToHuntQuery = WHERE_TO_HUNT_PATTERN.test(lower)
   // "near Stuttgart": the town's state, when the question names none
-  const town = findTown(lower, [...stateCodes])
-  if (town && stateCodes.size === 0 && COVERED_STATES.includes(town.state)) stateCodes.add(town.state)
+  const town = findTown(query, [...stateCodes])
+  // (the towns file holds only states HuntStack has data for)
+  if (town && stateCodes.size === 0) stateCodes.add(town.state)
 
   return {
     town,
@@ -1113,7 +1177,9 @@ async function retrieveStructuredContext(entities: ExtractedEntities, fetchHuntA
             }
           }
 
-          const { pushFactors, regionalPushFactors } = await getPushFactorsForStates(targetStates, refugesByState)
+          // A state with no refuge of ours has no forecasts to score: it would read as push 0/3
+          const scored = targetStates.filter(s => refugesByState.has(s))
+          const { pushFactors, regionalPushFactors } = await getPushFactorsForStates(scored, refugesByState)
           result.pushFactors = [...pushFactors, ...regionalPushFactors].map(pf => ({
             stateCode: pf.stateCode,
             regionName: pf.regionName,

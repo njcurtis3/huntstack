@@ -22,21 +22,19 @@ from pathlib import Path
 STATES = {"TX", "NM", "KS", "OK", "AR", "LA", "MO", "IL", "IA"}
 FIPS = {"48": "TX", "35": "NM", "20": "KS", "40": "OK", "05": "AR", "22": "LA", "29": "MO", "17": "IL", "19": "IA"}
 
-# The Gazetteer's NAME ends in its legal description: "Stuttgart city", "Hayti Heights town"
+# The Gazetteer's NAME ends in its legal description: "Stuttgart city", "Hayti Heights town".
+# Removed once, in lower case only: "Kansas City city" is Kansas City (until 2026-11-21 the
+# suffix was removed repeatedly and ignoring case, which left "Kansas" and "Oklahoma")
 SUFFIX = re.compile(
     r"\s+(city|town|village|CDP|borough|municipality|city and borough|metropolitan government"
     r"|unified government|consolidated government|\(balance\))(\s+\(balance\))?$",
-    re.IGNORECASE,
 )
 
 OUT = Path(__file__).resolve().parent.parent / "apps" / "api" / "src" / "data" / "places.ts"
 
 
 def clean(name: str) -> str:
-    prev = None
-    while prev != name:
-        prev, name = name, SUFFIX.sub("", name).strip()
-    return name
+    return SUFFIX.sub("", name).strip()
 
 
 def main(gaz_path: str, est_path: str) -> None:
