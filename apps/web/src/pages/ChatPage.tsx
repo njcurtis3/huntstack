@@ -3,7 +3,7 @@ import { Send, Bot, User, Sparkles, ExternalLink, Search, MapPin, FileText, Bird
 import { Link, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { api } from '../lib/api'
-import { AccountError, getAccount, usageLine, type ChatUsage } from '../lib/account'
+import { AccountError, getAccount, streamChat, usageLine, type ChatStage, type ChatUsage } from '../lib/account'
 import { useAuthStore } from '../stores/authStore'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -100,6 +100,9 @@ export function ChatPage() {
   const [messages, setMessages] = useState<Message[]>(session.messages)
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  // The reply being written (its bubble grows), and what the server is doing before it starts
+  const [streamingId, setStreamingId] = useState<string | null>(null)
+  const [stage, setStage] = useState<ChatStage | null>(null)
   const [conversationId, setConversationId] = useState<string | undefined>(session.conversationId)
   const [suggestions, setSuggestions] = useState<string[]>(FALLBACK_SUGGESTIONS)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -133,8 +136,15 @@ export function ChatPage() {
     // Scroll only the message list. scrollIntoView also scrolled the page, which sent a phone to
     // the footer after every answer.
     const box = scrollBoxRef.current
-    if (box) box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' })
-  }, [messages, isLoading])
+    if (!box) return
+    if (streamingId) {
+      // While an answer is written, follow it only if the reader is at the bottom (scrolling up
+      // to reread stays put), and without smooth scrolling, which lags behind each new line
+      if (box.scrollHeight - box.scrollTop - box.clientHeight < 160) box.scrollTo({ top: box.scrollHeight })
+      return
+    }
+    box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' })
+  }, [messages, isLoading, streamingId])
 
   // Auto-send if ?q= param is present (deep link from Regulations/Migration pages)
   const autoSentRef = useRef(false)
@@ -216,9 +226,39 @@ export function ChatPage() {
     // sources; a second document search here repeated them and, for questions the server
     // answers without documents, listed old survey reports.
     const searchPromise = api.search(text.trim(), { type: 'all' }).catch(() => null)
-    const chatPromise = api.chat(text.trim(), conversationId, history).catch((err: Error) => ({ error: err }))
+
+    // The answer appears as it is written: the reply bubble is added with its first words and
+    // grows, at most once a frame
+    const replyId = (Date.now() + 1).toString()
+    let shown = ''
+    let pending = ''
+    let frame = 0
+    const flush = () => {
+      frame = 0
+      if (!pending) return
+      const first = !shown
+      shown += pending
+      pending = ''
+      const content = shown
+      setMessages(prev => first
+        ? [...prev, { id: replyId, role: 'assistant', content, timestamp: Date.now() }]
+        : prev.map(m => (m.id === replyId ? { ...m, content } : m)))
+      setStreamingId(replyId)
+    }
+    setStage(null)
+    const chatPromise = streamChat(text.trim(), conversationId, history, {
+      onStage: setStage,
+      onText: piece => {
+        pending += piece
+        if (!frame) frame = requestAnimationFrame(flush)
+      },
+    }).catch((err: Error) => ({ error: err }))
 
     const [searchData, chatData] = await Promise.all([searchPromise, chatPromise])
+    if (frame) cancelAnimationFrame(frame)
+    flush()
+    setStreamingId(null)
+    setStage(null)
 
     const keywordResults: SearchResult[] = searchData
       ? (searchData as { results: SearchResult[] }).results ?? []
@@ -235,7 +275,7 @@ export function ChatPage() {
       const err = chatData.error as Error
       if (err instanceof AccountError && err.code === 'chat_limit') {
         // Out of free questions: take the question back so it can be sent after signing up
-        setMessages(prev => prev.filter(m => m.id !== userMsg.id))
+        setMessages(prev => prev.filter(m => m.id !== userMsg.id && m.id !== replyId))
         setInput(text.trim())
         setLimitHit({ plan: err.usage?.plan === 'free' ? 'free' : 'visitor', message: err.message })
         if (err.usage) setUsage(err.usage)
@@ -250,6 +290,8 @@ export function ChatPage() {
       } else {
         content = 'Sorry, something went wrong. Please try again.'
       }
+      // Cut off partway: keep what was written, and say it stopped
+      if (shown) content = `${shown}\n\n*${content}*`
     } else {
       const cd = chatData as { response: string; sources: Source[]; conversationId: string; dataFreshnessNote?: string | null; usage?: ChatUsage }
       content = cd.response
@@ -265,7 +307,7 @@ export function ChatPage() {
     const usedOurData = !sources || sources.some(s => s.kind !== 'web')
 
     const assistantMsg: Message = {
-      id: (Date.now() + 1).toString(),
+      id: replyId,
       role: 'assistant',
       content,
       sources,
@@ -273,7 +315,10 @@ export function ChatPage() {
       dataFreshnessNote,
       timestamp: Date.now(),
     }
-    setMessages(prev => [...prev, assistantMsg])
+    // Replaces the streamed bubble (now complete, with its sources), or adds it
+    setMessages(prev => prev.some(m => m.id === replyId)
+      ? prev.map(m => (m.id === replyId ? assistantMsg : m))
+      : [...prev, assistantMsg])
     setIsLoading(false)
   }, [isLoading, conversationId, messages, promptAuth])
 
@@ -471,8 +516,8 @@ export function ChatPage() {
                 </div>
               ))}
 
-              {/* Typing indicator */}
-              {isLoading && (
+              {/* Typing indicator, until the answer's first words appear */}
+              {isLoading && !streamingId && (
                 <div className="flex gap-3">
                   <div className="w-8 h-8 border border-earth-300 dark:border-earth-700 rounded-md flex items-center justify-center flex-shrink-0 mt-1">
                     <Bot className="w-4 h-4 text-accent-500" />
@@ -481,6 +526,11 @@ export function ChatPage() {
                     <span className="w-2 h-2 rounded-full bg-earth-400 animate-bounce" style={{ animationDelay: '0ms' }} />
                     <span className="w-2 h-2 rounded-full bg-earth-400 animate-bounce" style={{ animationDelay: '150ms' }} />
                     <span className="w-2 h-2 rounded-full bg-earth-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                    {stage && (
+                      <span className="ml-2 text-xs" role="status" style={{ color: `rgb(var(--color-text-tertiary))` }}>
+                        {stage === 'records' ? 'Checking HuntStack’s records…' : 'Searching the web and writing…'}
+                      </span>
+                    )}
                   </div>
                 </div>
               )}

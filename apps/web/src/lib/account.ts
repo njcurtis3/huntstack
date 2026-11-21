@@ -186,6 +186,100 @@ export async function sendChat(
   return (await response.json()) as ChatResponse
 }
 
+/** What a streamed answer is doing before its text starts */
+export type ChatStage = 'records' | 'writing'
+
+export interface ChatStreamHandlers {
+  onStage?: (stage: ChatStage) => void
+  /** Each piece of the answer, as the model writes it */
+  onText?: (text: string) => void
+}
+
+/**
+ * Ask the AI and receive the answer as it is written (server-sent events). Resolves with the
+ * same ChatResponse as sendChat once the answer is complete, and throws the same AccountErrors,
+ * whether the server refuses before the answer starts (plain JSON) or fails partway (an "error"
+ * event). An API that predates streaming answers with plain JSON; that is accepted too.
+ */
+export async function streamChat(
+  message: string,
+  conversationId: string | undefined,
+  history: Array<{ role: 'user' | 'assistant'; content: string }> | undefined,
+  handlers: ChatStreamHandlers,
+): Promise<ChatResponse> {
+  const session = await getSession().catch(() => null)
+  const controller = new AbortController()
+  // Quiet for this long (no status, no text) means the answer stalled
+  const IDLE_MS = 75_000
+  let timer = setTimeout(() => controller.abort(), IDLE_MS)
+  const alive = () => {
+    clearTimeout(timer)
+    timer = setTimeout(() => controller.abort(), IDLE_MS)
+  }
+  const lost = (err: unknown) =>
+    err instanceof Error && err.name === 'AbortError'
+      ? new AccountError(0, 'Request timed out. Please check your connection and try again.')
+      : new AccountError(0, 'Could not reach HuntStack. Check your connection and try again.')
+
+  try {
+    let response: Response
+    try {
+      response = await fetch(`${API_URL}/api/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ message, conversationId, history, stream: true }),
+        signal: controller.signal,
+      })
+    } catch (err) {
+      throw lost(err)
+    }
+    if (!response.ok) throw await readError(response)
+    if (!(response.headers.get('Content-Type') ?? '').includes('text/event-stream') || !response.body) {
+      const whole = (await response.json()) as ChatResponse
+      handlers.onText?.(whole.response)
+      return whole
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let result: ChatResponse | null = null
+    const handle = (block: string) => {
+      const event = /^event: (.*)$/m.exec(block)?.[1]
+      const raw = /^data: (.*)$/m.exec(block)?.[1]
+      if (!event || raw === undefined) return
+      const data = JSON.parse(raw)
+      if (event === 'status') handlers.onStage?.(data.stage as ChatStage)
+      else if (event === 'text') handlers.onText?.(String(data.text ?? ''))
+      else if (event === 'done') result = data as ChatResponse
+      else if (event === 'error') throw new AccountError(data.statusCode ?? 500, data.message ?? 'Sorry, something went wrong.', data.code)
+    }
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        alive()
+        buffer += decoder.decode(value, { stream: true })
+        const blocks = buffer.split('\n\n')
+        buffer = blocks.pop() ?? ''
+        for (const block of blocks) handle(block)
+      }
+      if (buffer.trim()) handle(buffer)
+    } catch (err) {
+      if (err instanceof AccountError) throw err
+      throw lost(err)
+    }
+    if (!result) throw new AccountError(0, 'The answer was cut off. Please try again.')
+    return result
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /** "3 of 10 free questions used this month", or null when there is no cap */
 export function usageLine(usage: ChatUsage | undefined | null): string | null {
   if (!usage || usage.limit === null) return null

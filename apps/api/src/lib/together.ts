@@ -104,6 +104,96 @@ async function complete(messages: ChatMessage[], plugins?: unknown[], override?:
   }
 }
 
+type Annotation = { type?: string; url_citation?: { url?: string; title?: string; content?: string } }
+
+/** Called with each piece of the answer as the model writes it */
+export type OnText = (delta: string) => void
+
+/**
+ * complete(), streamed: the same request with `stream: true`, read as server-sent events. Each
+ * piece of text goes to onText as it arrives; the whole text and any web citations (OpenRouter
+ * sends them on a late chunk) come back at the end. An error before the first byte is an
+ * LlmHttpError like complete()'s; one mid-stream (OpenRouter sends `{"error": ...}`) is too.
+ */
+async function completeStream(
+  messages: ChatMessage[],
+  plugins: unknown[] | undefined,
+  override: LlmOverride | undefined,
+  onText: OnText,
+  signal?: AbortSignal,
+): Promise<{ text: string; annotations: Annotation[] }> {
+  const key = override?.apiKey ?? apiKey()
+  if (!key) throw new Error('LLM_API_KEY (or TOGETHER_API_KEY) environment variable is not set')
+  const base = override?.baseUrl ?? baseUrl()
+  const ignore = base.includes('openrouter.ai') ? ignoredProviders() : []
+  const response = await fetch(`${base}/chat/completions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: override?.model ?? defaultModel(),
+      max_tokens: 1024,
+      temperature: 0.2,
+      messages,
+      stream: true,
+      ...(plugins ? { plugins } : {}),
+      ...(ignore.length ? { provider: { ignore } } : {}),
+    }),
+    signal,
+  })
+  if (!response.ok || !response.body) {
+    throw new LlmHttpError(response.status, `Chat completion ${response.status}: ${await response.text()}`)
+  }
+
+  let text = ''
+  const annotations: Annotation[] = []
+  const handle = (line: string) => {
+    // Comments (": OPENROUTER PROCESSING") keep the connection open; [DONE] ends it
+    if (!line.startsWith('data:')) return
+    const data = line.slice(5).trim()
+    if (!data || data === '[DONE]') return
+    let chunk: {
+      error?: { code?: number; message?: string }
+      choices?: Array<{ delta?: { content?: string | null; annotations?: Annotation[] }; message?: { annotations?: Annotation[] } }>
+    }
+    try {
+      chunk = JSON.parse(data)
+    } catch {
+      return
+    }
+    if (chunk.error) {
+      throw new LlmHttpError(typeof chunk.error.code === 'number' ? chunk.error.code : 502, `Chat completion stream: ${chunk.error.message ?? 'error'}`)
+    }
+    const choice = chunk.choices?.[0]
+    const piece = choice?.delta?.content
+    if (piece) {
+      text += piece
+      onText(piece)
+    }
+    annotations.push(...(choice?.delta?.annotations ?? []), ...(choice?.message?.annotations ?? []))
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let finished = false
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) handle(line.replace(/\r$/, ''))
+    }
+    handle(buffer.trim())
+    finished = true
+  } finally {
+    // Stopped early (an error chunk, or the reader left): close the upstream request
+    if (!finished) await reader.cancel().catch(() => {})
+  }
+  return { text, annotations }
+}
+
 function buildMessages(userMessage: string, systemPrompt: string, history?: History): ChatMessage[] {
   return [
     { role: 'system', content: systemPrompt },
@@ -125,6 +215,10 @@ export async function generateChatResponse(
  * Like generateChatResponse, but OpenRouter first searches the web for the question and attaches
  * the results after the system prompt. Returns the pages it found. If the search request fails,
  * answers without it (webSearched: false) rather than failing the chat.
+ *
+ * With onText, the answer is streamed: each piece goes to onText as it is written. The fallback
+ * without the search then only happens if the search failed before any text was sent; after
+ * that the error is thrown, since the reader has already seen half an answer.
  */
 export async function generateChatWithWebSearch(
   userMessage: string,
@@ -132,28 +226,35 @@ export async function generateChatWithWebSearch(
   history: History | undefined,
   searchPrompt: string,
   override?: LlmOverride,
+  onText?: OnText,
+  signal?: AbortSignal,
 ): Promise<{ text: string; citations: WebCitation[]; webSearched: boolean }> {
   const messages = buildMessages(userMessage, systemPrompt, history)
+  let sent = false
+  const tracked: OnText | undefined = onText && (d => { sent = true; onText(d) })
+  const run = async (plugins?: unknown[]) => {
+    if (tracked) return completeStream(messages, plugins, override, tracked, signal)
+    const message = (await complete(messages, plugins, override)).choices?.[0]?.message
+    return { text: message?.content || '', annotations: message?.annotations ?? [] }
+  }
   if (isWebSearchEnabled(override)) {
     try {
-      const body = await complete(messages, [
+      const { text, annotations } = await run([
         { id: 'web', engine: 'exa', max_results: WEB_RESULTS, search_prompt: searchPrompt },
-      ], override)
-      const message = body.choices?.[0]?.message
-      return { text: message?.content || '', citations: webCitations(message?.annotations), webSearched: true }
+      ])
+      return { text, citations: webCitations(annotations), webSearched: true }
     } catch (error) {
       // A rejected own key fails the same way without the search; say so instead of retrying
       if (override && error instanceof LlmHttpError && (error.status === 401 || error.status === 402)) throw error
+      if (sent || signal?.aborted) throw error
       console.error('web search chat failed, answering without it:', error)
     }
   }
-  const body = await complete(messages, undefined, override)
-  return { text: body.choices?.[0]?.message?.content || '', citations: [], webSearched: false }
+  const { text } = await run()
+  return { text, citations: [], webSearched: false }
 }
 
-export function webCitations(
-  annotations?: Array<{ type?: string; url_citation?: { url?: string; title?: string; content?: string } }>,
-): WebCitation[] {
+export function webCitations(annotations?: Annotation[]): WebCitation[] {
   const seen = new Set<string>()
   const out: WebCitation[] = []
   for (const a of annotations ?? []) {

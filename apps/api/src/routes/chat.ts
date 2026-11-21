@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger, FastifyInstance, FastifyPluginAsync } from 'fastify'
 import { z } from 'zod'
-import { isConfigured, generateChatWithWebSearch } from '../lib/together.js'
+import { isConfigured, generateChatWithWebSearch, type OnText } from '../lib/together.js'
 import { isEmbeddingConfigured, generateEmbedding } from '../lib/embeddings.js'
 import { searchChunks, type ChunkFilters } from '../lib/retrieval.js'
 import { getDb } from '../lib/db.js'
@@ -175,6 +175,9 @@ interface StructuredContext {
 
 // ─── Route handler ───────────────────────────────────────────────────────────
 
+/** What a streamed answer is doing before its text starts: reading HuntStack's records, then writing (and searching the web) */
+export type ChatStage = 'records' | 'writing'
+
 export interface ChatDeps {
   store: AccountStore
   verifyUser: VerifyUser
@@ -262,6 +265,10 @@ export function buildChatRoutes(deps: ChatDeps): FastifyPluginAsync {
         properties: {
           message: { type: 'string', description: 'User question', minLength: 1, maxLength: 4000 },
           conversationId: { type: 'string', description: 'Optional conversation ID for context', maxLength: 200 },
+          stream: {
+            type: 'boolean',
+            description: 'Answer as server-sent events: "status" ({stage}), "text" ({text}, pieces of the answer), then "done" (the JSON body below) or "error" ({statusCode, code?, message}). Errors before the answer starts (401, 402, 503) are plain JSON as without it.',
+          },
           history: {
             type: 'array',
             description: 'Prior conversation turns (last N messages)',
@@ -304,7 +311,7 @@ export function buildChatRoutes(deps: ChatDeps): FastifyPluginAsync {
       },
     },
   }, async (request, reply) => {
-    const { message, conversationId, history } = request.body as ChatRequestBody
+    const { message, conversationId, history, stream } = request.body as ChatRequestBody
     const now = deps.now()
 
     // ─── Who is asking, and may they ask another question? ───
@@ -371,11 +378,14 @@ export function buildChatRoutes(deps: ChatDeps): FastifyPluginAsync {
       })
     }
 
-    try {
+    // The answer, start to finish. With onText the model's text is streamed as it is written (on
+    // HuntStack's key and OpenRouter keys; Claude and OpenAI keys answer in one piece)
+    const produce = async (onText?: OnText, onStatus?: (stage: ChatStage) => void, signal?: AbortSignal) => {
       // Step 1: Extract entities from the user's query
       const entities = extractEntities(message)
 
       // Step 2: Retrieve context from both sources in parallel
+      onStatus?.('records')
       const [vectorContext, structuredCtx] = await Promise.all([
         needsDocuments(entities)
           ? retrieveContext(message, documentFilters(entities))
@@ -387,15 +397,17 @@ export function buildChatRoutes(deps: ChatDeps): FastifyPluginAsync {
       // (OpenRouter's web plugin, or Claude's web search on a user's own Claude key)
       const structuredText = formatStructuredContext(structuredCtx)
       const systemPrompt = buildSystemPrompt(vectorContext, structuredText, now)
+      onStatus?.('writing')
       const { text: responseText, citations } = ownKey
         ? await chatWithUserKey(ownKey, {
             userMessage: withAreaHint(message, entities),
             systemPrompt,
             history: truncateHistory(history),
             searchPrompt: webSearchPrompt(now),
-          })
+          }, onText, signal)
         : await generateChatWithWebSearch(
             withAreaHint(message, entities), systemPrompt, truncateHistory(history), webSearchPrompt(now),
+            undefined, onText, signal,
           )
 
       // Step 4: Sources — web pages first, then HuntStack's database
@@ -430,17 +442,53 @@ export function buildChatRoutes(deps: ChatDeps): FastifyPluginAsync {
         dataFreshnessNote,
         usage: usageFor(access, used, now),
       }
-    } catch (error) {
-      // A failed answer does not use up a question
+    }
+
+    // A failed answer does not use up a question
+    const failed = async (error: unknown): Promise<{ statusCode: number; code?: string; message: string }> => {
       if (reserved) await deps.store.releaseChat(reserved.subject, reserved.period).catch(() => {})
-      if (error instanceof UserKeyError) {
-        return reply.status(502).send({ error: true, statusCode: 502, code: 'own_key_failed', message: error.message })
-      }
+      if (error instanceof UserKeyError) return { statusCode: 502, code: 'own_key_failed', message: error.message }
       app.log.error(error)
-      return reply.status(500).send({
-        error: true,
-        message: 'Failed to generate response',
-      })
+      return { statusCode: 500, message: 'Failed to generate response' }
+    }
+
+    if (!stream) {
+      try {
+        return await produce()
+      } catch (error) {
+        const { statusCode, code, message: text } = await failed(error)
+        return reply.status(statusCode).send({ error: true, statusCode, ...(code ? { code } : {}), message: text })
+      }
+    }
+
+    // Streamed: from here the status is 200 and the outcome is an event. CORS, security and
+    // rate-limit headers were already set on the reply by their hooks; carry them over.
+    reply.hijack()
+    const res = reply.raw
+    res.writeHead(200, {
+      ...(reply.getHeaders() as Record<string, string | string[] | number>),
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      // No proxy buffering, or the reader sees nothing until the end
+      'X-Accel-Buffering': 'no',
+      Connection: 'keep-alive',
+    })
+    const send = (event: string, data: unknown) => {
+      if (!res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
+    }
+    // The reader left: stop paying for the rest of the answer
+    const controller = new AbortController()
+    res.on('close', () => { if (!res.writableEnded) controller.abort() })
+    let streamed = false
+    try {
+      const body = await produce(text => { streamed = true; send('text', { text }) }, stage => send('status', { stage }), controller.signal)
+      // Claude and OpenAI keys answer in one piece
+      if (!streamed) send('text', { text: body.response })
+      send('done', body)
+    } catch (error) {
+      send('error', await failed(error))
+    } finally {
+      res.end()
     }
   })
   }

@@ -36,6 +36,8 @@ export const chatRequestSchema = z.object({
     role: z.enum(['user', 'assistant']),
     content: z.string().max(4000),
   })).max(20).optional(),
+  /** Answer as server-sent events (status, text pieces, then done) instead of one JSON body */
+  stream: z.boolean().optional(),
 })
 
 // ===========================================

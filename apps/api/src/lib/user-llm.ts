@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { generateChatWithWebSearch, LlmHttpError, type WebCitation } from './together.js'
+import { generateChatWithWebSearch, LlmHttpError, type OnText, type WebCitation } from './together.js'
 
 // Chat on a user's own AI key instead of HuntStack's. Claude (Anthropic API key) and OpenRouter
 // keys search the web the same way HuntStack's own chat does, billed to the user's account;
@@ -136,9 +136,15 @@ export interface UserChatResult {
   webSearched: boolean
 }
 
+/**
+ * Chat on the user's key. With onText, OpenRouter keys stream the answer as it is written; Claude
+ * and OpenAI keys still answer in one piece (the caller sends it whole).
+ */
 export async function chatWithUserKey(
   key: { provider: Provider; apiKey: string; model: string },
   args: UserChatArgs,
+  onText?: OnText,
+  signal?: AbortSignal,
 ): Promise<UserChatResult> {
   if (key.provider === 'anthropic') return chatClaude(key.apiKey, key.model, args)
   if (key.provider === 'openrouter') {
@@ -147,7 +153,7 @@ export async function chatWithUserKey(
         apiKey: key.apiKey,
         baseUrl: OPENROUTER_BASE,
         model: key.model,
-      })
+      }, onText, signal)
     } catch (err) {
       if (err instanceof LlmHttpError) throw friendly('openrouter', err.status, err.message)
       throw err
