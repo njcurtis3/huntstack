@@ -784,8 +784,10 @@ export default function MapPage() {
       id: 'rivers', type: 'circle', source: 'rivers',
       layout: { 'circle-sort-key': ['get', 'sort'] },
       paint: {
-        'circle-radius': ['*', ['case', ['get', 'normal'], 0.6, 1],
-          ['interpolate', ['linear'], ['zoom'], 4, ['interpolate', ['linear'], ['get', 'size'], 0, 3.5, 1, 7], 9, ['interpolate', ['linear'], ['get', 'size'], 0, 6, 1, 11]]],
+        // Zoom must be the outermost interpolate (MapLibre rejects the layer otherwise)
+        'circle-radius': ['interpolate', ['linear'], ['zoom'],
+          4, ['*', ['case', ['get', 'normal'], 0.6, 1], ['interpolate', ['linear'], ['get', 'size'], 0, 3.5, 1, 7]],
+          9, ['*', ['case', ['get', 'normal'], 0.6, 1], ['interpolate', ['linear'], ['get', 'size'], 0, 6, 1, 11]]],
         'circle-color': ['get', 'color'],
         'circle-stroke-color': paper,
         'circle-stroke-width': 1.5,
