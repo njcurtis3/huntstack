@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
-import { Check, ChevronLeft, ChevronRight, Layers, Lock, X, ExternalLink, Play, Pause, Share2 } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Layers, Lock, X, ExternalLink, Play, Pause, PanelLeftClose, PanelLeftOpen, Share2 } from 'lucide-react'
 import { api, safeHttpUrl } from '../lib/api'
 import type { HuntArea, RiverGauge } from '../lib/api'
 import { getAccount, startCheckout } from '../lib/account'
@@ -105,6 +105,8 @@ const DEFAULT_LAYERS: Record<LayerKey, boolean> = {
   lands: false, rivers: false, ebird: false, reports: false,
 }
 const LAYERS_KEY = 'huntstack-map-layers-v2'
+const SIDEBAR_KEY = 'huntstack-map-sidebar'
+
 function savedLayers(): Record<LayerKey, boolean> {
   try {
     const saved = JSON.parse(localStorage.getItem(LAYERS_KEY) ?? 'null')
@@ -357,6 +359,34 @@ export default function MapPage() {
   }
   const [selection, setSelection] = useState<Selection | null>(null)
   const [panelOpen, setPanelOpen] = useState(false) // phone: layers and legend
+  // Desktop: the left pane can be folded away (remembered), and layers + map key sit in a
+  // popover on the map instead of the pane.
+  const [sidebarOpen, setSidebarOpenState] = useState(() => {
+    try { return localStorage.getItem(SIDEBAR_KEY) !== 'closed' } catch { return true }
+  })
+  const setSidebarOpen = (open: boolean) => {
+    setSidebarOpenState(open)
+    try { localStorage.setItem(SIDEBAR_KEY, open ? 'open' : 'closed') } catch { /* not saved */ }
+  }
+  const [layersOpen, setLayersOpen] = useState(false)
+  const layersRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!layersOpen) return
+    const onDown = (e: PointerEvent) => {
+      if (layersRef.current && !layersRef.current.contains(e.target as Node)) setLayersOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setLayersOpen(false) }
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [layersOpen])
+  // Details show in the pane on desktop, so opening something unfolds it (without saving that)
+  useEffect(() => {
+    if (selection) setSidebarOpenState(true)
+  }, [selection])
 
   // Paywall: Pro (and admin) see everything; everyone else gets MAP_FREE_TAPS details a day,
   // then the map blurs behind the Subscribe card. A signed-in user's plan is unknown until their
@@ -1309,14 +1339,31 @@ export default function MapPage() {
     >
       {/* Desktop sidebar */}
       <aside
-        className="hidden md:flex md:w-80 lg:w-[22rem] shrink-0 flex-col border-r overflow-y-auto"
+        id="map-sidebar"
+        className={`hidden ${sidebarOpen ? 'md:flex' : ''} md:w-80 lg:w-[22rem] shrink-0 flex-col border-r overflow-y-auto`}
         style={{ backgroundColor: 'rgb(var(--color-bg-primary))', borderColor: 'rgb(var(--color-border-primary))' }}
       >
         <div className="p-5 border-b" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
-          <p className="eyebrow mb-1.5">Season map</p>
-          <h1 className="text-xl font-semibold tracking-tight" style={{ color: 'rgb(var(--color-text-primary))' }}>Map</h1>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="eyebrow mb-1.5">Season map</p>
+              <h1 className="text-xl font-semibold tracking-tight" style={{ color: 'rgb(var(--color-text-primary))' }}>Map</h1>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="Hide side panel"
+              aria-controls="map-sidebar"
+              aria-expanded={true}
+              title="Hide side panel"
+              className="min-h-10 min-w-10 -mr-2 -mt-1 flex items-center justify-center rounded-md shrink-0 hover:bg-earth-100 dark:hover:bg-earth-800"
+              style={{ color: 'rgb(var(--color-text-secondary))' }}
+            >
+              <PanelLeftClose className="w-5 h-5" />
+            </button>
+          </div>
           <p className="mt-1.5 text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
-            The best areas to hunt on a given day, numbered, over the season zones open that day and the survey counts. More layers under Layers.
+            The best areas to hunt on a given day, numbered, over the season zones open that day and the survey counts. More layers and the map key under the Layers button on the map.
           </p>
           <ShareView label="Share this view" className="mt-3" />
         </div>
@@ -1337,9 +1384,7 @@ export default function MapPage() {
         <div className="p-5 border-b" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
           <MigrationSummary {...summaryProps} />
         </div>
-        <div className="p-5 space-y-6">
-          <LayerToggles layers={layers} onChange={setLayers} base={base} onBase={setBase} />
-          <Legend layers={layers} />
+        <div className="p-5">
           <Note />
         </div>
       </aside>
@@ -1347,6 +1392,53 @@ export default function MapPage() {
       {/* Map */}
       <div className="relative flex-1 min-h-0">
         <div ref={containerRef} className="season-map absolute inset-0" aria-label="Map of waterfowl season zones and survey sites" role="region" />
+
+        {/* Desktop: show the folded pane, and the Layers popover */}
+        <div ref={layersRef} className="hidden md:block absolute top-3 left-3 z-10">
+          <div className="flex items-center gap-1.5">
+            {!sidebarOpen && (
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(true)}
+                aria-label="Show side panel"
+                aria-controls="map-sidebar"
+                aria-expanded={false}
+                title="Show side panel"
+                className="chip min-h-10 min-w-10 px-0 justify-center shadow-md"
+                style={{ backgroundColor: 'rgb(var(--color-bg-primary))' }}
+              >
+                <PanelLeftOpen className="w-5 h-5" />
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setLayersOpen(o => !o)}
+              aria-expanded={layersOpen}
+              aria-controls="map-layers-popover"
+              aria-label="Layers and map key"
+              title="Layers and map key"
+              className={`chip min-h-10 px-3 gap-2 shadow-md ${layersOpen ? 'chip-on' : ''}`}
+              style={layersOpen ? undefined : { backgroundColor: 'rgb(var(--color-bg-primary))' }}
+            >
+              <Layers className="w-5 h-5" />
+              <span className="text-sm">Layers</span>
+            </button>
+          </div>
+          {layersOpen && (
+            <div
+              id="map-layers-popover"
+              className="mt-2 w-80 p-4 rounded-md border shadow-lg space-y-5 overflow-y-auto"
+              style={{
+                maxHeight: 'calc(100dvh - 12rem)',
+                backgroundColor: 'rgb(var(--color-bg-primary))',
+                borderColor: 'rgb(var(--color-border-primary))',
+              }}
+            >
+              <LayerToggles layers={layers} onChange={setLayers} base={base} onBase={setBase} />
+              <Legend layers={layers} />
+            </div>
+          )}
+        </div>
 
         {/* Phone controls */}
         <div className="md:hidden absolute top-2 left-2 right-2 z-10 space-y-2">
