@@ -159,6 +159,8 @@ interface StructuredContext {
   surveySites: SurveySiteContext
   /** Where to Hunt's ranked areas (GET /api/hunt/areas), for "where should I hunt?" */
   huntAreas: HuntAreaSummary[]
+  /** The species Where to Hunt was asked about, when one (links to the map carry it) */
+  huntAreasSpecies: string | null
   /** Sub-state midwinter survey series per year (today: TPWD High Plains, 1997–2018) */
   midwinterHistory: Array<{ region: string; year: number; species: string | null; total: number }>
   surveyZones: SurveyZoneRow[]
@@ -305,6 +307,21 @@ export function buildChatRoutes(deps: ChatDeps): FastifyPluginAsync {
             },
             conversationId: { type: 'string' },
             dataFreshnessNote: { type: 'string', nullable: true },
+            // Where to Hunt's areas the answer drew on, for "Show on map" links
+            mapAreas: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  title: { type: 'string' },
+                  state: { type: 'string' },
+                  lat: { type: 'number' },
+                  lng: { type: 'number' },
+                  species: { type: 'string', nullable: true },
+                },
+              },
+            },
             usage: usageSchema,
           },
         },
@@ -440,6 +457,9 @@ export function buildChatRoutes(deps: ChatDeps): FastifyPluginAsync {
         sources: dedupedSources,
         conversationId: conversationId || generateConversationId(),
         dataFreshnessNote,
+        mapAreas: structuredCtx.huntAreas.map(a => ({
+          id: a.id, title: a.title, state: a.state, lat: a.center.lat, lng: a.center.lng, species: structuredCtx.huntAreasSpecies,
+        })),
         usage: usageFor(access, used, now),
       }
     }
@@ -812,6 +832,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities, fetchHuntA
     regulations: [],
     surveySites: { lines: [], notes: [] },
     huntAreas: [],
+    huntAreasSpecies: null,
     midwinterHistory: [],
     surveyZones: [],
     locations: [],
@@ -1089,6 +1110,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities, fetchHuntA
         }
         if (!areas.length) return
         result.huntAreas = areas
+        result.huntAreasSpecies = species
         result.sources.push({
           title: 'Where to Hunt (HuntStack)',
           url: '/where-to-hunt',
@@ -1414,6 +1436,7 @@ const PERIOD_NAMES: Record<string, string> = {
 /** AGFC's newest survey by zone, busiest first, each against its average for that period. */
 /** The fields of a Where to Hunt area (GET /api/hunt/areas) the chat uses */
 export interface HuntAreaSummary {
+  id: string
   title: string
   state: string
   birds: number

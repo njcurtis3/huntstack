@@ -147,7 +147,18 @@ export interface ChatResponse {
   sources: Array<{ title: string; url?: string; snippet: string; kind?: 'web' | 'database' }>
   conversationId: string
   dataFreshnessNote?: string | null
+  /** Where to Hunt's areas the answer drew on, for "Show on map" links */
+  mapAreas?: ChatMapArea[]
   usage?: ChatUsage
+}
+
+export interface ChatMapArea {
+  id: string
+  title: string
+  state: string
+  lat: number
+  lng: number
+  species?: string | null
 }
 
 /**

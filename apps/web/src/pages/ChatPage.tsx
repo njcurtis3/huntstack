@@ -3,7 +3,8 @@ import { Send, Bot, User, Sparkles, ExternalLink, Search, MapPin, FileText, Bird
 import { Link, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { api } from '../lib/api'
-import { AccountError, getAccount, streamChat, usageLine, type ChatStage, type ChatUsage } from '../lib/account'
+import { AccountError, getAccount, streamChat, usageLine, type ChatMapArea, type ChatStage, type ChatUsage } from '../lib/account'
+import { mapAreaLink } from '../lib/mapLink'
 import { useAuthStore } from '../stores/authStore'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -28,6 +29,8 @@ interface Message {
   sources?: Source[]
   searchResults?: SearchResult[]
   dataFreshnessNote?: string | null
+  /** Where to Hunt's areas behind the answer, linked to the map */
+  mapAreas?: ChatMapArea[]
   timestamp: number // stored as epoch for localStorage serialization
 }
 
@@ -270,6 +273,7 @@ export function ChatPage() {
     let sources: Source[] | undefined
 
     let dataFreshnessNote: string | null = null
+    let mapAreas: ChatMapArea[] | undefined
 
     if ('error' in chatData) {
       const err = chatData.error as Error
@@ -293,10 +297,11 @@ export function ChatPage() {
       // Cut off partway: keep what was written, and say it stopped
       if (shown) content = `${shown}\n\n*${content}*`
     } else {
-      const cd = chatData as { response: string; sources: Source[]; conversationId: string; dataFreshnessNote?: string | null; usage?: ChatUsage }
+      const cd = chatData as { response: string; sources: Source[]; conversationId: string; dataFreshnessNote?: string | null; mapAreas?: ChatMapArea[]; usage?: ChatUsage }
       content = cd.response
       sources = cd.sources
       dataFreshnessNote = cd.dataFreshnessNote ?? null
+      mapAreas = cd.mapAreas?.length ? cd.mapAreas : undefined
       if (cd.conversationId) setConversationId(cd.conversationId)
       if (cd.usage) setUsage(cd.usage)
     }
@@ -313,6 +318,7 @@ export function ChatPage() {
       sources,
       searchResults: usedOurData && searchResults?.length ? searchResults : undefined,
       dataFreshnessNote,
+      mapAreas,
       timestamp: Date.now(),
     }
     // Replaces the streamed bubble (now complete, with its sources), or adds it
@@ -473,6 +479,23 @@ export function ChatPage() {
                             </div>
                           </Link>
                         ))}
+                      </div>
+                    )}
+
+                    {/* Where to Hunt's areas behind the answer, each a link to the map */}
+                    {message.role === 'assistant' && message.mapAreas && (
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium" style={{ color: `rgb(var(--color-text-tertiary))` }}>Show on map:</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {message.mapAreas.map(a => (
+                            <Link key={a.id} to={mapAreaLink(a, { species: a.species })}
+                              className="text-xs rounded px-2 py-1 max-w-full inline-flex items-center gap-1 text-accent-500 hover:underline"
+                              style={{ backgroundColor: `rgb(var(--color-bg-secondary))` }}>
+                              <MapPin className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{a.title}</span>
+                            </Link>
+                          ))}
+                        </div>
                       </div>
                     )}
 

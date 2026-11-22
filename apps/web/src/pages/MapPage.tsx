@@ -3,11 +3,13 @@ import type { ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
-import { ChevronLeft, ChevronRight, Layers, Lock, X, ExternalLink, Play, Pause } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Layers, Lock, X, ExternalLink, Play, Pause, Share2 } from 'lucide-react'
 import { api, safeHttpUrl } from '../lib/api'
 import type { HuntArea } from '../lib/api'
 import { getAccount, startCheckout } from '../lib/account'
 import { MAP_FREE_TAPS, mapTapsUsed, spendMapTap } from '../lib/mapAllowance'
+import { formatMapView, parseMapSelection, parseMapView } from '../lib/mapLink'
+import type { MapView } from '../lib/mapLink'
 import { useAuthStore } from '../stores/authStore'
 import { useThemeStore } from '../stores/themeStore'
 import { oldSurveyLabel, parseCalendarDate } from '../lib/dates'
@@ -108,6 +110,20 @@ function savedLayers(): Record<LayerKey, boolean> {
   } catch { /* storage blocked: defaults */ }
   return { ...DEFAULT_LAYERS }
 }
+/** layers=areas,zones from a link; null when the link has none */
+function linkedLayers(value: string | null): Record<LayerKey, boolean> | null {
+  if (value === null) return null
+  const on = new Set(value.split(','))
+  const out = { ...DEFAULT_LAYERS }
+  for (const k of Object.keys(DEFAULT_LAYERS) as LayerKey[]) out[k] = on.has(k)
+  return out
+}
+function layersParam(layers: Record<LayerKey, boolean>): string | null {
+  const keys = Object.keys(DEFAULT_LAYERS) as LayerKey[]
+  if (keys.every(k => layers[k] === DEFAULT_LAYERS[k])) return null
+  return keys.filter(k => layers[k]).join(',')
+}
+
 type Selection =
   | { kind: 'area'; id: string }
   | { kind: 'land'; id: string }
@@ -117,6 +133,12 @@ type Selection =
   | { kind: 'hotspot'; id: string }
   | { kind: 'ebird'; id: string }
   | { kind: 'report'; id: string }
+/** Details a link can open (a hunter-report cell's id is only its place in today's list) */
+const LINKABLE: Selection['kind'][] = ['area', 'land', 'zone', 'state', 'site', 'hotspot', 'ebird']
+/** The layer each kind of details belongs to */
+const SELECTION_LAYER: Record<Selection['kind'], LayerKey> = {
+  area: 'areas', land: 'lands', zone: 'zones', state: 'flow', site: 'sites', hotspot: 'hotspots', ebird: 'ebird', report: 'reports',
+}
 
 type EbirdMap = Awaited<ReturnType<typeof api.getEbirdMap>>
 type StateSpecies = EbirdMap['stateSpecies'][number]
@@ -303,9 +325,25 @@ export default function MapPage() {
   const setDay = (d: string) => setParams(p => { const n = new URLSearchParams(p); if (d === today) n.delete('date'); else n.set('date', d); return n }, { replace: true })
   const setGroup = (g: BirdGroup) => setParams(p => { const n = new URLSearchParams(p); if (g === 'duck') n.delete('birds'); else n.set('birds', g); return n }, { replace: true })
 
+  // A linked view (lib/mapLink.ts), read once as the page opens: the camera, layers, basemap and
+  // the details to open. The address then follows what is on screen.
+  const [link] = useState(() => {
+    const sel = parseMapSelection(params.get('sel'))
+    return {
+      view: parseMapView(params.get('at')),
+      sel: sel && LINKABLE.includes(sel.kind as Selection['kind']) ? sel as Selection : null,
+      areaState: /^[A-Z]{2}$/.test(params.get('in') ?? '') ? params.get('in')! : null,
+      areaSpecies: /^[a-z-]{2,40}$/.test(params.get('sp') ?? '') ? params.get('sp')! : null,
+    }
+  })
   const { resolvedTheme } = useThemeStore()
-  const [base, setBase] = useState<Base>('map')
-  const [layers, setLayersState] = useState<Record<LayerKey, boolean>>(savedLayers)
+  const [base, setBase] = useState<Base>(() => (params.get('base') === 'satellite' ? 'satellite' : 'map'))
+  const [layers, setLayersState] = useState<Record<LayerKey, boolean>>(() => {
+    const out = linkedLayers(params.get('layers')) ?? savedLayers()
+    // What a link opens is shown, whatever this browser had turned off
+    if (link.sel) out[SELECTION_LAYER[link.sel.kind]] = true
+    return out
+  })
   const setLayers = (next: Record<LayerKey, boolean>) => {
     setLayersState(next)
     try { localStorage.setItem(LAYERS_KEY, JSON.stringify(next)) } catch { /* not saved */ }
@@ -404,7 +442,14 @@ export default function MapPage() {
   // "Go to a town"
   const [focus, setFocus] = useState<FocusPlace | null>(null)
   const [ringMi, setRingMi] = useState<number>(120)
-  const areas = useMemo((): HuntArea[] => areasQ.data?.areas ?? [], [areasQ.data])
+  // A linked area that isn't one of the map's own pins (Where to Hunt and Ask AI list more than
+  // the top 3 per state), kept for the day it was found on
+  const [linkedArea, setLinkedArea] = useState<{ day: string; area: HuntArea } | null>(null)
+  const areas = useMemo((): HuntArea[] => {
+    const own = areasQ.data?.areas ?? []
+    if (!linkedArea || linkedArea.day !== areasDay || own.some(a => a.id === linkedArea.area.id)) return own
+    return [...own, linkedArea.area]
+  }, [areasQ.data, linkedArea, areasDay])
 
   const ebirdQ = useQuery({
     queryKey: ['map-ebird'],
@@ -516,6 +561,7 @@ export default function MapPage() {
   const mapRef = useRef<maplibregl.Map | null>(null)
   const [styleReady, setStyleReady] = useState(0) // bumps each time a style finishes loading
   const [installed, setInstalled] = useState(0) // bumps each time our layers are added to a style
+  const [view, setView] = useState<MapView | null>(null) // the camera once the map has loaded, for the address
   // Read by the layer setup, which runs on style.load rather than when these change
   const themeRef = useRef(resolvedTheme)
   themeRef.current = resolvedTheme
@@ -528,10 +574,14 @@ export default function MapPage() {
     if (!containerRef.current) return
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: styleUrl('map', themeRef.current),
-      bounds: ZONE_BOUNDS,
-      // Room for the phone's floating control bar
-      fitBoundsOptions: { padding: window.innerWidth < 768 ? { top: 72, bottom: 16, left: 12, right: 12 } : 24 },
+      style: styleUrl(baseRef.current, themeRef.current),
+      ...(link.view
+        ? { center: [link.view.lng, link.view.lat] as [number, number], zoom: link.view.zoom }
+        : {
+          bounds: ZONE_BOUNDS,
+          // Room for the phone's floating control bar
+          fitBoundsOptions: { padding: window.innerWidth < 768 ? { top: 72, bottom: 16, left: 12, right: 12 } : 24 },
+        }),
       attributionControl: false,
       dragRotate: false,
       pitchWithRotate: false,
@@ -555,9 +605,16 @@ export default function MapPage() {
     // Compact credits open themselves on load; start them closed so they don't cover the map
     map.once('load', () => {
       containerRef.current?.querySelector('.maplibregl-compact-show')?.classList.remove('maplibregl-compact-show')
+      // From here on the address follows the camera
+      const record = () => {
+        const c = map.getCenter()
+        setView({ lat: c.lat, lng: c.lng, zoom: map.getZoom() })
+      }
+      map.on('moveend', record)
+      if (link.view) record()
     })
     mapRef.current = map
-    appliedStyle.current = styleUrl('map', themeRef.current)
+    appliedStyle.current = styleUrl(baseRef.current, themeRef.current)
     return () => {
       map.remove()
       mapRef.current = null
@@ -890,26 +947,88 @@ export default function MapPage() {
   }, [focus, ringMi])
 
   // "?zone=LA-East" (the Regulations page's "Show on map"): open that zone once its shape is in
+  const [zoneLink] = useState(() => (link.sel ? null : params.get('zone')))
+  const [linkPending, setLinkPending] = useState(() => !!(zoneLink || link.sel))
   const zoneLinked = useRef(false)
   useEffect(() => {
     const map = mapRef.current
-    const id = params.get('zone')
+    const id = zoneLink
     if (zoneLinked.current || !map || !installed || !zones || !id) return
     zoneLinked.current = true
+    setLinkPending(false)
     const f = zones.features.find(z => z.properties.id === id)
     if (!f) return
     setSelection({ kind: 'zone', id })
     const pts = (f.geometry.type === 'Polygon' ? [f.geometry.coordinates] : f.geometry.coordinates).flat(2) as number[][]
     const lngs = pts.map(c => c[0]); const lats = pts.map(c => c[1])
     map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 40, duration: 0 })
-  }, [params, installed, zones])
+  }, [zoneLink, installed, zones])
+
+  // "?sel=kind:id": open those details once the plan is known (so the free-tap count applies).
+  // A Where to Hunt area that isn't one of the map's pins is asked for from the list it came
+  // from (its state, and species if any) and added as an extra pin for that day.
+  const [linkNote, setLinkNote] = useState<string | null>(null)
+  const selLinked = useRef(false)
+  useEffect(() => {
+    const sel = link.sel
+    const map = mapRef.current
+    if (selLinked.current || !sel || !map || !installed || !planKnown) return
+    if (sel.kind === 'zone' && !zones) return
+    if (sel.kind === 'area' && !areasQ.isSuccess && !areasQ.isError) return
+    selLinked.current = true
+    const show = (a: HuntArea) => {
+      openDetailsRef.current('area', a.id)
+      if (!link.view) map.jumpTo({ center: [a.center.lng, a.center.lat], zoom: Math.max(map.getZoom(), 8) })
+    }
+    if (sel.kind !== 'area') {
+      openDetailsRef.current(sel.kind, sel.id)
+      setLinkPending(false)
+      return
+    }
+    const own = areas.find(a => a.id === sel.id)
+    if (own) { show(own); setLinkPending(false); return }
+    const missing = () => {
+      setLinkNote("That area isn't among the areas for this date. The numbered pins are today's best.")
+      setLinkPending(false)
+    }
+    if (!link.areaState) { missing(); return }
+    const linkDay = areasDay
+    api.getHuntAreas({ date: linkDay, states: link.areaState, species: link.areaSpecies ?? undefined })
+      .then(res => {
+        const found = res.areas.find(a => a.id === sel.id)
+        if (!found) { missing(); return }
+        setLinkedArea({ day: linkDay, area: found })
+        show(found)
+        setLinkPending(false)
+      })
+      .catch(missing)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [installed, planKnown, zones, areasQ.isSuccess, areasQ.isError])
+
+  // The address follows what is on screen (replace, so Back leaves the map rather than undoing
+  // each pan). The open details are written only after a linked one has been opened.
+  useEffect(() => {
+    const n = new URLSearchParams(params)
+    const put = (k: string, v: string | null) => { if (v === null) n.delete(k); else n.set(k, v) }
+    if (view) put('at', formatMapView(view))
+    put('layers', layersParam(layers))
+    put('base', base === 'satellite' ? 'satellite' : null)
+    if (!linkPending) {
+      const sel = selection && LINKABLE.includes(selection.kind) ? `${selection.kind}:${selection.id}` : null
+      if (sel !== n.get('sel')) { n.delete('in'); n.delete('sp') }
+      put('sel', sel)
+      n.delete('zone')
+    }
+    if (n.toString() !== params.toString()) setParams(n, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, layers, base, selection, linkPending])
 
   // Where to Hunt's areas for the chosen day
   useEffect(() => {
     const map = mapRef.current
     if (!map || !map.getSource('areas')) return
     ;(map.getSource('areas') as maplibregl.GeoJSONSource).setData(pointFc(areas.map(a => ({
-      lng: a.center.lng, lat: a.center.lat, props: { id: a.id, rank: a.stateRank },
+      lng: a.center.lng, lat: a.center.lat, props: { id: a.id, rank: Math.min(20, a.stateRank) },
     }))))
   }, [areas, installed])
 
@@ -981,9 +1100,10 @@ export default function MapPage() {
   const openDetails = (kind: Selection['kind'], id: string) => {
     const gate = gateRef.current
     if (gate.walled) return
-    // Tapping the thing already open is not a new tap
+    // Tapping the thing already open is not a new tap, and anything opened earlier today (a
+    // reload of a linked view, Back to the map) is free again: spendMapTap remembers the ids
     if (gate.metered && gate.selectionId !== `${kind}:${id}`) {
-      const spent = spendMapTap()
+      const spent = spendMapTap(`${kind}:${id}`)
       setTapsUsed(spent.used)
       if (!spent.allowed) {
         setWallHit(true)
@@ -1139,6 +1259,7 @@ export default function MapPage() {
           <p className="mt-1.5 text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
             The best areas to hunt on a given day, numbered, over the season zones open that day and the survey counts. More layers under Layers.
           </p>
+          <ShareView label="Share this view" className="mt-3" />
         </div>
         <div className="p-5 space-y-6 border-b" style={{ borderColor: 'rgb(var(--color-border-primary))' }}>
           <GroupChips group={group} onChange={setGroup} />
@@ -1191,6 +1312,7 @@ export default function MapPage() {
               className="p-4 rounded-md border shadow-lg space-y-5 max-h-[60dvh] overflow-y-auto"
               style={{ backgroundColor: 'rgb(var(--color-bg-primary))', borderColor: 'rgb(var(--color-border-primary))' }}
             >
+              <ShareView label="Share this view" />
               <GoToPlace focus={focus} onFocus={setFocus} ringMi={ringMi} onRing={setRingMi} areas={areas} onPickArea={id => openDetails('area', id)} />
               <SeasonScrubber day={day} onChange={setDay} playing={playing} onPlay={togglePlay} />
               <ComingUp zones={zones} seasons={seasons} group={group} day={day} onPick={d => { setPlaying(false); setDay(d) }} />
@@ -1213,6 +1335,22 @@ export default function MapPage() {
               {loadError ? 'Season zones could not be loaded. Try again in a minute.'
                 : seasonsQ.isLoading ? 'Loading season dates…'
                   : `Season dates for ${year}-${String((year + 1) % 100).padStart(2, '0')} aren't in yet.`}
+            </div>
+          </div>
+        )}
+
+        {/* A link to an area that isn't there any more */}
+        {linkNote && !(loadError || noSeasonData || seasonsQ.isLoading) && (
+          <div className="absolute left-1/2 -translate-x-1/2 bottom-8 md:bottom-auto md:top-3 z-10 w-max max-w-[calc(100%-1.5rem)]">
+            <div
+              className="flex items-start gap-2 pl-3 pr-1 py-1 rounded-md border shadow-md text-sm"
+              style={{ backgroundColor: 'rgb(var(--color-bg-primary))', borderColor: 'rgb(var(--color-border-primary))', color: 'rgb(var(--color-text-secondary))' }}
+              role="status"
+            >
+              <span className="py-1.5">{linkNote}</span>
+              <button type="button" onClick={() => setLinkNote(null)} aria-label="Dismiss" className="min-h-9 min-w-9 flex items-center justify-center rounded-md shrink-0 hover:bg-earth-100 dark:hover:bg-earth-800">
+                <X className="w-4 h-4" />
+              </button>
             </div>
           </div>
         )}
@@ -1711,8 +1849,39 @@ function DetailsFrame({ children, onClose, footer }: { children: ReactNode; onCl
         <X className="w-5 h-5" />
       </button>
       {children}
+      <ShareView label="Share this" className="mt-4" />
       {footer}
     </div>
+  )
+}
+
+/** Shares the address, which holds the view (lib/mapLink.ts): the phone's share sheet where
+ *  there is one, else a copy to the clipboard */
+function ShareView({ label, className = '' }: { label: string; className?: string }) {
+  const [copied, setCopied] = useState<'yes' | 'failed' | null>(null)
+  useEffect(() => {
+    if (!copied) return
+    const t = setTimeout(() => setCopied(null), 2500)
+    return () => clearTimeout(t)
+  }, [copied])
+  const share = async () => {
+    const url = window.location.href
+    const touch = window.matchMedia?.('(pointer: coarse)').matches
+    if (touch && navigator.share) {
+      try { await navigator.share({ title: 'HuntStack map', url }); return } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') return
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied('yes')
+    } catch { setCopied('failed') }
+  }
+  return (
+    <button type="button" onClick={share} className={`btn-outline text-xs px-3 py-1.5 min-h-9 ${className}`}>
+      {copied === 'yes' ? <Check className="w-3.5 h-3.5 mr-1.5" /> : <Share2 className="w-3.5 h-3.5 mr-1.5" />}
+      <span aria-live="polite">{copied === 'yes' ? 'Link copied' : copied === 'failed' ? 'Copy the address bar to share' : label}</span>
+    </button>
   )
 }
 

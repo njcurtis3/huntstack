@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   Loader2, Crosshair, TrendingUp, TrendingDown, Minus,
   CheckCircle2, XCircle, AlertCircle, Wind,
-  MapPin, Navigation, X as XIcon, ArrowUpDown, HelpCircle, Ban, Map as MapIcon, ChevronDown,
+  MapPin, Navigation, X as XIcon, ArrowUpDown, HelpCircle, Ban, Map as MapIcon, ChevronDown, ExternalLink,
 } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { api, type HuntArea, type HuntAreaLand, type HuntAreaPlace } from '../lib/api'
 import { parseCalendarDate } from '../lib/dates'
+import { mapAreaLink } from '../lib/mapLink'
 
 function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371
@@ -147,9 +148,11 @@ function AreaSummaryLine({ area }: { area: HuntArea }) {
   )
 }
 
-function AreaCard({ area, place, distMi, open, onToggle }: {
+function AreaCard({ area, place, distMi, open, onToggle, mapHref }: {
   /** place: the area's position in the Best order (the API's list order), kept when sorted by distance */
   area: HuntArea; place: number; distMi: number | null; open: boolean; onToggle: () => void
+  /** HuntStack's Map, centered on this area with its details open */
+  mapHref: string
 }) {
   const [showAll, setShowAll] = useState(false)
   const panelId = `area-${area.id}-details`
@@ -195,17 +198,28 @@ function AreaCard({ area, place, distMi, open, onToggle }: {
               </p>
               {!open && <AreaSummaryLine area={area} />}
             </div>
-            <a
-              href={mapsUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={e => e.stopPropagation()}
-              className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1 flex-shrink-0"
-              aria-label={`Open ${area.title} in Google Maps (new tab)`}
-            >
-              <MapIcon className="w-3.5 h-3.5" />
-              Map
-            </a>
+            <div className="flex flex-col items-stretch gap-1.5 flex-shrink-0">
+              <Link
+                to={mapHref}
+                onClick={e => e.stopPropagation()}
+                className="btn-secondary text-xs px-3 py-1.5 flex items-center justify-center gap-1"
+                aria-label={`Show ${area.title} on the HuntStack map`}
+              >
+                <MapIcon className="w-3.5 h-3.5" />
+                On map
+              </Link>
+              <a
+                href={mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={e => e.stopPropagation()}
+                className="btn-outline text-xs px-3 py-1.5 flex items-center justify-center gap-1"
+                aria-label={`Open ${area.title} in Google Maps (new tab)`}
+              >
+                Google
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
           </div>
         </div>
       </div>
@@ -691,7 +705,8 @@ export function WhereToHuntPage() {
             <div>
               {displayAreas.map(({ area, place, distMi }) => (
                 <AreaCard key={area.id} area={area} place={place} distMi={distMi}
-                  open={openAreas.has(area.id)} onToggle={() => toggleArea(area.id)} />
+                  open={openAreas.has(area.id)} onToggle={() => toggleArea(area.id)}
+                  mapHref={mapAreaLink(area, { date: searchParams.get('date') ?? undefined, species: searchParams.get('species') })} />
               ))}
             </div>
             <p className="text-xs mt-4" style={muted}>

@@ -507,7 +507,7 @@ describe('where-to-hunt questions', () => {
 
 describe('formatHuntAreas', () => {
   const area: HuntAreaSummary = {
-    title: 'Near Mound City, MO', state: 'MO', birds: 102989, surveyBirds: 102989, surveySites: 1,
+    id: 'loess-bluffs', title: 'Near Mound City, MO', state: 'MO', birds: 102989, surveyBirds: 102989, surveySites: 1,
     ebirdPlaces: 2, hunterReports: 0, change: { percent: -6 }, latestDate: '2026-11-10',
     topSpecies: [{ name: 'Gadwall', count: 28635 }, { name: 'Northern Pintail', count: 25135 }],
     season: { status: 'open', lines: ['Ducks: Middle Zone'] },
@@ -566,7 +566,7 @@ describe('findTown', () => {
 describe('areasNearTown', () => {
   const town = { name: 'Amarillo', state: 'TX', lat: 35.198, lng: -101.833 }
   const at = (title: string, state: string, score: number, lat: number, lng: number) => ({
-    title, state, score, center: { lat, lng }, birds: 0, surveyBirds: 0, surveySites: 0, ebirdPlaces: 0,
+    id: title, title, state, score, center: { lat, lng }, birds: 0, surveyBirds: 0, surveySites: 0, ebirdPlaces: 0,
     hunterReports: 0, change: null, latestDate: null, topSpecies: [], season: { status: 'open' as const, lines: [] },
     push: null, reasons: [], publicLands: [], huntable: [],
   })
