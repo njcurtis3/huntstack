@@ -139,12 +139,6 @@ export const LOCATION_TYPES = [
   'private',
 ] as const
 
-// Priority states for MVP
-export const MVP_STATES = {
-  bigGame: ['CO', 'MT', 'WY', 'ID', 'NM'],
-  waterfowl: ['AR', 'LA', 'TX', 'SD', 'ND'],
-}
-
 // ===========================================
 // Helper Functions
 // ===========================================

@@ -15,7 +15,9 @@ import {
   type SiteFact,
 } from '../lib/weekly-summary.js'
 
-const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
+// The states HuntStack covers: the default for push factors and statewide eBird activity
+// (Illinois and Iowa were missing, so the map's Migration Index and the Migration page left them out)
+const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO', 'IL', 'IA']
 
 // Approximate state centroids (latitude) for N→S ordering
 // Used when a location doesn't have a precise center_point

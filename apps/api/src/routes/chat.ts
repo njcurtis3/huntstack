@@ -21,9 +21,9 @@ import { chatAccessFor, limitMessage, usageFor, type ChatAccess } from '../lib/c
 import { open as openSealed, visitorId } from '../lib/secret-box.js'
 import { chatWithUserKey, UserKeyError, type Provider } from '../lib/user-llm.js'
 
-// States HuntStack covers: full seasons for the first six, survey counts for MO and IL.
-// A question that names no place is answered for these.
-export const COVERED_STATES = ['TX', 'OK', 'KS', 'NM', 'AR', 'LA', 'MO', 'IL']
+// States HuntStack covers (seasons, licenses and regulations for all nine; survey counts per site
+// for MO, IL and IA). A question that names no place is answered for these.
+export const COVERED_STATES = ['TX', 'OK', 'KS', 'NM', 'AR', 'LA', 'MO', 'IL', 'IA']
 
 // Fastify/AJV (schema.body below) is what actually enforces validation at
 // runtime; this type keeps the handler's view of the body in sync with that
@@ -1222,7 +1222,7 @@ async function retrieveStructuredContext(entities: ExtractedEntities, fetchHuntA
     if (plan.pushFactors) {
       queries.push((async () => {
         try {
-          const targetStates = stateCodes.length > 0 ? stateCodes : ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
+          const targetStates = stateCodes.length > 0 ? stateCodes : COVERED_STATES
           const stateFilter = sql`st.code IN (${sql.join(targetStates.map(c => sql`${c}`), sql`, `)})`
 
           const refugeRows = await db.execute(sql`

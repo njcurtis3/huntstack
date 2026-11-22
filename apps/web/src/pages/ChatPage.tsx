@@ -179,7 +179,7 @@ export function ChatPage() {
         if (top) {
           const STATE_NAMES: Record<string, string> = {
             TX: 'Texas', AR: 'Arkansas', LA: 'Louisiana',
-            NM: 'New Mexico', KS: 'Kansas', OK: 'Oklahoma', MO: 'Missouri',
+            NM: 'New Mexico', KS: 'Kansas', OK: 'Oklahoma', MO: 'Missouri', IL: 'Illinois', IA: 'Iowa',
           }
           const name = STATE_NAMES[top.stateCode] || top.stateCode
           if (top.coldFrontPresent) {
