@@ -128,6 +128,25 @@ export type HuntAreaLand = {
 }
 
 /** One area on Where to Hunt (GET /api/hunt/areas) */
+/** GET /api/hunt/rivers: one USGS river gauge, its latest flow against its normal for this time of year */
+export type RiverGauge = {
+  id: string
+  name: string
+  state: string
+  lat: number
+  lng: number
+  drainageSqMi: number
+  yearsOfRecord: number
+  cfs: number
+  time: string
+  normalCfs: number
+  flowClass: 'much-below' | 'below' | 'normal' | 'above' | 'much-above'
+  /** 5 = under the 10th percentile, 95 = over the 90th */
+  percentile: number
+  trend: 'rising' | 'falling' | 'steady'
+  changePercent: number | null
+}
+
 export type HuntArea = {
   rank: number
   /** Rank among the areas in its own state */
@@ -862,6 +881,11 @@ class ApiClient {
       lands: Array<[string, string, string | null, string, 'OA' | 'RA', number, number, number, string | null]>
       source: string
     }>('/api/hunt/public-lands')
+  }
+
+  /** River gauges: latest flow against each gauge's normal for this time of year (USGS) */
+  async getRiverLevels() {
+    return this.request<{ gauges: RiverGauge[]; updated: string; source: string }>('/api/hunt/rivers')
   }
 
   async getHuntRecommendations(options?: {

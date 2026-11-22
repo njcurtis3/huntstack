@@ -32,6 +32,7 @@ import { refugeRoutes } from './routes/refuges.js'
 import { weatherRoutes } from './routes/weather.js'
 import { huntRoutes } from './routes/hunt.js'
 import { huntAreasRoutes, warmHuntAreas } from './routes/hunt-areas.js'
+import { riversRoutes } from './routes/rivers.js'
 import { migrationRoutes } from './routes/migration.js'
 import { geoRoutes } from './routes/geo.js'
 import { fieldReportsRoutes } from './routes/field-reports.js'
@@ -113,6 +114,7 @@ await app.register(refugeRoutes, { prefix: '/api/refuges' })
 await app.register(weatherRoutes, { prefix: '/api/weather' })
 await app.register(huntRoutes, { prefix: '/api/hunt' })
 await app.register(huntAreasRoutes, { prefix: '/api/hunt' })
+await app.register(riversRoutes, { prefix: '/api/hunt' })
 await app.register(migrationRoutes, { prefix: '/api/migration' })
 await app.register(geoRoutes, { prefix: '/api/geo' })
 await app.register(fieldReportsRoutes, { prefix: '/api/field-reports' })

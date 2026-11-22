@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
 import { Check, ChevronLeft, ChevronRight, Layers, Lock, X, ExternalLink, Play, Pause, Share2 } from 'lucide-react'
 import { api, safeHttpUrl } from '../lib/api'
-import type { HuntArea } from '../lib/api'
+import type { HuntArea, RiverGauge } from '../lib/api'
 import { getAccount, startCheckout } from '../lib/account'
 import { MAP_FREE_TAPS, mapTapsUsed, spendMapTap } from '../lib/mapAllowance'
 import { formatMapView, parseMapSelection, parseMapView } from '../lib/mapLink'
@@ -70,6 +70,12 @@ const AREA_COLOR = '#e2561b'
 const AREAS_PER_STATE = 3
 // Public land (PAD-US): tan, filled for open access, a ring for permit or seasonal access
 const LAND_COLOR = '#b5894a'
+// River flow against normal (USGS WaterWatch's bands), diverging around a gray "normal": brown
+// low, blue high. Normal gauges are drawn small so the unusual ones stand out.
+const RIVER_COLOR = { 'much-below': '#8a4b0f', below: '#c8801f', normal: '#aab0b6', above: '#2f80d0', 'much-above': '#173f8a' } as const
+const RIVER_LABEL = {
+  'much-below': 'Much below normal', below: 'Below normal', normal: 'Normal', above: 'Above normal', 'much-above': 'Much above normal',
+} as const
 // "Go to a town": rings for roughly 1, 2 and 3 hours' drive, as the crow flies
 const DRIVE_RINGS = [{ mi: 60, label: '1 hr' }, { mi: 120, label: '2 hr' }, { mi: 180, label: '3 hr' }] as const
 type MapLandRow = Awaited<ReturnType<typeof api.getPublicLands>>['lands'][number]
@@ -87,7 +93,7 @@ type FeatureCollection<G, P = Record<string, unknown>> = {
 }
 
 type Base = 'map' | 'satellite'
-type LayerKey = 'areas' | 'zones' | 'lands' | 'flow' | 'pressure' | 'spikes' | 'sites' | 'hotspots' | 'ebird' | 'reports'
+type LayerKey = 'areas' | 'zones' | 'lands' | 'rivers' | 'flow' | 'pressure' | 'spikes' | 'sites' | 'hotspots' | 'ebird' | 'reports'
 
 // Out of the box (owner's choice, 2026-11-18): the ranked areas, season zones, migration flow and
 // pressure, survey sites with their spikes, and eBird activity (shaded until zoomed in). Public
@@ -96,7 +102,7 @@ type LayerKey = 'areas' | 'zones' | 'lands' | 'flow' | 'pressure' | 'spikes' | '
 // default reaches everyone who hasn't. The key's version resets choices saved before that rule.
 const DEFAULT_LAYERS: Record<LayerKey, boolean> = {
   areas: true, zones: true, flow: true, pressure: true, spikes: true, sites: true, hotspots: true,
-  lands: false, ebird: false, reports: false,
+  lands: false, rivers: false, ebird: false, reports: false,
 }
 const LAYERS_KEY = 'huntstack-map-layers-v2'
 function savedLayers(): Record<LayerKey, boolean> {
@@ -133,11 +139,12 @@ type Selection =
   | { kind: 'hotspot'; id: string }
   | { kind: 'ebird'; id: string }
   | { kind: 'report'; id: string }
+  | { kind: 'river'; id: string }
 /** Details a link can open (a hunter-report cell's id is only its place in today's list) */
-const LINKABLE: Selection['kind'][] = ['area', 'land', 'zone', 'state', 'site', 'hotspot', 'ebird']
+const LINKABLE: Selection['kind'][] = ['area', 'land', 'river', 'zone', 'state', 'site', 'hotspot', 'ebird']
 /** The layer each kind of details belongs to */
 const SELECTION_LAYER: Record<Selection['kind'], LayerKey> = {
-  area: 'areas', land: 'lands', zone: 'zones', state: 'flow', site: 'sites', hotspot: 'hotspots', ebird: 'ebird', report: 'reports',
+  area: 'areas', land: 'lands', river: 'rivers', zone: 'zones', state: 'flow', site: 'sites', hotspot: 'hotspots', ebird: 'ebird', report: 'reports',
 }
 
 type EbirdMap = Awaited<ReturnType<typeof api.getEbirdMap>>
@@ -403,6 +410,14 @@ export default function MapPage() {
     enabled: layers.lands,
   })
   const lands = useMemo((): MapLandRow[] => landsQ.data?.lands ?? [], [landsQ.data])
+  const riversQ = useQuery({
+    queryKey: ['map-rivers'],
+    queryFn: () => api.getRiverLevels(),
+    staleTime: 30 * 60_000,
+    retry: false,
+    enabled: layers.rivers,
+  })
+  const rivers = useMemo((): RiverGauge[] => riversQ.data?.gauges ?? [], [riversQ.data])
 
   // Where to Hunt's best areas for the chosen day, the top 3 in each covered state (ducks and
   // geese): the overall top 15 all sat on the Illinois and Mississippi river surveys
@@ -589,7 +604,7 @@ export default function MapPage() {
     map.touchZoomRotate.disableRotation()
     map.addControl(new maplibregl.AttributionControl({
       compact: true,
-      customAttribution: 'Zones: TPWD, KDWP, MDC, USFWS, US Census · Sightings: eBird (Cornell Lab of Ornithology)',
+      customAttribution: 'Zones: TPWD, KDWP, MDC, USFWS, US Census · Sightings: eBird (Cornell Lab of Ornithology) · Rivers: USGS',
     }), 'bottom-right')
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
     map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: false } }), 'top-right')
@@ -762,6 +777,26 @@ export default function MapPage() {
       },
     })
 
+    // River gauges: a dot colored by flow against normal, sized by the river (drainage area);
+    // normal ones small, so high and low water stand out
+    map.addSource('rivers', { type: 'geojson', data: emptyFc() })
+    map.addLayer({
+      id: 'rivers', type: 'circle', source: 'rivers',
+      layout: { 'circle-sort-key': ['get', 'sort'] },
+      paint: {
+        'circle-radius': ['*', ['case', ['get', 'normal'], 0.6, 1],
+          ['interpolate', ['linear'], ['zoom'], 4, ['interpolate', ['linear'], ['get', 'size'], 0, 3.5, 1, 7], 9, ['interpolate', ['linear'], ['get', 'size'], 0, 6, 1, 11]]],
+        'circle-color': ['get', 'color'],
+        'circle-stroke-color': paper,
+        'circle-stroke-width': 1.5,
+      },
+    })
+    map.addLayer({
+      id: 'rivers-selected', type: 'circle', source: 'rivers',
+      filter: ['==', ['get', 'id'], ''],
+      paint: { 'circle-radius': 13, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': ink, 'circle-stroke-width': 2.5 },
+    })
+
     // Survey sites, grouped into one numbered bubble where they crowd together (the Illinois and
     // Mississippi river sites sat on top of each other); a bubble splits as you zoom in, or when
     // tapped. A bubble holding a spiking site carries a red dot.
@@ -923,6 +958,21 @@ export default function MapPage() {
     }))))
   }, [lands, installed])
 
+  // River gauges
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !map.getSource('rivers')) return
+    const order = ['normal', 'below', 'above', 'much-below', 'much-above'] as const
+    ;(map.getSource('rivers') as maplibregl.GeoJSONSource).setData(pointFc(rivers.map(g => ({
+      lng: g.lng, lat: g.lat,
+      props: {
+        id: g.id, color: RIVER_COLOR[g.flowClass], normal: g.flowClass === 'normal', sort: order.indexOf(g.flowClass),
+        // 1,000 sq mi (the smallest kept) to the Mississippi's ~700,000, on a log scale
+        size: Math.min(1, Math.max(0, Math.log10(g.drainageSqMi / 1000) / Math.log10(700))),
+      },
+    }))))
+  }, [rivers, installed])
+
   // "Go to a town": the ring, the dot, and the view around them
   useEffect(() => {
     const map = mapRef.current
@@ -1070,6 +1120,8 @@ export default function MapPage() {
     map.setLayoutProperty('hotspots-heat', 'visibility', vis(layers.hotspots))
     map.setLayoutProperty('lands', 'visibility', vis(layers.lands))
     map.setLayoutProperty('lands-selected', 'visibility', vis(layers.lands))
+    map.setLayoutProperty('rivers', 'visibility', vis(layers.rivers))
+    map.setLayoutProperty('rivers-selected', 'visibility', vis(layers.rivers))
     map.setLayoutProperty('points-selected', 'visibility', vis(layers.sites))
     map.setLayoutProperty('ebird', 'visibility', vis(layers.ebird))
     map.setLayoutProperty('ebird-selected', 'visibility', vis(layers.ebird))
@@ -1090,6 +1142,7 @@ export default function MapPage() {
     map.setFilter('zones-selected', sel('zone'))
     map.setFilter('areas-selected', sel('area'))
     map.setFilter('lands-selected', sel('land'))
+    map.setFilter('rivers-selected', sel('river'))
     map.setFilter('points-selected', sel('site'))
     map.setFilter('ebird-selected', sel('ebird'))
     map.setFilter('hotspots-selected', sel('hotspot'))
@@ -1123,7 +1176,7 @@ export default function MapPage() {
     const map = mapRef.current
     if (!map) return
     const order: Array<[string, Selection['kind']]> = [
-      ['areas', 'area'], ['reports', 'report'], ['spikes', 'site'], ['sites', 'site'], ['lands', 'land'], ['pressure', 'state'], ['states', 'state'],
+      ['areas', 'area'], ['reports', 'report'], ['spikes', 'site'], ['sites', 'site'], ['lands', 'land'], ['rivers', 'river'], ['pressure', 'state'], ['states', 'state'],
       ['ebird', 'ebird'], ['hotspots', 'hotspot'], ['zones-fill', 'zone'],
     ]
     const onClick = (e: maplibregl.MapMouseEvent) => {
@@ -1166,7 +1219,7 @@ export default function MapPage() {
       setSelection(null)
     }
     const onMove = (e: maplibregl.MapMouseEvent) => {
-      const layersHere = ['areas', 'sites-cluster', 'reports', 'spikes', 'sites', 'lands', 'pressure', 'states', 'ebird', 'hotspots', 'zones-fill']
+      const layersHere = ['areas', 'sites-cluster', 'reports', 'spikes', 'sites', 'lands', 'rivers', 'pressure', 'states', 'ebird', 'hotspots', 'zones-fill']
         .filter(l => map.getLayer(l) && map.getLayoutProperty(l, 'visibility') !== 'none')
       const hit = layersHere.length > 0 && map.queryRenderedFeatures(e.point, { layers: layersHere }).length > 0
       map.getCanvas().style.cursor = hit ? 'pointer' : ''
@@ -1197,6 +1250,10 @@ export default function MapPage() {
     if (selection.kind === 'land') {
       const l = lands[Number(selection.id)]
       return l ? <LandDetails land={l} /> : null
+    }
+    if (selection.kind === 'river') {
+      const g = rivers.find(x => x.id === selection.id)
+      return g ? <RiverDetails gauge={g} /> : null
     }
     if (selection.kind === 'zone') {
       const f = zones?.features.find(z => z.properties.id === selection.id)
@@ -1704,6 +1761,7 @@ function LayerToggles({ layers, onChange, base, onBase }: {
     ['areas', 'Best areas to hunt (top 3 in each state)'],
     ['zones', 'Season zones'],
     ['lands', 'Public land (wildlife areas, refuges, Corps land)'],
+    ['rivers', 'River levels (flow against normal, USGS)'],
     ['flow', 'Migration status and flyway flow'],
     ['pressure', 'Migration pressure (weather push)'],
     ['spikes', 'Count spikes and drops'],
@@ -1767,6 +1825,21 @@ function Legend({ layers }: { layers: Record<LayerKey, boolean> }) {
         {row(<span className="inline-block w-3.5 h-3.5 mx-0.5 rounded-full shrink-0" style={{ backgroundColor: LAND_COLOR }} />, 'Public land, open access (sized by acres)')}
         {row(<span className="inline-block w-3.5 h-3.5 mx-0.5 rounded-full shrink-0 border-2" style={{ borderColor: LAND_COLOR }} />, 'Public land, by permit or seasonal')}
         </>}
+        {layers.rivers && (
+          <li className="text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
+            <span className="flex items-center gap-2.5">
+              <span className="flex gap-0.5 shrink-0">
+                {(['much-below', 'below', 'normal', 'above', 'much-above'] as const).map(c => (
+                  <span key={c} className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: RIVER_COLOR[c] }} title={RIVER_LABEL[c]} />
+                ))}
+              </span>
+              River flow against normal for this time of year
+            </span>
+            <span className="block mt-0.5 ml-0.5 text-xs" style={{ color: 'rgb(var(--color-text-tertiary))' }}>
+              Much below, below, normal (small dot), above, much above; bigger dot, bigger river
+            </span>
+          </li>
+        )}
         {layers.flow && <>
         <li className="text-sm" style={{ color: 'rgb(var(--color-text-secondary))' }}>
           <span className="flex items-center gap-2.5">
@@ -2509,6 +2582,61 @@ function LandDetails({ land }: { land: MapLandRow }) {
       <a href={`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`} target="_blank" rel="noopener noreferrer"
         className="inline-flex items-center gap-1 text-sm font-semibold text-accent-600 dark:text-accent-400 hover:underline underline-offset-4">
         Open in Google Maps <ExternalLink className="w-3.5 h-3.5" />
+      </a>
+    </div>
+  )
+}
+
+const RIVER_SENTENCE = {
+  'much-below': 'Lower than in 9 of 10 years at this time of year',
+  below: 'Lower than in 3 of 4 years at this time of year',
+  normal: 'In the middle half of years for this time of year',
+  above: 'Higher than in 3 of 4 years at this time of year',
+  'much-above': 'Higher than in 9 of 10 years at this time of year',
+} as const
+
+/** A USGS river gauge: today's flow against its own record for this time of year */
+function RiverDetails({ gauge: g }: { gauge: RiverGauge }) {
+  const secondary = { color: 'rgb(var(--color-text-secondary))' }
+  const muted = { color: 'rgb(var(--color-text-tertiary))' }
+  const now = new Date()
+  const season = `${now.getDate() <= 15 ? 'early' : 'late'} ${now.toLocaleDateString('en-US', { month: 'long' })}`
+  const read = new Date(g.time)
+  const high = g.flowClass === 'above' || g.flowClass === 'much-above'
+  const low = g.flowClass === 'below' || g.flowClass === 'much-below'
+  return (
+    <div>
+      <Heading eyebrow={`River gauge · ${STATE_NAMES[g.state] ?? g.state}`} title={g.name} />
+      <div className="flex items-center gap-2 mb-1">
+        <span className="inline-block w-3.5 h-3.5 rounded-full shrink-0" style={{ backgroundColor: RIVER_COLOR[g.flowClass] }} aria-hidden="true" />
+        <span className="font-semibold" style={{ color: 'rgb(var(--color-text-primary))' }}>{RIVER_LABEL[g.flowClass]}</span>
+      </div>
+      <p className="text-sm mb-3" style={secondary}>{RIVER_SENTENCE[g.flowClass]}.</p>
+      <ul className="text-sm space-y-1 mb-4" style={secondary}>
+        <li>Now <span className="font-mono">{fmtNum(Math.round(g.cfs))}</span> cubic feet per second</li>
+        <li>Normal for {season}: <span className="font-mono">{fmtNum(Math.round(g.normalCfs))}</span> (the median of {g.yearsOfRecord} years)</li>
+        {g.changePercent !== null && (
+          <li>
+            {g.trend === 'rising' ? 'Rising' : g.trend === 'falling' ? 'Falling' : 'Steady'}: {g.changePercent >= 0 ? 'up' : 'down'}{' '}
+            {Math.abs(g.changePercent)}% from a week ago
+          </li>
+        )}
+        <li>Drains {fmtNum(g.drainageSqMi)} sq mi</li>
+      </ul>
+      {(high || low) && (
+        <p className="text-sm mb-4" style={secondary}>
+          {high
+            ? 'High water spreads into bottomland timber, sloughs and low fields along the river, and can close ramps and roads.'
+            : 'Low water drains backwaters and sloughs along the river; birds may sit on the main channel and lakes instead.'}
+        </p>
+      )}
+      <p className="text-xs mb-4" style={muted}>
+        USGS reading {read.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}, provisional.
+        Flow, not stage: it says how much water the river carries, not how high it is at your spot.
+      </p>
+      <a href={`https://waterdata.usgs.gov/monitoring-location/USGS-${g.id}/`} target="_blank" rel="noopener noreferrer"
+        className="inline-flex items-center gap-1 text-sm font-semibold text-accent-600 dark:text-accent-400 hover:underline underline-offset-4">
+        Gauge on USGS <ExternalLink className="w-3.5 h-3.5" />
       </a>
     </div>
   )
