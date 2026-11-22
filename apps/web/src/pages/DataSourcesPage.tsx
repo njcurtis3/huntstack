@@ -112,6 +112,24 @@ const OTHER_GROUPS: SourceGroup[] = [
     ],
   },
   {
+    title: 'River Levels',
+    description:
+      'The map\'s River levels layer shows USGS stream gauges on rivers draining at least 1,000 square miles, each colored by how its latest flow compares with that gauge\'s own record for this time of year: much below, below, normal, above or much above normal (USGS\'s own percentile bands). Each gauge\'s normal comes from USGS\'s published daily flow statistics, kept for each half of the month; the latest flows and the change since a week ago come from USGS Water Data. It is flow, not stage: how much water the river carries, not how high it stands at a given spot. USGS readings are provisional.',
+    cadence: 'Latest flows hourly; normals updated yearly',
+    sources: [
+      {
+        name: 'USGS Water Data — stream gauges',
+        url: 'https://waterdata.usgs.gov/',
+        note: '569 gauges in and along the nine states, each with 10+ years of records',
+      },
+      {
+        name: 'USGS daily streamflow statistics',
+        url: 'https://waterservices.usgs.gov/docs/statistics/',
+        note: 'The 10th, 25th, 50th, 75th and 90th percentiles of each gauge\'s daily flow',
+      },
+    ],
+  },
+  {
     title: 'Weather',
     description:
       'Forecasts, alerts, and hunting-condition scoring (wind, precipitation, cold-front detection) for Where to Hunt\'s areas and the refuge detail pages.',
