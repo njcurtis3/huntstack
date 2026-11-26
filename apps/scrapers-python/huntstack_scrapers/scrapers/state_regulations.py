@@ -122,6 +122,56 @@ STATE_SOURCES = {
                           "ducks", "geese", "teal", "crane", "coots", "seasons"],
         "pdf_keywords": ["waterfowl", "migratory", "duck", "goose"],
     },
+    # MO, IL, IA and MS: documents for Ask AI only. Their seasons and licenses are hand-entered
+    # (scripts/*-mo-il-ia.sql, *-ms.sql); never run extract_regulations for them (it replaces a
+    # state's seasons and licenses), which its own V1_STATES already prevents.
+    "MO": {
+        "name": "Missouri",
+        "start_urls": [
+            "https://mdc.mo.gov/hunting-trapping/species/waterfowl",
+            "https://mdc.mo.gov/hunting-trapping/species/waterfowl/waterfowl-regulations",
+            "https://mdc.mo.gov/hunting-trapping/regulations/migratory-birdwaterfowl-permit-stamp-requirements",
+        ],
+        "allowed_domains": ["mdc.mo.gov"],
+        "link_keywords": ["waterfowl", "migratory", "duck", "goose", "teal", "conservation-order"],
+        "exclude_path_keywords": ["/fishing/", "/deer", "/turkey"],
+        "pdf_keywords": ["waterfowl", "migratory", "duck", "goose"],
+    },
+    "IL": {
+        "name": "Illinois",
+        "start_urls": [
+            "https://dnr.illinois.gov/hunting/waterfowl.html",
+        ],
+        "allowed_domains": ["dnr.illinois.gov"],
+        "link_keywords": ["waterfowl", "migratory", "duck", "goose"],
+        "exclude_path_keywords": ["/fishing/"],
+        "pdf_keywords": ["waterfowl", "migratory", "duck", "goose"],
+    },
+    "IA": {
+        "name": "Iowa",
+        "start_urls": [
+            "https://www.iowadnr.gov/things-do/hunting-trapping/types-hunting-trapping/migratory-game-bird-hunting",
+        ],
+        "allowed_domains": ["iowadnr.gov"],
+        "link_keywords": ["migratory", "waterfowl", "duck", "goose"],
+        "exclude_path_keywords": ["/fishing", "deer", "turkey"],
+        "pdf_keywords": ["waterfowl", "migratory", "duck", "goose"],
+    },
+    "MS": {
+        "name": "Mississippi",
+        "start_urls": [
+            "https://www.mdwfp.com/wildlife-hunting/hunting-seasons-and-bag-limits",
+            "https://www.mdwfp.com/wildlife-hunting/wildlife-species-program/waterfowl-program",
+            "https://www.mdwfp.com/licenses-permits/hunting-and-fishing-license-prices",
+            # The 2026-27 migratory game bird digest (seasons, limits, stamps, HIP, public areas).
+            # SEASON-SPECIFIC: replace each year from the waterfowl program page's digest link.
+            "https://www.mdwfp.com/sites/default/files/2026-05/Migratory%20Gamebird%20Digest%2026-27_2.pdf",
+        ],
+        "allowed_domains": ["mdwfp.com"],
+        "link_keywords": ["waterfowl", "migratory", "duck", "goose", "light-goose"],
+        "exclude_path_keywords": ["/fishing", "deer", "turkey", "aerial-survey"],
+        "pdf_keywords": ["waterfowl", "migratory", "gamebird", "duck", "goose"],
+    },
 }
 
 

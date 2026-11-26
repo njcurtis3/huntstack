@@ -25,6 +25,7 @@ from huntstack_scrapers.parsers.ldwf_pdf import parse_ldwf_pdf, fetch_ldwf_pdf_u
 from huntstack_scrapers.parsers.tpwd_excel import fetch_tpwd_excel_urls, parse_tpwd_excel
 from huntstack_scrapers.parsers.inhs_forbes_pdf import RIVER_SOURCES, fetch_forbes_results
 from huntstack_scrapers.parsers.hagerman_census import CENSUS_PAGE_URL, fetch_census_results
+from huntstack_scrapers.parsers.mdwfp_pdf import REPORTS_URL as MDWFP_REPORTS_URL, fetch_mdwfp_results
 
 
 # Registry of all waterfowl count data sources.
@@ -100,6 +101,21 @@ WATERFOWL_SOURCES = [
         # survey, kept if it matches TOTAL DUCKS, else replaced by a checked read. Surveys are
         # monthly (closest pair: Nov 12 and Dec 18), so 20 days never joins two months.
         "same_survey_within_days": 20,
+    },
+
+    # === Mississippi MDWFP Aerial Surveys (Delta; Nov, Dec, early Jan) ===
+    # One page lists every report a few seasons back; each report's Table 1 gives that month
+    # back to 2007. Surveys from Table 1 have no dates and are stored mid-month (see mdwfp_pdf).
+    {
+        "name": "Mississippi - MDWFP Aerial Survey",
+        "state_code": "MS",
+        "url": MDWFP_REPORTS_URL,
+        "source_type": "results_fn",
+        "survey_type": "aerial_monthly",
+        "results_fn": lambda: fetch_mdwfp_results(),
+        # A survey stored under its real flight date is the same survey as its Table 1 row on the
+        # fixed day (at most 10 days apart); months are 3+ weeks apart
+        "same_survey_within_days": 12,
     },
 
     # === INHS Forbes Biological Station — weekly aerial inventory, Sept-Jan (Mississippi Flyway) ===
