@@ -45,6 +45,11 @@ const REFUGE_COUNT_SOURCES: SourceGroup = {
       note: 'Monthly aerial survey PDFs',
     },
     {
+      name: 'Mississippi Dept. of Wildlife, Fisheries & Parks — Aerial Survey (MS)',
+      url: 'https://www.mdwfp.com/wildlife-hunting/wildlife-species-program/waterfowl-program',
+      note: 'Mississippi Delta, November to January; November estimates back to 2007',
+    },
+    {
       name: 'Illinois Natural History Survey, Forbes Biological Station — Aerial Inventory (IL, MO, IA)',
       url: 'https://forbes-bio-station.inhs.illinois.edu/research/waterfowl-aerial-inventories/',
       note: 'Weekly flights, Sept–Jan; 43 sites on the Illinois and central Mississippi rivers, including Clarence Cannon NWR',
@@ -71,7 +76,7 @@ const OTHER_GROUPS: SourceGroup[] = [
   {
     title: 'Regulations & Licensing',
     description:
-      'State agency regulation documents, seasons, bag limits, and license requirements — extracted and indexed for the Regulations pages and the AI chat. Currently covers Texas (fully populated), with New Mexico, Arkansas, Louisiana, Kansas, and Oklahoma seeded.',
+      'State agency regulation documents, seasons, bag limits, and license requirements, for the Regulations pages and the AI chat. Seasons and licenses for every state HuntStack covers are entered by hand from each agency’s own pages; the table at the top of this page shows what each state has.',
     cadence: 'Checked periodically; re-scraped when agencies publish season updates',
     sources: [
       { name: 'Texas Parks & Wildlife Department', url: 'https://tpwd.texas.gov/' },
@@ -80,6 +85,10 @@ const OTHER_GROUPS: SourceGroup[] = [
       { name: 'Louisiana Dept. of Wildlife & Fisheries', url: 'https://www.wlf.louisiana.gov/' },
       { name: 'Kansas Dept. of Wildlife & Parks', url: 'https://ksoutdoors.com/' },
       { name: 'Oklahoma Dept. of Wildlife Conservation', url: 'https://www.wildlifedepartment.com/' },
+      { name: 'Missouri Dept. of Conservation', url: 'https://mdc.mo.gov/' },
+      { name: 'Illinois DNR', url: 'https://dnr.illinois.gov/' },
+      { name: 'Iowa DNR', url: 'https://www.iowadnr.gov/' },
+      { name: 'Mississippi Dept. of Wildlife, Fisheries & Parks', url: 'https://www.mdwfp.com/' },
     ],
   },
   {
@@ -98,12 +107,12 @@ const OTHER_GROUPS: SourceGroup[] = [
       {
         name: 'USGS Protected Areas Database of the United States (PAD-US) — Public Access',
         url: 'https://www.usgs.gov/programs/gap-analysis-project/science/pad-us-data-overview',
-        note: '1,556 public units in the nine states',
+        note: 'Public units in the states HuntStack covers',
       },
       {
         name: 'U.S. Census Bureau — Gazetteer Files and City Population Estimates',
         url: 'https://www.census.gov/geographies/reference-files/time-series/geo/gazetteer-files.html',
-        note: '8,660 towns and places, 2024 Gazetteer and 2023 population estimates',
+        note: 'Towns and places in the states HuntStack covers, 2024 Gazetteer and 2023 population estimates',
       },
       {
         name: 'USGS 3D Elevation Program, via AWS Terrain Tiles',
@@ -121,7 +130,7 @@ const OTHER_GROUPS: SourceGroup[] = [
       {
         name: 'USGS Water Data — stream gauges',
         url: 'https://waterdata.usgs.gov/',
-        note: '569 gauges in and along the nine states, each with 10+ years of records',
+        note: 'Gauges in the states HuntStack covers, each with 10+ years of records',
       },
       {
         name: 'USGS daily streamflow statistics',

@@ -408,6 +408,9 @@ const lines = {} // for the preview: every line drawn by route()
 // Arkansas: every season is statewide.
 add('AR', 'AR', stateShape('AR'), { duckZone: 'Statewide', gooseZone: 'Statewide', units: [], source: 'Census state outline' })
 
+// Mississippi: one statewide zone for ducks and geese (MDWFP 2026-27 digest).
+add('MS', 'MS', stateShape('MS'), { duckZone: 'Statewide', gooseZone: 'Statewide', units: [], source: 'Census state outline' })
+
 // ---------- output ----------
 
 const round = (c) => (typeof c[0] === 'number' ? [Math.round(c[0] * 1e4) / 1e4, Math.round(c[1] * 1e4) / 1e4] : c.map(round))

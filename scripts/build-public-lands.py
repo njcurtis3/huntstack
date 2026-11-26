@@ -17,8 +17,9 @@ land are left out, and so are natural areas and nature preserves. PAD-US records
 managing agency's rules".
 
 Each unit's polygons are merged by name and manager. Its point is the largest polygon's
-centroid. Its state is the nearest town's (apps/api/src/data/places.ts); units more than 30 km
-from any town in the covered states are dropped.
+centroid. Its state is the covered state whose Census outline holds that point; units outside
+every covered state, or more than 30 km from any town in them (apps/api/src/data/places.ts), are
+dropped.
 """
 
 import json
@@ -37,6 +38,8 @@ SERVICE = "https://services.arcgis.com/v01gqwM5QqNysAAi/ArcGIS/rest/services/PAD
 # Queried over the box around the covered states' towns (places.ts), with this margin in degrees
 BBOX_MARGIN = 0.5
 PAGE = 2000
+# Census state outlines, to place each unit in its own state
+STATE_OUTLINES = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/State_County/MapServer/0/query"
 MIN_ACRES = 40
 
 # (designation, manager) -> kind shown on the page
@@ -110,6 +113,44 @@ def display_name(name: str) -> str:
     return f"{m.group(2)} {m.group(1)} {m.group(3)}" if m else name.strip()
 
 
+def fetch_outlines(codes: set[str]) -> list[tuple[str, list[list[list[float]]]]]:
+    """Census state outlines (TIGERweb, generalized to ~1 km): [(state, rings)] for the covered states."""
+    params = {
+        "where": f"STUSAB IN ({', '.join(repr(c) for c in sorted(codes))})",
+        "outFields": "STUSAB", "returnGeometry": "true", "outSR": "4326",
+        "maxAllowableOffset": "0.01", "geometryPrecision": "4", "f": "geojson",
+    }
+    url = STATE_OUTLINES + "?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={"User-Agent": "HuntStack data build"})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        fc = json.load(r)
+    out = []
+    for f in fc["features"]:
+        g = f["geometry"]
+        polys = g["coordinates"] if g["type"] == "MultiPolygon" else [g["coordinates"]]
+        out.append((f["properties"]["STUSAB"], [ring for poly in polys for ring in poly]))
+    if {st for st, _ in out} != codes:
+        sys.exit(f"State outlines missing: {sorted(codes - {st for st, _ in out})}")
+    return out
+
+
+def state_at(lat: float, lng: float, outlines) -> str | None:
+    """The covered state whose outline holds the point (even-odd over every ring, so holes work)."""
+    for st, rings in outlines:
+        inside = False
+        for ring in rings:
+            j = len(ring) - 1
+            for i in range(len(ring)):
+                xi, yi = ring[i]
+                xj, yj = ring[j]
+                if (yi > lat) != (yj > lat) and lng < (xj - xi) * (lat - yi) / (yj - yi) + xi:
+                    inside = not inside
+                j = i
+        if inside:
+            return st
+    return None
+
+
 def km(lat1, lng1, lat2, lng2) -> float:
     r = math.pi / 180
     a = math.sin((lat2 - lat1) * r / 2) ** 2 + math.cos(lat1 * r) * math.cos(lat2 * r) * math.sin((lng2 - lng1) * r / 2) ** 2
@@ -141,13 +182,19 @@ def main() -> None:
             if a["Pub_Access"] == "OA":
                 u["access"] = "OA"
 
+    outlines = fetch_outlines({st for st, _, _ in places})
     rows = []
     for (name, manager, kind), u in units.items():
         best = min(((km(u["lat"], u["lng"], la, lo), st) for st, la, lo in places
                     if abs(la - u["lat"]) < 0.4 and abs(lo - u["lng"]) < 0.5), default=None)
         if not best or best[0] > 30:
             continue
-        rows.append((display_name(name), kind, manager, best[1], u["access"], round(u["acres"]), round(u["lat"], 4), round(u["lng"], 4)))
+        # The unit's own state, from its point: the box reaches into neighbouring states, and a
+        # unit near the line can be closest to a town across it
+        st = state_at(u["lat"], u["lng"], outlines)
+        if not st:
+            continue
+        rows.append((display_name(name), kind, manager, st, u["access"], round(u["acres"]), round(u["lat"], 4), round(u["lng"], 4)))
     rows.sort(key=lambda r: (r[3], r[0]))
 
     def q(s: str) -> str:

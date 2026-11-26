@@ -141,6 +141,11 @@ export function HowItWorksPage() {
               to January, Louisiana monthly). These totals cover the whole state. Louisiana’s card also
               compares the newest survey with the same month in earlier years, back to 2004.
             </>],
+            ['Mississippi', <>
+              MDWFP’s aerial survey of the Mississippi Delta, flown in November, December and January.
+              It covers the Delta, where most of the state’s ducks winter, not the whole state. The card
+              compares the newest survey with the same month in earlier years, back to 2007.
+            </>],
             ['Illinois, Missouri, Iowa', <>
               Weekly aerial counts along the Illinois and Mississippi rivers, plus refuge counts. Very
               detailed on the rivers, but not the whole state.
