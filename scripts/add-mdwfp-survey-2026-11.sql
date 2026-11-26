@@ -1,4 +1,8 @@
 -- ===========================================
+-- SUPERSEDED 2026-11-26: do not re-run. Its rows were deleted and the survey reloaded by the
+-- MDWFP source (parsers/mdwfp_pdf.py, pipeline job counts:mississippi-mdwfp-aerial-survey),
+-- which reads every report on MDWFP's page with real flight dates. Kept as the record.
+--
 -- Mississippi: the MDWFP aerial waterfowl survey (2026-11-26)
 --
 -- Source: MDWFP Aerial Waterfowl Survey Report, November 17-20, 2026 (PDF)
