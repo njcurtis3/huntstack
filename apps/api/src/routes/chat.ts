@@ -20,10 +20,10 @@ import { drizzleAccountStore, type AccountStore } from '../lib/account-store.js'
 import { chatAccessFor, limitMessage, usageFor, type ChatAccess } from '../lib/chat-quota.js'
 import { open as openSealed, visitorId } from '../lib/secret-box.js'
 import { chatWithUserKey, UserKeyError, type Provider } from '../lib/user-llm.js'
+import { COVERED_STATES as REGISTRY_COVERED } from '@huntstack/shared/states'
 
-// States HuntStack covers (seasons, licenses and regulations for all nine; survey counts per site
-// for MO, IL and IA). A question that names no place is answered for these.
-export const COVERED_STATES = ['TX', 'OK', 'KS', 'NM', 'AR', 'LA', 'MO', 'IL', 'IA']
+// States HuntStack covers (the state registry). A question that names no place is answered for these.
+export const COVERED_STATES = [...REGISTRY_COVERED]
 
 // Fastify/AJV (schema.body below) is what actually enforces validation at
 // runtime; this type keeps the handler's view of the body in sync with that

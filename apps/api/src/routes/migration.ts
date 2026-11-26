@@ -14,30 +14,12 @@ import {
   toSummaryCounts, type Fact,
   type SiteFact,
 } from '../lib/weekly-summary.js'
+import { COVERED_STATES, STATE_CENTERS } from '@huntstack/shared/states'
 
 // The states HuntStack covers: the default for push factors and statewide eBird activity
 // (Illinois and Iowa were missing, so the map's Migration Index and the Migration page left them out)
-const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO', 'IL', 'IA']
+const V1_STATES = [...COVERED_STATES]
 
-// Approximate state centroids (latitude) for N→S ordering
-// Used when a location doesn't have a precise center_point
-const STATE_LATITUDES: Record<string, number> = {
-  MO: 38.5,
-  KS: 38.7,
-  OK: 35.5,
-  AR: 34.8,
-  TX: 31.5,
-  NM: 34.5,
-  LA: 30.9,
-  ND: 47.5,
-  SD: 44.3,
-  NE: 41.5,
-  IA: 42.0,
-  MN: 46.4,
-  WI: 44.8,
-  IL: 40.6,
-  MS: 32.3,
-}
 
 // ─── Weekly summary cache (6h TTL) ───────────────────────────────────────────
 
@@ -442,7 +424,7 @@ ${facts}`
       const count = Number(row.total_count)
       const lat = row.avg_lat !== null
         ? Number(row.avg_lat)
-        : (STATE_LATITUDES[row.state_code] ?? 35)
+        : (STATE_CENTERS[row.state_code]?.[1] ?? 35)
 
       if (!stateMap.has(row.state_code)) {
         stateMap.set(row.state_code, {

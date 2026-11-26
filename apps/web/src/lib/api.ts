@@ -129,6 +129,25 @@ export type HuntAreaLand = {
 
 /** One area on Where to Hunt (GET /api/hunt/areas) */
 /** GET /api/hunt/rivers: one USGS river gauge, its latest flow against its normal for this time of year */
+/** What HuntStack has for a covered state (GET /api/states/coverage), counted, not hand-kept */
+export type StateCoverage = {
+  code: string
+  name: string
+  flyway: string
+  seasons: number
+  seasonYear: number
+  licenses: number
+  documents: number
+  surveySites: number
+  surveySitesRecent: number
+  statewideSurvey: string | null
+  ebirdPlaces: number
+  towns: number
+  publicLands: number
+  riverGauges: number
+  zoneShapes: number
+}
+
 export type RiverGauge = {
   id: string
   name: string
@@ -567,6 +586,10 @@ class ApiClient {
       }>
       count: number
     }>('/api/refuges', { params: options })
+  }
+
+  async getStateCoverage() {
+    return this.request<{ states: StateCoverage[] }>('/api/states/coverage')
   }
 
   async getSurveyCoverage() {

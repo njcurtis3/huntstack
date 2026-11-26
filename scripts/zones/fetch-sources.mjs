@@ -9,6 +9,10 @@ fs.mkdirSync(CACHE, { recursive: true })
 
 const TIGER = 'https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb'
 
+// The covered states, from the state registry
+const COVERED = JSON.parse(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../../packages/shared/src/states.json'), 'utf8'))
+  .states.filter((s) => s.covered).map((s) => `'${s.code}'`).join(',')
+
 // Agency zone layers (ArcGIS Online), the USFWS flyway layer, and Census outlines.
 const layers = [
   ['tx-duck', 'https://services1.arcgis.com/1mtXwieMId59thmg/arcgis/rest/services/Duck_Zones/FeatureServer/0', '1=1', null, '0.003'],
@@ -18,7 +22,7 @@ const layers = [
   // MDC's zone layer. Its description says 2021-25, but it was redrawn for 2026; build-zones.mjs
   // checks its North line against one drawn from Census roads.
   ['mo-mdc', 'https://gisblue.mdc.mo.gov/arcgis/rest/services/Boundaries/Hunting_Zones/MapServer/1', '1=1'],
-  ['states', `${TIGER}/State_County/MapServer/0`, "STUSAB IN ('OK','NM','LA','AR','TX','KS','MO','IL','IA')"],
+  ['states', `${TIGER}/State_County/MapServer/0`, `STUSAB IN (${COVERED})`],
   ['counties', `${TIGER}/State_County/MapServer/1`, "STATE IN ('40','35')"],
 ]
 

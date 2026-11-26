@@ -6,8 +6,9 @@ import { decodeJsonbField, decodePoint } from '../lib/jsonb.js'
 import { FRESH_DAYS, FRESH_DAYS_MONTHLY } from '../lib/freshness.js'
 import { accessOf, isHuntable } from '../lib/access.js'
 import { surveyChange } from '../lib/survey-change.js'
+import { COVERED_STATES } from '@huntstack/shared/states'
 
-const V1_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']
+const V1_STATES = [...COVERED_STATES]
 
 // ─── Scoring weights ──────────────────────────────────────────────────────────
 

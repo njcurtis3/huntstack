@@ -14,13 +14,25 @@ population (0 for CDPs), and its internal point. Only the states HuntStack cover
 """
 
 import csv
+import json
 import io
 import re
 import sys
 from pathlib import Path
 
-STATES = {"TX", "NM", "KS", "OK", "AR", "LA", "MO", "IL", "IA"}
-FIPS = {"48": "TX", "35": "NM", "20": "KS", "40": "OK", "05": "AR", "22": "LA", "29": "MO", "17": "IL", "19": "IA"}
+REGISTRY = Path(__file__).resolve().parent.parent / "packages" / "shared" / "src" / "states.json"
+# The covered states, from the state registry
+STATES = {s["code"] for s in json.loads(REGISTRY.read_text(encoding="utf-8"))["states"] if s["covered"]}
+# Census state FIPS codes, all states; only the covered ones are kept
+ALL_FIPS = {
+    "01": "AL", "02": "AK", "04": "AZ", "05": "AR", "06": "CA", "08": "CO", "09": "CT", "10": "DE", "11": "DC",
+    "12": "FL", "13": "GA", "15": "HI", "16": "ID", "17": "IL", "18": "IN", "19": "IA", "20": "KS", "21": "KY",
+    "22": "LA", "23": "ME", "24": "MD", "25": "MA", "26": "MI", "27": "MN", "28": "MS", "29": "MO", "30": "MT",
+    "31": "NE", "32": "NV", "33": "NH", "34": "NJ", "35": "NM", "36": "NY", "37": "NC", "38": "ND", "39": "OH",
+    "40": "OK", "41": "OR", "42": "PA", "44": "RI", "45": "SC", "46": "SD", "47": "TN", "48": "TX", "49": "UT",
+    "50": "VT", "51": "VA", "53": "WA", "54": "WV", "55": "WI", "56": "WY",
+}
+FIPS = {f: st for f, st in ALL_FIPS.items() if st in STATES}
 
 # The Gazetteer's NAME ends in its legal description: "Stuttgart city", "Hayti Heights town".
 # Removed once, in lower case only: "Kansas City city" is Kansas City (until 2026-11-21 the

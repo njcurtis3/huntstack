@@ -4,6 +4,7 @@ import {
   CheckCircle2, XCircle, AlertCircle, Wind,
   MapPin, Navigation, X as XIcon, ArrowUpDown, HelpCircle, Ban, Map as MapIcon, ChevronDown, ExternalLink,
 } from 'lucide-react'
+import { COVERED_STATES, agencyWaterfowlPage } from '../lib/states'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, type HuntArea, type HuntAreaLand, type HuntAreaPlace } from '../lib/api'
 import { parseCalendarDate } from '../lib/dates'
@@ -17,14 +18,9 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
-const AREA_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO', 'IL', 'IA']
+const AREA_STATES: readonly string[] = COVERED_STATES
 
 // Where a hunter checks seasons for a state HuntStack has no season dates for
-const STATE_AGENCIES: Record<string, { name: string; url: string }> = {
-  MO: { name: 'Missouri Dept. of Conservation', url: 'https://mdc.mo.gov/hunting-trapping/species/waterfowl' },
-  IL: { name: 'Illinois DNR', url: 'https://dnr.illinois.gov/hunting/waterfowl.html' },
-  IA: { name: 'Iowa DNR', url: 'https://www.iowadnr.gov/hunting/migratory-game-birds' },
-}
 
 type Access = NonNullable<HuntAreaPlace['access']>
 
@@ -242,8 +238,8 @@ function AreaCard({ area, place, distMi, open, onToggle, mapHref }: {
                   {area.season.status === 'open' && area.season.lines.map(l => <p key={l}>{l}</p>)}
                   {area.season.status === 'closed' && <p>Closed on this date</p>}
                   {area.season.status === 'unknown' && (
-                    STATE_AGENCIES[area.state]
-                      ? <a href={STATE_AGENCIES[area.state].url} target="_blank" rel="noopener noreferrer" className="underline text-accent-600 dark:text-accent-400">Check {STATE_AGENCIES[area.state].name}</a>
+                    agencyWaterfowlPage(area.state)
+                      ? <a href={agencyWaterfowlPage(area.state)!.url} target="_blank" rel="noopener noreferrer" className="underline text-accent-600 dark:text-accent-400">Check {agencyWaterfowlPage(area.state)!.name}</a>
                       : <p>No season data — check the state agency</p>
                   )}
                 </div>

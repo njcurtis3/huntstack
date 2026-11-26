@@ -34,8 +34,8 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "apps" / "api" / "src" / "data" / "public-lands.ts"
 PLACES = ROOT / "apps" / "api" / "src" / "data" / "places.ts"
 SERVICE = "https://services.arcgis.com/v01gqwM5QqNysAAi/ArcGIS/rest/services/PADUS_Public_Access/FeatureServer/0/query"
-# The covered states (TX NM KS OK AR LA MO IL IA), with a margin
-BBOX = "-109.1,25.8,-87.4,43.6"
+# Queried over the box around the covered states' towns (places.ts), with this margin in degrees
+BBOX_MARGIN = 0.5
 PAGE = 2000
 MIN_ACRES = 40
 
@@ -52,14 +52,14 @@ KINDS = {
 }
 
 
-def fetch() -> list[dict]:
+def fetch(bbox: str) -> list[dict]:
     feats: list[dict] = []
     offset = 0
     while True:
         params = {
             "where": f"Category='Fee' AND Pub_Access IN ('OA','RA') AND GIS_Acres >= {MIN_ACRES}"
                      f" AND DesTp_Desc IN ({', '.join(sorted({repr(d) for d, _ in KINDS}))})",
-            "geometry": BBOX, "geometryType": "esriGeometryEnvelope", "inSR": "4326",
+            "geometry": bbox, "geometryType": "esriGeometryEnvelope", "inSR": "4326",
             "spatialRel": "esriSpatialRelIntersects",
             "outFields": "Unit_Nm,Pub_Access,MngNm_Desc,DesTp_Desc,GIS_Acres",
             "returnGeometry": "false", "returnCentroid": "true", "outSR": "4326",
@@ -118,7 +118,11 @@ def km(lat1, lng1, lat2, lng2) -> float:
 
 def main() -> None:
     places = load_places()
-    feats = fetch()
+    lats = [la for _, la, _ in places]
+    lngs = [lo for _, _, lo in places]
+    bbox = (f"{min(lngs) - BBOX_MARGIN:.1f},{min(lats) - BBOX_MARGIN:.1f},"
+            f"{max(lngs) + BBOX_MARGIN:.1f},{max(lats) + BBOX_MARGIN:.1f}")
+    feats = fetch(bbox)
     units: dict[tuple[str, str, str], dict] = {}
     for f in feats:
         a, c = f["attributes"], f.get("centroid")

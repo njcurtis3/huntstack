@@ -282,15 +282,7 @@ describe('card rules match the web app', () => {
   }
   const bare = (s: string) => s.replace(/\/\/.*$/gm, '').replace(/\s+/g, '')
 
-  it('STATEWIDE_SURVEY', () => {
-    const re = /const STATEWIDE_SURVEY[^=]*=/
-    expect(bare(block(api, re))).toBe(bare(block(web('migrationGroups.ts'), re)))
-  })
-
-  it('SITE_COUNTS_ONLY', () => {
-    const line = (s: string) => bare(s.match(/const SITE_COUNTS_ONLY = new Set\(\[[^\]]*\]\)/)![0])
-    expect(line(api)).toBe(line(web('migrationGroups.ts')))
-  })
+  // STATEWIDE_SURVEY and SITE_COUNTS_ONLY: both read the state registry (@huntstack/shared/states)
 
   it('staleThresholdFor', () => {
     const re = /function staleThresholdFor\(now: Date\): Date /

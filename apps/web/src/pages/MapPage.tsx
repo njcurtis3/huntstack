@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import maplibregl from 'maplibre-gl'
 import { Check, ChevronLeft, ChevronRight, Layers, Lock, X, ExternalLink, Play, Pause, PanelLeftClose, PanelLeftOpen, Share2 } from 'lucide-react'
+import { COVERED_STATES, REGISTRY_STATE_NAMES, agencyWaterfowlPage } from '../lib/states'
 import { api, safeHttpUrl } from '../lib/api'
 import type { HuntArea, RiverGauge } from '../lib/api'
 import { getAccount, startCheckout } from '../lib/account'
@@ -35,17 +36,9 @@ import type { BirdGroup, MapSeason, ZoneProperties, ZoneStatus } from '../lib/zo
 // reports on top. Pre-hunt only: no GPS tracks, saved spots or offline.
 
 const ZONE_URL = '/data/waterfowl-zones-2026.json'
-const ZONE_STATES = ['TX', 'KS', 'OK', 'NM', 'LA', 'AR', 'MO', 'IL', 'IA']
+const ZONE_STATES = COVERED_STATES
 // The agency's waterfowl page, linked when a zone has no season rows of its own to cite.
-const AGENCY_PAGES: Record<string, string> = {
-  MO: 'https://mdc.mo.gov/hunting-trapping/species/waterfowl',
-  IL: 'https://dnr.illinois.gov/hunting/waterfowl.html',
-  IA: 'https://www.iowadnr.gov/things-do/hunting-trapping/types-hunting-trapping/migratory-game-bird-hunting',
-}
-const STATE_NAMES: Record<string, string> = {
-  TX: 'Texas', KS: 'Kansas', OK: 'Oklahoma', NM: 'New Mexico', LA: 'Louisiana', AR: 'Arkansas',
-  MO: 'Missouri', IL: 'Illinois', IA: 'Iowa',
-}
+const STATE_NAMES = REGISTRY_STATE_NAMES
 const KEY = import.meta.env.VITE_MAPTILER_KEY ?? ''
 const styleUrl = (base: 'map' | 'satellite', theme: 'light' | 'dark') =>
   `https://api.maptiler.com/maps/${base === 'satellite' ? 'hybrid' : theme === 'dark' ? 'outdoor-v2-dark' : 'outdoor-v2'}/style.json?key=${KEY}`
@@ -2137,7 +2130,7 @@ function ZoneDetails({ zone, seasons, group, day, children }: { zone: ZoneProper
   const status = zoneStatus(mine, day)
   const change = nextChange(mine, day)
   const zoneName = group === 'duck' ? zone.duckZone : zone.gooseZone
-  const source = safeHttpUrl(mine.find(s => s.sourceUrl)?.sourceUrl ?? AGENCY_PAGES[zone.state] ?? null)
+  const source = safeHttpUrl(mine.find(s => s.sourceUrl)?.sourceUrl ?? agencyWaterfowlPage(zone.state)?.url ?? null)
   const stateHasDates = seasons.some(s => s.state === zone.state)
   return (
     <div>

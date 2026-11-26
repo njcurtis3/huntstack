@@ -10,25 +10,19 @@
  * import.meta and browser globals: vite.config.ts imports it at build time, in Node.
  */
 
+import { REGISTRY_STATES } from './states'
 import { parseCalendarDate } from './dates'
 import { enrichCounts, groupRefuges, groupStates, sortCounts } from './migrationGroups'
 
 export const GUIDE_BASE = '/duck-hunting'
 
 /** States with season data. Order is the index page's order. */
-export const GUIDE_STATES = [
-  { code: 'AR', name: 'Arkansas', slug: 'arkansas' },
-  { code: 'IL', name: 'Illinois', slug: 'illinois' },
-  { code: 'IA', name: 'Iowa', slug: 'iowa' },
-  { code: 'KS', name: 'Kansas', slug: 'kansas' },
-  { code: 'LA', name: 'Louisiana', slug: 'louisiana' },
-  { code: 'MO', name: 'Missouri', slug: 'missouri' },
-  { code: 'NM', name: 'New Mexico', slug: 'new-mexico' },
-  { code: 'OK', name: 'Oklahoma', slug: 'oklahoma' },
-  { code: 'TX', name: 'Texas', slug: 'texas' },
-] as const
+export type GuideState = { code: string; name: string; slug: string }
 
-export type GuideState = (typeof GUIDE_STATES)[number]
+export const GUIDE_STATES: readonly GuideState[] = REGISTRY_STATES
+  .filter(s => s.covered)
+  .map(s => ({ code: s.code, name: s.name, slug: s.slug }))
+  .sort((a, b) => a.name.localeCompare(b.name))
 
 export function guideStateBySlug(slug: string | undefined): GuideState | undefined {
   return GUIDE_STATES.find(s => s.slug === slug?.toLowerCase())

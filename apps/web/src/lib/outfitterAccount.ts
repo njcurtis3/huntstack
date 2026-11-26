@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { OUTFITTER_STATES } from './states'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuthStore } from '../stores/authStore'
 import { getSession } from './supabase'
@@ -7,7 +8,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
 // ---- Types, declared locally from the API contract ----
 
-export const STATE_CODES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO'] as const
+export const STATE_CODES: readonly string[] = OUTFITTER_STATES
 export const HUNT_TYPE_OPTIONS = [
   { value: 'guided', label: 'Fully Guided' },
   { value: 'semi-guided', label: 'Semi-Guided' },

@@ -3,8 +3,9 @@ import { eq } from 'drizzle-orm'
 import { getDb } from '../lib/db.js'
 import { locations, states } from '@huntstack/db/schema'
 import { getForecast, getAlerts, getHuntingConditions } from '../lib/weather.js'
+import { COVERED_STATES } from '@huntstack/shared/states'
 
-const DEFAULT_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK']
+const DEFAULT_STATES = [...COVERED_STATES]
 
 export const weatherRoutes: FastifyPluginAsync = async (app) => {
   // 7-day forecast for a specific refuge

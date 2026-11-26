@@ -29,7 +29,8 @@ import sys
 import time
 import urllib.request
 
-STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO', 'IL', 'IA']
+# The covered states, from the state registry (run from the repo root)
+STATES = [s['code'] for s in json.load(open('packages/shared/src/states.json', encoding='utf-8'))['states'] if s['covered']]
 MIN_DRAINAGE = 1000  # square miles
 MIN_YEARS = 10
 STATS_BATCH = 10

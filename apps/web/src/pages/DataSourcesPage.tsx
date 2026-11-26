@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ExternalLink } from 'lucide-react'
 import { api } from '../lib/api'
+import type { StateCoverage } from '../lib/api'
 
 type Source = {
   name: string
@@ -154,6 +155,66 @@ const OTHER_GROUPS: SourceGroup[] = [
   },
 ]
 
+/** The table's columns: what each covered state has, from GET /api/states/coverage */
+const COVERAGE_COLUMNS: Array<{ label: string; title: string; value: (s: StateCoverage) => string }> = [
+  { label: 'Seasons', title: 'Season dates and limits for this season', value: s => String(s.seasons) },
+  { label: 'Licenses', title: 'Licenses, stamps and permits', value: s => String(s.licenses) },
+  { label: 'Rule docs', title: 'Regulation documents Ask AI searches', value: s => String(s.documents) },
+  {
+    label: 'Survey sites',
+    title: 'Survey sites with counts (with a count in the last 45 days)',
+    value: s => (s.surveySites === 0 ? '0' : `${s.surveySites} (${s.surveySitesRecent})`),
+  },
+  { label: 'Statewide survey', title: 'The agency survey of the whole state HuntStack loads', value: s => s.statewideSurvey ?? '—' },
+  { label: 'eBird areas', title: 'eBird areas HuntStack watches (every public eBird hotspot is used as well)', value: s => String(s.ebirdPlaces) },
+  { label: 'Public land', title: 'Public land units (USGS PAD-US)', value: s => String(s.publicLands) },
+  { label: 'River gauges', title: 'USGS river gauges on the map', value: s => String(s.riverGauges) },
+  { label: 'Zone shapes', title: 'Season zone shapes on the map', value: s => String(s.zoneShapes) },
+]
+
+function CoverageTable({ states }: { states: StateCoverage[] }) {
+  return (
+    <div
+      className="rounded-lg border p-5"
+      style={{ backgroundColor: `rgb(var(--color-bg-elevated))`, borderColor: `rgb(var(--color-border-primary))` }}
+    >
+      <h2 className="text-lg font-semibold mb-2" style={{ color: `rgb(var(--color-text-primary))` }}>
+        What HuntStack has for each state
+      </h2>
+      <p className="text-sm mb-4" style={{ color: `rgb(var(--color-text-secondary))` }}>
+        Counted from HuntStack's own data, so a state with gaps shows them. Survey sites in brackets had a count in the
+        last 45 days. A dash under Statewide survey means the state is counted at its survey sites only.
+      </p>
+      <div className="overflow-x-auto -mx-5 px-5">
+        <table className="w-full text-sm border-collapse">
+          <thead>
+            <tr style={{ color: `rgb(var(--color-text-tertiary))` }}>
+              <th scope="col" className="text-left font-medium py-2 pr-3 whitespace-nowrap">State</th>
+              {COVERAGE_COLUMNS.map(c => (
+                <th key={c.label} scope="col" title={c.title} className="text-right font-medium py-2 px-2 whitespace-nowrap">{c.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {states.map(s => (
+              <tr key={s.code} className="border-t" style={{ borderColor: `rgb(var(--color-border-primary))` }}>
+                <th scope="row" className="text-left font-medium py-2 pr-3 whitespace-nowrap" style={{ color: `rgb(var(--color-text-primary))` }}>
+                  {s.name}
+                </th>
+                {COVERAGE_COLUMNS.map(c => (
+                  <td key={c.label} className="text-right py-2 px-2 whitespace-nowrap tabular-nums" style={{ color: `rgb(var(--color-text-secondary))` }}>
+                    {c.value(s)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function SourceCard({ group, summary }: { group: SourceGroup; summary?: string | null }) {
   return (
     <div
@@ -211,8 +272,12 @@ function SourceCard({ group, summary }: { group: SourceGroup; summary?: string |
 
 export function DataSourcesPage() {
   const [coverage, setCoverage] = useState<string | null>(null)
+  const [stateCoverage, setStateCoverage] = useState<StateCoverage[] | null>(null)
 
   useEffect(() => {
+    api.getStateCoverage()
+      .then(({ states }) => setStateCoverage(states))
+      .catch(() => setStateCoverage(null))
     api.getSurveyCoverage()
       .then(({ sites, states }) => {
         if (sites > 0) {
@@ -234,6 +299,7 @@ export function DataSourcesPage() {
         before you hunt.
       </p>
       <div className="space-y-6">
+        {stateCoverage && stateCoverage.length > 0 && <CoverageTable states={stateCoverage} />}
         <SourceCard group={REFUGE_COUNT_SOURCES} summary={coverage} />
         {OTHER_GROUPS.map((group) => (
           <SourceCard key={group.title} group={group} />

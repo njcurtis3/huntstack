@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { COVERED_STATES } from '../lib/states'
 import BreedingPopulationCard from '../components/BreedingPopulationCard'
 import { SectionCardGrid, sectionDomId, useOpenSections, type SectionCard } from '../components/SectionCards'
 import { useQuery } from '@tanstack/react-query'
@@ -1414,7 +1415,7 @@ export function MigrationPage() {
   // Fetch weather alerts + push factors together once states are known
   useEffect(() => {
     let cancelled = false
-    const statesParam = stateOptions.length > 0 ? stateOptions.join(',') : 'TX,NM,AR,LA,KS,OK,MO'
+    const statesParam = stateOptions.length > 0 ? stateOptions.join(',') : COVERED_STATES.join(',')
 
     async function fetchWeatherIntel() {
       try {
@@ -2583,7 +2584,7 @@ export function MigrationPage() {
                     pushFactors={pushFactorsData.pushFactors}
                     regionalPushFactors={pushFactorsData.regionalPushFactors}
                     overallPushScore={pushFactorsData.overallPushScore}
-                    states={stateOptions.length > 0 ? stateOptions : ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO']}
+                    states={stateOptions.length > 0 ? stateOptions : [...COVERED_STATES]}
                   />
                 )}
                 {stateGroups.length > 0 && (

@@ -2,6 +2,7 @@
 // status, spikes and drops, and arrows between states. The Map page draws the same things, so
 // both read them from here: two copies of this math would drift apart (see migrationStats.ts).
 
+import { SITE_COUNTS_ONLY, STATEWIDE_SURVEY, STATE_CENTERS } from './states'
 import { parseCalendarDate } from './dates'
 import { getAnomaly, getMigrationStatus, staleThresholdFor, type AnomalyType, type MigrationStatus } from './migrationStats'
 
@@ -23,16 +24,7 @@ type CountLike = {
 
 // Approximate state centers [lng, lat]: flow arrows and state markers, and the map marker of a
 // statewide survey with no point of its own
-export const STATE_CENTROIDS: Record<string, [number, number]> = {
-  MT: [-110.4, 47.0], ND: [-100.5, 47.5], SD: [-100.2, 44.5],
-  NE: [-99.9, 41.5], KS: [-98.4, 38.5], CO: [-105.5, 39.0],
-  OK: [-97.5, 35.5], TX: [-99.3, 31.0], NM: [-106.1, 34.4],
-  MN: [-94.6, 46.4], WI: [-89.6, 44.5], IA: [-93.1, 42.0],
-  IL: [-89.2, 40.0], MO: [-92.5, 38.3], TN: [-86.4, 35.9],
-  AR: [-92.4, 34.8], MS: [-89.7, 32.7], LA: [-91.8, 31.0],
-  WA: [-120.5, 47.4], OR: [-120.5, 44.0], ID: [-114.5, 44.5],
-  NV: [-116.7, 39.5], CA: [-119.4, 37.2],
-}
+export const STATE_CENTROIDS: Readonly<Record<string, [number, number]>> = STATE_CENTERS
 
 // States in each flyway, north to south
 export const FLYWAY_STATE_ORDER: Record<string, string[]> = {
@@ -241,17 +233,7 @@ export type StateGroup<T> = {
  * only gets the January midwinter survey, whose numbers never land on this card (USFWS's
  * "Statewide MWI" rows and TPWD's survey are annual and feed the Historical MWI chart).
  */
-const STATEWIDE_SURVEY: Record<string, { survey: string; site?: string }> = {
-  TX: { survey: 'midwinter survey' },
-  OK: { survey: 'midwinter survey' },
-  KS: { survey: 'midwinter survey' },
-  NM: { survey: 'midwinter survey' },
-  AR: { survey: 'AGFC aerial survey', site: 'Arkansas - AGFC Aerial Survey' },
-  LA: { survey: 'LDWF aerial survey', site: 'Louisiana - LDWF Aerial Survey' },
-}
-
-/** States counted only at survey sites (INHS flights, refuges); no statewide survey is loaded */
-const SITE_COUNTS_ONLY = new Set(['IL', 'MO', 'IA'])
+// STATEWIDE_SURVEY and SITE_COUNTS_ONLY come from the state registry (@huntstack/shared/states)
 
 /**
  * The note a current state card needs because its total is not the whole state: waiting on the

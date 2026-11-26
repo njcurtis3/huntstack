@@ -15,6 +15,7 @@
 
 import { BoundedCache } from './cache.js'
 import { STALE_LIMIT_MS, loadSaved, loadSavedPrefix, save } from './ebird-store.js'
+import { COVERED_FLYWAY } from '@huntstack/shared/states'
 
 const EBIRD_BASE = 'https://api.ebird.org/v2'
 const GEO_TTL      = 6 * 60 * 60 * 1000  // 6 hours  — per-refuge geo queries
@@ -126,14 +127,9 @@ export const EBIRD_SPECIES_NAMES: Record<string, string> = Object.fromEntries(
   Object.values(EBIRD_SPECIES).reverse().map(v => [v.slug, v.name]),
 )
 
-// ─── State → flyway mapping (V1 states) ──────────────────────────────────────
+// ─── State → flyway mapping (covered states, from the state registry) ───────
 
-export const STATE_FLYWAY: Record<string, string> = {
-  TX: 'central', NM: 'central', KS: 'central', OK: 'central',
-  AR: 'mississippi', LA: 'mississippi', MO: 'mississippi',
-  IL: 'mississippi', // INHS Forbes aerial inventory; not in the default eBird state list
-  IA: 'mississippi', // added 2026-11-18: without it Iowa had only its INHS river sites in Where to Hunt
-}
+export const STATE_FLYWAY: Record<string, string> = { ...COVERED_FLYWAY }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

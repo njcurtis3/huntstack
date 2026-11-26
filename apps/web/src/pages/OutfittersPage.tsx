@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { OUTFITTER_STATES, REGISTRY_STATE_NAMES } from '../lib/states'
 import { Search, MapPin, BadgeCheck, Phone, Globe, ChevronDown, X, Users } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { api, safeHttpUrl, type PublicListing } from '../lib/api'
@@ -6,18 +7,10 @@ import { OutfitterDetail } from '../components/OutfitterDetail'
 
 type Outfitter = PublicListing
 
-// All V1 priority states — shown in pills even before they have listings
-const ALL_V1_STATES = ['AR', 'KS', 'LA', 'MO', 'NM', 'OK', 'TX']
+// States open to outfitter listings (the state registry), shown in pills even before they have listings
+const ALL_V1_STATES = [...OUTFITTER_STATES].sort()
 
-const STATE_NAMES: Record<string, string> = {
-  AR: 'Arkansas',
-  KS: 'Kansas',
-  LA: 'Louisiana',
-  MO: 'Missouri',
-  NM: 'New Mexico',
-  OK: 'Oklahoma',
-  TX: 'Texas',
-}
+const STATE_NAMES = REGISTRY_STATE_NAMES
 
 const PRICE_LABELS: Record<string, string> = {
   '$': 'Budget',

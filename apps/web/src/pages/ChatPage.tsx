@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { registryStateName } from '../lib/states'
 import { Send, Bot, User, Sparkles, ExternalLink, Search, MapPin, FileText, Bird, TreePine, RotateCcw } from 'lucide-react'
 import { Link, useSearchParams } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
@@ -177,11 +178,7 @@ export function ChatPage() {
           .sort((a, b) => b.pushScore - a.pushScore)[0]
 
         if (top) {
-          const STATE_NAMES: Record<string, string> = {
-            TX: 'Texas', AR: 'Arkansas', LA: 'Louisiana',
-            NM: 'New Mexico', KS: 'Kansas', OK: 'Oklahoma', MO: 'Missouri', IL: 'Illinois', IA: 'Iowa',
-          }
-          const name = STATE_NAMES[top.stateCode] || top.stateCode
+          const name = registryStateName(top.stateCode) || top.stateCode
           if (top.coldFrontPresent) {
             dynamic.push(`Cold front hitting ${name} — are birds moving right now?`)
           } else if (top.coldFrontIncoming) {

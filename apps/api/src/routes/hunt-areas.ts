@@ -17,8 +17,9 @@ import {
   type AreaPoint, type AreaSeason, type CheckedPlace, type MapLand,
 } from '../lib/hunt-areas.js'
 import { findOpenSeason, huntZonesOf, seasonDisplayName, seasonYearOf, type SeasonRow } from './hunt.js'
+import { COVERED_STATES } from '@huntstack/shared/states'
 
-const AREA_STATES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO', 'IL', 'IA']
+const AREA_STATES = COVERED_STATES
 const EBIRD_DAYS = 14
 const REPORT_DAYS = 7
 const EBIRD_WAIT_MS = 8000

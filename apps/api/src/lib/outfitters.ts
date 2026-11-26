@@ -10,13 +10,14 @@ import {
   type SubmissionRecord,
   type ViewKind,
 } from './outfitter-store.js'
+import { OUTFITTER_STATES } from '@huntstack/shared/states'
 
 // Rules for the outfitter directory: input validation, the public shape, and the submit / approve /
 // reject / inquiry flows. Every check-then-write runs inside store.transaction under a per-user
 // advisory lock, so concurrent requests cannot slip past a limit or double-claim a listing.
 // Validation here is mirrored client-side in apps/web/src/lib/outfitterAccount.ts (copied, not shared).
 
-export const STATE_CODES = ['TX', 'NM', 'AR', 'LA', 'KS', 'OK', 'MO'] as const
+export const STATE_CODES: readonly string[] = OUTFITTER_STATES
 export const HUNT_TYPES = ['guided', 'semi-guided', 'diy-support'] as const
 export const PRICE_RANGES = ['$', '$$', '$$$', '$$$$'] as const
 

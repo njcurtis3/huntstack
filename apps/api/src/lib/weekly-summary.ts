@@ -13,6 +13,7 @@
 
 import { surveyChange } from './survey-change.js'
 import type { SurveyAverage } from './survey-data.js'
+import { SITE_COUNTS_ONLY, STATEWIDE_SURVEY } from '@huntstack/shared/states'
 
 export interface SummaryCount {
   refugeId: string
@@ -50,16 +51,6 @@ export function staleThresholdFor(now: Date): Date {
   return new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000)
 }
 
-/** States with a statewide survey the cards wait on, and its own site (migrationGroups.ts STATEWIDE_SURVEY) */
-const STATEWIDE_SURVEY: Record<string, { survey: string; site?: string }> = {
-  TX: { survey: 'midwinter survey' },
-  OK: { survey: 'midwinter survey' },
-  KS: { survey: 'midwinter survey' },
-  NM: { survey: 'midwinter survey' },
-  AR: { survey: 'AGFC aerial survey', site: 'Arkansas - AGFC Aerial Survey' },
-  LA: { survey: 'LDWF aerial survey', site: 'Louisiana - LDWF Aerial Survey' },
-}
-const SITE_COUNTS_ONLY = new Set(['IL', 'MO', 'IA'])
 
 /** Turn the dashboard's raw rows into summary counts, judging each previous survey as the cards do */
 export function toSummaryCounts(rows: Array<Record<string, unknown>>): SummaryCount[] {
